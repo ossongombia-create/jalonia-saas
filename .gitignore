@@ -1,0 +1,25 @@
+# dépendances
+/node_modules
+
+# tests
+/coverage
+
+# next.js
+/.next/
+/out/
+/build
+
+# divers
+.DS_Store
+*.pem
+
+# journaux
+npm-debug.log*
+
+# fichiers d'environnement : JAMAIS dans Git (mots de passe, secrets). Seul le modèle est versionné.
+.env*
+!.env.example
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
