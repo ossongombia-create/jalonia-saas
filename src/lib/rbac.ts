@@ -1,0 +1,55 @@
+// Rôles et droits (RBAC). Ce fichier est LA source de vérité : la page « Droits » du superadmin
+// affiche directement cette matrice, et le serveur s'en sert pour autoriser ou refuser chaque action.
+// (Aucun secret ici : ce module peut être utilisé côté navigateur pour l'affichage.)
+
+export const ROLE_SUPERADMIN = "SUPERADMIN_PLATFORM" as const;
+
+export const ROLES_ORGANISATION = ["ADMIN_ORGANISATION", "REDACTEUR", "VERIFICATEUR", "APPROBATEUR", "LECTEUR"] as const;
+export type RoleOrganisation = (typeof ROLES_ORGANISATION)[number];
+export type Role = RoleOrganisation | typeof ROLE_SUPERADMIN;
+
+export const TOUS_LES_ROLES: readonly Role[] = [ROLE_SUPERADMIN, ...ROLES_ORGANISATION];
+
+/** « actif » : appliqué dans cette version. « prevu » : déclaré, appliqué quand la fonctionnalité arrive. */
+export type EtatDroit = "actif" | "prevu";
+
+interface DefinitionDroit {
+  roles: readonly Role[];
+  etat: EtatDroit;
+}
+
+export const DROITS = {
+  // ----- Plateforme (SUPERADMIN_PLATFORM) -----
+  "plateforme.organisations.gerer": { roles: [ROLE_SUPERADMIN], etat: "actif" },
+  "plateforme.utilisateurs.gerer": { roles: [ROLE_SUPERADMIN], etat: "actif" },
+  "plateforme.sessions.gerer": { roles: [ROLE_SUPERADMIN], etat: "actif" },
+  "plateforme.journal.lire": { roles: [ROLE_SUPERADMIN], etat: "actif" },
+  "plateforme.droits.lire": { roles: [ROLE_SUPERADMIN], etat: "actif" },
+  "plateforme.maintenance.gerer": { roles: [ROLE_SUPERADMIN], etat: "prevu" },
+  // ----- Organisation -----
+  "organisation.membres.gerer": { roles: ["ADMIN_ORGANISATION"], etat: "actif" },
+  "organisation.journal.lire": { roles: ["ADMIN_ORGANISATION"], etat: "actif" },
+  // ----- Documents (cycle de vie : brouillon → vérification → approbation → publication → archivage) -----
+  "documents.lire": { roles: ["ADMIN_ORGANISATION", "REDACTEUR", "VERIFICATEUR", "APPROBATEUR", "LECTEUR"], etat: "prevu" },
+  "documents.rediger": { roles: ["REDACTEUR"], etat: "prevu" },
+  "documents.soumettre": { roles: ["REDACTEUR"], etat: "prevu" },
+  "documents.verifier": { roles: ["VERIFICATEUR"], etat: "prevu" },
+  "documents.approuver": { roles: ["APPROBATEUR"], etat: "prevu" },
+  "documents.publier": { roles: ["APPROBATEUR"], etat: "prevu" },
+  "documents.archiver": { roles: ["APPROBATEUR"], etat: "prevu" },
+} as const satisfies Record<string, DefinitionDroit>;
+
+export type Droit = keyof typeof DROITS;
+
+export const LISTE_DROITS = Object.keys(DROITS) as Droit[];
+
+/** Vrai si l'un des rôles donne le droit. */
+export function aLeDroit(roles: Iterable<Role>, droit: Droit): boolean {
+  const autorises: readonly Role[] = DROITS[droit].roles;
+  for (const r of roles) if (autorises.includes(r)) return true;
+  return false;
+}
+
+export function estRoleOrganisation(valeur: unknown): valeur is RoleOrganisation {
+  return typeof valeur === "string" && (ROLES_ORGANISATION as readonly string[]).includes(valeur);
+}

@@ -1,36 +1,73 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Jalonia — application multi-organisations
 
-## Getting Started
+Jalonia produit la documentation des processus selon le **langage Qualigramme** (cartographie de niveau 1,
+procédures de niveau 2, instructions de travail de niveau 3). Cette version est une **application web
+multi-organisations** (SaaS interne) : chaque organisation dispose de son propre espace de données, isolé
+des autres par PostgreSQL lui-même.
 
-First, run the development server:
+## État d'avancement
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+| Incrément | Contenu | État |
+|---|---|---|
+| 1 — Socle | Connexion, sessions suivies et révocables, superadmin (organisations, utilisateurs, sessions, journal d'audit, matrice des droits), espace organisation (membres, rôles, journal), isolation par schéma et rôle PostgreSQL, français / anglais | ✔ |
+| 2 — Documents Qualigramme | Reprise des fonctions de l'application d'origine (cartographie, procédures, instructions, logigramme, export Word, questionnement, modèles) | à venir |
+| 3 — Cycle de vie | Versions, vérification, approbation, publication, archivage, traçabilité | à venir |
+| 4 — Pilotage | Risques / opportunités / actions, objectifs et indicateurs | à venir |
+| 5 — Exploitation | Mode maintenance (planification, alertes par e-mail et fenêtre), e-mails (SMTP) | à venir |
+
+## Technique
+
+- **Next.js 16** (App Router, TypeScript strict), sortie autonome (`output: "standalone"`).
+- **PostgreSQL ≥ 16**, auto-hébergé. Requêtes SQL **paramétrées** avec `pg` (pas d'ORM, voir `docs/DECISIONS.md`).
+- **Auth.js v5** (identifiants e-mail + mot de passe), sessions vérifiées en base à chaque requête.
+- Mots de passe **argon2id** ; verrouillage 15 min après 5 échecs.
+- Isolation : un **schéma** et un **rôle PostgreSQL** par organisation ; l'application n'accède aux données
+  d'une organisation qu'après `SET LOCAL ROLE` vers le rôle de cette organisation.
+- Journaux d'audit **en ajout seul** (plateforme et organisation).
+
+```
+src/
+  app/            pages (connexion, /plateforme = superadmin, /app = espace organisation)
+  actions/        actions serveur (chacune revérifie l'identité et les droits)
+  components/     composants d'interface
+  lib/            code partagé : rôles et droits (rbac.ts), validation, traductions (i18n/)
+  server/         accès aux données : base, authentification, organisations, membres, audit…
+db/migrations/
+  plateforme/     schéma « platform » (appliqué une fois)
+  organisation/   gabarit appliqué à CHAQUE organisation
+deploy/           installation et mise à jour du VPS (voir deploy/INSTALL-VPS.md)
+scripts/          migrations, création du superadmin
+tests/            tests unitaires et d'intégration (vraie base PostgreSQL)
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Développement local
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Prérequis : Node.js ≥ 22.12, PostgreSQL ≥ 16.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+npm ci
+# Base locale : rôles et base « jalonia » (mots de passe de votre choix)
+sudo -u postgres psql -v ON_ERROR_STOP=1 -v nom_base=jalonia -v mdp_proprietaire=dev-proprietaire -v mdp_app=dev-application < deploy/preparer-base.sql
+cp .env.example .env.local   # renseigner les deux mots de passe, AUTH_SECRET et AUTH_URL=http://localhost:3000
+npx tsx --env-file=.env.local scripts/migrer.ts
+npx tsx --env-file=.env.local scripts/creer-superadmin.ts
+npm run dev
+```
 
-## Learn More
+## Vérifications
 
-To learn more about Next.js, take a look at the following resources:
+```bash
+npm run typecheck          # types
+npm run lint               # règles de code
+npm run test:unit          # tests unitaires
+npm run test:integration   # tests sur une vraie base PostgreSQL
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Les tests d'intégration créent une base PostgreSQL temporaire (puis la suppriment). Ils ont besoin d'un
+superutilisateur PostgreSQL **de test** (variable `PG_TEST_ADMIN_URL`, par défaut
+`postgresql://jalonia_test_admin:jalonia_test_admin@127.0.0.1:5432/postgres`). À lancer sur un poste de
+développement uniquement : ils refusent de s'exécuter sur le serveur de production.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Installation sur le serveur
 
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Voir **[deploy/INSTALL-VPS.md](deploy/INSTALL-VPS.md)**. Mise à jour : `sudo bash /opt/jalonia/depot/deploy/deployer.sh`.

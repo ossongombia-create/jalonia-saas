@@ -1,0 +1,19 @@
+# Caddy : HTTPS automatique (certificat Let's Encrypt) et relais vers l'application.
+# À copier dans /etc/caddy/Caddyfile. L'enregistrement DNS « jalonia.mosa-apps.com » doit déjà pointer
+# vers l'adresse IP du VPS, sinon le certificat ne peut pas être obtenu.
+jalonia.mosa-apps.com {
+	encode zstd gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		-Server
+	}
+
+	request_body {
+		max_size 20MB
+	}
+
+	# L'application n'écoute que sur 127.0.0.1 : elle n'est joignable QUE par Caddy.
+	# Caddy remplace l'en-tête X-Forwarded-For par l'adresse réelle du visiteur.
+	reverse_proxy 127.0.0.1:3000
+}

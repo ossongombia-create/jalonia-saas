@@ -1,0 +1,36 @@
+# Service systemd de Jalonia. À copier dans /etc/systemd/system/jalonia.service
+# /opt/jalonia/courant est un lien vers la version déployée (voir deploy/deployer.sh).
+[Unit]
+Description=Jalonia (application Next.js)
+After=network-online.target postgresql.service
+Wants=network-online.target postgresql.service
+
+[Service]
+Type=simple
+User=jalonia
+Group=jalonia
+WorkingDirectory=/opt/jalonia/courant
+EnvironmentFile=/etc/jalonia/jalonia.env
+Environment=NODE_ENV=production
+Environment=PORT=3000
+Environment=HOSTNAME=127.0.0.1
+Environment=NEXT_TELEMETRY_DISABLED=1
+Environment=NODE_OPTIONS=--max-old-space-size=384
+ExecStart=/usr/bin/node /opt/jalonia/courant/server.js
+Restart=on-failure
+RestartSec=5
+
+# Durcissement
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryMax=700M
+
+[Install]
+WantedBy=multi-user.target
