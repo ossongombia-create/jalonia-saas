@@ -275,12 +275,22 @@ describe("mise à niveau d'une organisation existante", () => {
   it("une organisation créée avant les documents (migration 0001 seule) reçoit 0002 et fonctionne aussitôt", async () => {
     const toutes = await lireMigrations(path.resolve("db/migrations/organisation"));
     const s = suffixe();
-    const creee = await creerOrganisation(
-      proprietaire,
-      toutes.filter((m) => m.nom.startsWith("0001")),
-      { nom: `Ancienne ${s}`, slug: `ancienne-${s}`, admin: { email: `adm-${s}@test.local`, nom: "Adm", motDePasseProvisoire: MDP_TEST } },
-      superadmin,
+    // Comme si l'organisation avait été créée quand seul le gabarit 0001 existait : on retire un instant les suivants.
+    const retires = await enTransaction(proprietaire, (c) =>
+      c.query<{ nom: string; sql: string; empreinte: string }>("DELETE FROM platform.gabarits_organisation WHERE nom > '0001_socle.sql' RETURNING nom, sql, empreinte"),
     );
+    let creee;
+    try {
+      creee = await creerOrganisation(
+        app,
+        { nom: `Ancienne ${s}`, slug: `ancienne-${s}`, admin: { email: `adm-${s}@test.local`, nom: "Adm", motDePasseProvisoire: MDP_TEST } },
+        superadmin,
+      );
+    } finally {
+      await enTransaction(proprietaire, async (c) => {
+        for (const g of retires.rows) await c.query("INSERT INTO platform.gabarits_organisation (nom, sql, empreinte) VALUES ($1, $2, $3)", [g.nom, g.sql, g.empreinte]);
+      });
+    }
     const o = await lireOrganisation(app, creee.organisationId);
     const cible = { id: o!.id, schemaName: o!.schemaName, roleName: o!.roleName };
     expect(await codeErreur(listerDocuments(app, cible))).toBe("42P01"); // table absente

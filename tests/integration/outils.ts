@@ -1,9 +1,7 @@
 // Outils communs aux tests d'intégration.
-import path from "node:path";
 import { randomBytes } from "node:crypto";
 import { Pool } from "pg";
 import { inject } from "vitest";
-import { lireMigrations } from "../../src/server/migrations/lanceur";
 import { creerOrganisation, type OrganisationCreee } from "../../src/server/organisations/provisionnement";
 import { lireOrganisation } from "../../src/server/organisations/service";
 import type { OrganisationCible } from "../../src/server/membres/service";
@@ -42,13 +40,12 @@ export interface OrgDeTest extends OrganisationCreee {
   adminEmail: string;
 }
 
-export async function creerOrgDeTest(app: Pool, proprietaire: Pool, acteur: Acteur, nom = "Organisation"): Promise<OrgDeTest> {
+/** Une organisation de test, créée comme en production : par l'application (fonction de création en base). */
+export async function creerOrgDeTest(app: Pool, _proprietaire: Pool, acteur: Acteur, nom = "Organisation"): Promise<OrgDeTest> {
   const s = suffixe();
-  const migrations = await lireMigrations(path.resolve("db/migrations/organisation"));
   const adminEmail = `admin-${s}@test.local`;
   const creee = await creerOrganisation(
-    proprietaire,
-    migrations,
+    app,
     { nom: `${nom} ${s}`, slug: `org-${s}`, admin: { email: adminEmail, nom: `Admin ${s}`, motDePasseProvisoire: MDP_TEST } },
     acteur,
   );

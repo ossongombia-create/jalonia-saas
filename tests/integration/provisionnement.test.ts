@@ -2,12 +2,13 @@
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { Pool } from "pg";
-import { appliquerMigrationsOrganisation, lireMigrations, migrer } from "../../src/server/migrations/lanceur";
+import { appliquerMigrationsOrganisation, lireMigrations, migrer, synchroniserGabarits } from "../../src/server/migrations/lanceur";
 import { creerOrganisation } from "../../src/server/organisations/provisionnement";
 import { changerStatutOrganisation, listerOrganisations } from "../../src/server/organisations/service";
 import { enTransaction } from "../../src/server/db/transactions";
 import type { Acteur } from "../../src/server/acteur";
-import { cleErreur, creerOrgDeTest, creerSuperadmin, MDP_TEST, ouvrirPools, suffixe } from "./outils";
+import { cleErreur, codeErreur, creerOrgDeTest, creerSuperadmin, MDP_TEST, ouvrirPools, suffixe } from "./outils";
+import { avecOrganisation } from "../../src/server/db/transactions";
 
 let app: Pool;
 let proprietaire: Pool;
@@ -70,9 +71,8 @@ describe("création d'une organisation", () => {
     const org = await creerOrgDeTest(app, proprietaire, superadmin);
     const slug = (await listerOrganisations(app)).find((o) => o.id === org.organisationId)!.slug;
     const avant = await compter();
-    const migrations = await lireMigrations(path.resolve("db/migrations/organisation"));
     const cle = await cleErreur(
-      creerOrganisation(proprietaire, migrations, { nom: "Doublon", slug, admin: { email: `x-${suffixe()}@test.local`, nom: "X", motDePasseProvisoire: MDP_TEST } }, superadmin),
+      creerOrganisation(app, { nom: "Doublon", slug, admin: { email: `x-${suffixe()}@test.local`, nom: "X", motDePasseProvisoire: MDP_TEST } }, superadmin),
     );
     expect(cle).toBe("erreur.slug_pris");
     expect(await compter()).toEqual(avant);
@@ -80,18 +80,16 @@ describe("création d'une organisation", () => {
 
   it("échec en cours de route (administrateur sans mot de passe) : RIEN n'est créé, ni schéma ni rôle", async () => {
     const avant = await compter();
-    const migrations = await lireMigrations(path.resolve("db/migrations/organisation"));
     const cle = await cleErreur(
-      creerOrganisation(proprietaire, migrations, { nom: "Incomplète", slug: `inc-${suffixe()}`, admin: { email: `nouveau-${suffixe()}@test.local`, nom: "N", motDePasseProvisoire: "" } }, superadmin),
+      creerOrganisation(app, { nom: "Incomplète", slug: `inc-${suffixe()}`, admin: { email: `nouveau-${suffixe()}@test.local`, nom: "N", motDePasseProvisoire: "" } }, superadmin),
     );
     expect(cle).toBe("erreur.mdp_provisoire_requis");
     expect(await compter()).toEqual(avant);
   });
 
   it("mot de passe provisoire trop court : refusé avant toute écriture", async () => {
-    const migrations = await lireMigrations(path.resolve("db/migrations/organisation"));
     const cle = await cleErreur(
-      creerOrganisation(proprietaire, migrations, { nom: "Courte", slug: `court-${suffixe()}`, admin: { email: `c-${suffixe()}@test.local`, nom: "C", motDePasseProvisoire: "court" } }, superadmin),
+      creerOrganisation(app, { nom: "Courte", slug: `court-${suffixe()}`, admin: { email: `c-${suffixe()}@test.local`, nom: "C", motDePasseProvisoire: "court" } }, superadmin),
     );
     expect(cle).toBe("erreur.mdp_trop_court");
   });
@@ -99,10 +97,8 @@ describe("création d'une organisation", () => {
   it("un compte existant devient administrateur sans que son mot de passe change", async () => {
     const premiere = await creerOrgDeTest(app, proprietaire, superadmin);
     const avant = await enTransaction(proprietaire, (c) => c.query<{ h: string }>("SELECT mot_de_passe_hash AS h FROM platform.utilisateurs WHERE email = $1", [premiere.adminEmail]));
-    const migrations = await lireMigrations(path.resolve("db/migrations/organisation"));
     const seconde = await creerOrganisation(
-      proprietaire,
-      migrations,
+      app,
       { nom: "Seconde", slug: `sec-${suffixe()}`, admin: { email: premiere.adminEmail, nom: "Ignoré", motDePasseProvisoire: "" } },
       superadmin,
     );
@@ -110,6 +106,50 @@ describe("création d'une organisation", () => {
     expect(seconde.adminId).toBe(premiere.adminId);
     const apres = await enTransaction(proprietaire, (c) => c.query<{ h: string }>("SELECT mot_de_passe_hash AS h FROM platform.utilisateurs WHERE email = $1", [premiere.adminEmail]));
     expect(apres.rows[0]!.h).toBe(avant.rows[0]!.h);
+  });
+});
+
+describe("création sans le rôle propriétaire (fonction platform.provisionner_organisation)", () => {
+  it("l'application ne voit ni ne modifie les gabarits ; elle ne crée rien en dehors de la fonction", async () => {
+    expect(await codeErreur(enTransaction(app, (c) => c.query("SELECT * FROM platform.gabarits_organisation")))).toBe("42501");
+    expect(await codeErreur(enTransaction(app, (c) => c.query("UPDATE platform.gabarits_organisation SET sql = 'DROP SCHEMA platform CASCADE'")))).toBe("42501");
+    expect(await codeErreur(enTransaction(app, (c) => c.query("INSERT INTO platform.organisations (nom, slug, schema_name, role_name) VALUES ('X', 'x-pirate', 'org_aaaaaaaaaaaa', 'org_aaaaaaaaaaaa_rw')")))).toBe("42501");
+    expect(await codeErreur(enTransaction(app, (c) => c.query("CREATE ROLE pirate")))).toBe("42501");
+  });
+
+  it("noms de schéma piégés refusés AVANT tout SQL dynamique ; rien n'est créé", async () => {
+    const avant = await compter();
+    for (const schema of ['org_aaaaaaaaaaaa"; DROP SCHEMA platform CASCADE; --', "org_AAAAAAAAAAAA", "org_aaaa", "platform", "org_aaaaaaaaaaaa_rw", "", "public"]) {
+      const code = await codeErreur(enTransaction(app, (c) => c.query("SELECT platform.provisionner_organisation($1, $2, $3, NULL)", ["Piège", `piege-${suffixe()}`, schema])));
+      expect(code, schema).toBe("22023");
+    }
+    expect(await codeErreur(enTransaction(app, (c) => c.query("SELECT platform.provisionner_organisation($1, $2, NULL, NULL)", ["Piège", `piege-${suffixe()}`])))).toBe("22023");
+    // Nom et identifiant court sont des valeurs : un nom « SQL » est rangé tel quel, l'identifiant court est contrôlé.
+    expect(await codeErreur(enTransaction(app, (c) => c.query("SELECT platform.provisionner_organisation($1, $2, $3, NULL)", ["X", "Pas Valide; DROP", "org_bbbbbbbbbbbb"])))).toBe("23514");
+    expect(await compter()).toEqual(avant);
+  });
+
+  it("le rôle d'une organisation ne peut pas appeler la fonction", async () => {
+    const org = await creerOrgDeTest(app, proprietaire, superadmin);
+    const code = await codeErreur(avecOrganisation(app, org.cible, (c) => c.query("SELECT platform.provisionner_organisation('X', $1, 'org_cccccccccccc', NULL)", [`x-${suffixe()}`])));
+    expect(code).toBe("42501");
+  });
+
+  it("les gabarits en base sont exactement les fichiers ; un gabarit modifié ou supprimé arrête les migrations", async () => {
+    const fichiers = await lireMigrations(path.resolve("db/migrations/organisation"));
+    const ranges = await enTransaction(proprietaire, (c) => c.query<{ nom: string; sql: string }>("SELECT nom, sql FROM platform.gabarits_organisation ORDER BY nom"));
+    expect(ranges.rows).toEqual(fichiers.map((m) => ({ nom: m.nom, sql: m.sql })));
+    const modifie = fichiers.map((m, i) => (i === 0 ? { ...m, sql: m.sql + "\n-- retouche" } : m));
+    await expect(enTransaction(proprietaire, (c) => synchroniserGabarits(c, modifie))).rejects.toThrow(/modifié après application/);
+    await expect(enTransaction(proprietaire, (c) => synchroniserGabarits(c, fichiers.slice(1)))).rejects.toThrow(/absent des fichiers/);
+    expect(await enTransaction(proprietaire, (c) => synchroniserGabarits(c, fichiers))).toEqual([]);
+  });
+
+  it("une organisation créée reçoit tous les gabarits, notés comme appliqués", async () => {
+    const org = await creerOrgDeTest(app, proprietaire, superadmin);
+    const notees = await enTransaction(proprietaire, (c) => c.query<{ nom: string }>("SELECT nom FROM platform.migrations_organisation WHERE schema_name = $1 ORDER BY nom", [org.schemaName]));
+    const fichiers = await lireMigrations(path.resolve("db/migrations/organisation"));
+    expect(notees.rows.map((r) => r.nom)).toEqual(fichiers.map((m) => m.nom));
   });
 });
 

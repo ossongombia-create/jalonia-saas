@@ -4,7 +4,8 @@ import { z } from "zod";
 
 const schema = z.object({
   DATABASE_URL: z.string().min(1, "DATABASE_URL manquante"),
-  DATABASE_URL_PROPRIETAIRE: z.string().min(1, "DATABASE_URL_PROPRIETAIRE manquante"),
+  // (DATABASE_URL_PROPRIETAIRE n'est PAS lue par l'application : seulement par scripts/migrer.ts et
+  // scripts/creer-superadmin.ts, depuis un fichier d'environnement réservé au déploiement.)
   SESSION_INACTIVITE_MINUTES: z.coerce.number().int().min(5).max(24 * 60).default(120),
   SESSION_DUREE_HEURES: z.coerce.number().int().min(1).max(72).default(8),
   // Fuseau horaire d'affichage des dates (nom IANA, ex. Africa/Libreville, Europe/Paris).

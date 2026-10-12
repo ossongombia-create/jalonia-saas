@@ -4,6 +4,7 @@
 // Exécuté par le rôle propriétaire (jalonia_owner). Chaque fichier passe dans sa propre transaction et
 // n'est appliqué qu'une fois (suivi dans platform.migrations et platform.migrations_organisation).
 // Un verrou consultatif empêche deux lancements simultanés.
+import { createHash } from "node:crypto";
 import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import type { Pool, PoolClient } from "pg";
@@ -66,6 +67,31 @@ export async function appliquerMigrationsOrganisation(client: PoolClient, org: O
   return nouvelles;
 }
 
+/**
+ * Range les gabarits d'organisation en base (platform.gabarits_organisation) : la fonction
+ * platform.provisionner_organisation() les applique à chaque NOUVELLE organisation (migration plateforme 0003).
+ * Un gabarit déjà rangé ne doit jamais changer (les organisations existantes l'ont déjà reçu) : s'il diffère du
+ * fichier, ou s'il a disparu des fichiers, on s'arrête. Renvoie les gabarits ajoutés.
+ */
+export async function synchroniserGabarits(client: PoolClient, migrations: Migration[]): Promise<string[]> {
+  const ranges = await client.query<{ nom: string; empreinte: string }>("SELECT nom, empreinte FROM platform.gabarits_organisation");
+  const connus = new Map(ranges.rows.map((r) => [r.nom, r.empreinte]));
+  const fichiers = new Set(migrations.map((m) => m.nom));
+  for (const nom of connus.keys()) {
+    if (!fichiers.has(nom)) throw new Error(`Gabarit d'organisation ${nom} rangé en base mais absent des fichiers : une migration ne se supprime pas.`);
+  }
+  const ajoutes: string[] = [];
+  for (const m of migrations) {
+    const empreinte = createHash("sha256").update(m.sql, "utf8").digest("hex");
+    const connue = connus.get(m.nom);
+    if (connue === empreinte) continue;
+    if (connue !== undefined) throw new Error(`Gabarit d'organisation ${m.nom} modifié après application : écrire une NOUVELLE migration au lieu de changer celle-ci.`);
+    await client.query("INSERT INTO platform.gabarits_organisation (nom, sql, empreinte) VALUES ($1, $2, $3)", [m.nom, m.sql, empreinte]);
+    ajoutes.push(m.nom);
+  }
+  return ajoutes;
+}
+
 export interface RapportMigrations {
   plateforme: string[];
   organisations: Record<string, string[]>;
@@ -98,6 +124,17 @@ export async function migrer(poolProprietaire: Pool, racine: string): Promise<Ra
           throw new Error(`Échec de la migration plateforme ${m.nom} : ${(erreur as Error).message}`);
         }
         rapport.plateforme.push(m.nom);
+      }
+
+      // Gabarits des nouvelles organisations (rangés en base pour la fonction de création, migration 0003).
+      await client.query("BEGIN");
+      try {
+        await client.query("SELECT set_config('search_path', '', true)");
+        await synchroniserGabarits(client, organisation);
+        await client.query("COMMIT");
+      } catch (erreur) {
+        await client.query("ROLLBACK");
+        throw new Error(`Échec du rangement des gabarits d'organisation : ${(erreur as Error).message}`);
       }
 
       const orgs = await client.query<{ schema_name: string; role_name: string }>(

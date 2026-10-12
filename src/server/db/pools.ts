@@ -1,15 +1,15 @@
-// Connexions à PostgreSQL (une réserve de connexions par rôle), créées au premier usage et gardées
-// dans globalThis : en développement, le rechargement à chaud ne multiplie pas les connexions.
-//   - poolApplication()  : rôle jalonia_app — TOUTES les requêtes de l'application ;
-//   - poolProprietaire() : rôle jalonia_owner — UNIQUEMENT la création d'organisation (création de
-//                          schéma et de rôle PostgreSQL), réservée au superadmin.
+// Connexions à PostgreSQL, créées au premier usage et gardées dans globalThis : en développement, le
+// rechargement à chaud ne multiplie pas les connexions.
+//   - poolApplication() : rôle jalonia_app — TOUTES les requêtes de l'application, y compris la création d'une
+//     organisation (par la fonction platform.provisionner_organisation). L'application en service ne détient PAS
+//     le mot de passe du rôle propriétaire : seuls les scripts de migration et de création de superadmin s'en
+//     servent, avec un fichier d'environnement à part (voir deploy/INSTALL-VPS.md).
 import "server-only";
 import { Pool } from "pg";
 import { config } from "../config";
 
 interface Reserves {
   application?: Pool;
-  proprietaire?: Pool;
 }
 
 const global = globalThis as typeof globalThis & { __jaloniaPools?: Reserves };
@@ -26,6 +26,3 @@ export function poolApplication(): Pool {
   return (reserves.application ??= creer(config().DATABASE_URL, 10, "jalonia-app"));
 }
 
-export function poolProprietaire(): Pool {
-  return (reserves.proprietaire ??= creer(config().DATABASE_URL_PROPRIETAIRE, 2, "jalonia-proprietaire"));
-}

@@ -1,13 +1,11 @@
 "use server";
 // Actions de l'espace superadministrateur. CHAQUE action revérifie le rôle (exigerSuperadmin) :
 // une action serveur est appelable directement, sans passer par la page qui l'affiche.
-import path from "node:path";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { identifiant, schemaNouvelleOrganisation } from "@/lib/validation";
 import type { EtatAction } from "@/lib/etat-action";
-import { poolApplication, poolProprietaire } from "@/server/db/pools";
-import { lireMigrations } from "@/server/migrations/lanceur";
+import { poolApplication } from "@/server/db/pools";
 import { creerOrganisation } from "@/server/organisations/provisionnement";
 import { changerStatutOrganisation } from "@/server/organisations/service";
 import {
@@ -31,11 +29,8 @@ export async function actionCreerOrganisation(_etat: EtatAction, formulaire: For
       adminNom: champ(formulaire, "adminNom"),
       adminMotDePasse: champ(formulaire, "adminMotDePasse"),
     });
-    const migrations = await lireMigrations(path.join(process.cwd(), "db/migrations/organisation"));
-    if (migrations.length === 0) throw new Error("Migrations d'organisation introuvables (dossier db/migrations/organisation).");
     const creee = await creerOrganisation(
-      poolProprietaire(),
-      migrations,
+      poolApplication(),
       { nom: saisie.nom, slug: saisie.slug, admin: { email: saisie.adminEmail, nom: saisie.adminNom, motDePasseProvisoire: saisie.adminMotDePasse } },
       ctx.acteur,
     );
