@@ -205,6 +205,7 @@ export const fr = {
   "journal.cible": "Cible",
   "journal.action.CONNEXION": "Connexion",
   "journal.action.CONNEXION_ECHEC": "Échec de connexion",
+  "journal.action.CONNEXION_LIMITEE": "Connexions refusées (trop d'échecs depuis une adresse)",
   "journal.action.COMPTE_VERROUILLE": "Compte verrouillé",
   "journal.action.DECONNEXION": "Déconnexion",
   "journal.action.SESSION_EXPIREE": "Session expirée",

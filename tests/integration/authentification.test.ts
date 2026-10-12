@@ -68,14 +68,14 @@ describe("connexion", () => {
     expect(await derniereAction(email)).toEqual({ action: "CONNEXION_ECHEC", details: { raison: "inconnu" } });
   });
 
-  it(`verrouillage après ${ECHECS_AVANT_VERROU} échecs, même avec le bon mot de passe ensuite`, async () => {
+  it(`verrouillage après ${ECHECS_AVANT_VERROU} échecs depuis une adresse, même avec le bon mot de passe ensuite`, async () => {
     const u = await nouvelUtilisateur();
     for (let i = 0; i < ECHECS_AVANT_VERROU; i++) expect((await connexion(u.email, "mauvais-mot-de-passe")).ok).toBe(false);
     expect(await connexion(u.email, MDP_TEST)).toEqual({ ok: false, raison: "verrouille" });
     const verrou = await enTransaction(app, (c) => c.query("SELECT 1 FROM platform.journal WHERE acteur_email = $1 AND action = 'COMPTE_VERROUILLE'", [u.email]));
     expect(verrou.rowCount).toBe(1);
-    // La réactivation par le superadmin lève le verrou… seulement pour un compte désactivé ; ici on attend la fin.
-    await enTransaction(proprietaire, (c) => c.query("UPDATE platform.utilisateurs SET verrouille_jusqua = now() - interval '1 second' WHERE id = $1", [u.id]));
+    // Fin de la fenêtre de 15 min (on vieillit les tentatives) : la connexion repasse.
+    await enTransaction(proprietaire, (c) => c.query("UPDATE platform.tentatives_connexion SET horodatage = horodatage - interval '16 minutes' WHERE email = $1", [u.email]));
     expect((await connexion(u.email, MDP_TEST)).ok).toBe(true);
   });
 

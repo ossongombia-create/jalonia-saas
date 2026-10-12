@@ -205,6 +205,7 @@ export const en: Record<Cle, string> = {
   "journal.cible": "Target",
   "journal.action.CONNEXION": "Sign-in",
   "journal.action.CONNEXION_ECHEC": "Failed sign-in",
+  "journal.action.CONNEXION_LIMITEE": "Sign-ins refused (too many failures from one address)",
   "journal.action.COMPTE_VERROUILLE": "Account locked",
   "journal.action.DECONNEXION": "Sign-out",
   "journal.action.SESSION_EXPIREE": "Session expired",
