@@ -14,9 +14,11 @@ interface Props {
   /** « ligne » : bouton compact à côté des champs ; « danger » : bouton d'action sensible. */
   variante?: "normal" | "ligne" | "danger" | "discret";
   className?: string;
+  /** Question posée avant l'envoi (action sensible : suppression…). Réponse « Annuler » : rien n'est envoyé. */
+  confirmation?: string;
 }
 
-export function FormulaireAction({ action, libelle, libelleEnCours, children, vider = true, variante = "normal", className }: Props) {
+export function FormulaireAction({ action, libelle, libelleEnCours, children, vider = true, variante = "normal", className, confirmation }: Props) {
   const [etat, envoyer, enCours] = useActionState(action, ETAT_INITIAL);
   const formulaire = useRef<HTMLFormElement>(null);
 
@@ -32,6 +34,7 @@ export function FormulaireAction({ action, libelle, libelleEnCours, children, vi
       className={`formulaire formulaire-${variante} ${className ?? ""}`}
       onSubmit={(evenement) => {
         evenement.preventDefault();
+        if (confirmation && !window.confirm(confirmation)) return;
         const donnees = new FormData(evenement.currentTarget);
         startTransition(() => envoyer(donnees));
       }}

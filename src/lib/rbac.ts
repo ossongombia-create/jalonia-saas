@@ -30,8 +30,11 @@ export const DROITS = {
   "organisation.membres.gerer": { roles: ["ADMIN_ORGANISATION"], etat: "actif" },
   "organisation.journal.lire": { roles: ["ADMIN_ORGANISATION"], etat: "actif" },
   // ----- Documents (cycle de vie : brouillon → vérification → approbation → publication → archivage) -----
-  "documents.lire": { roles: ["ADMIN_ORGANISATION", "REDACTEUR", "VERIFICATEUR", "APPROBATEUR", "LECTEUR"], etat: "prevu" },
-  "documents.rediger": { roles: ["REDACTEUR"], etat: "prevu" },
+  // Lire : ouvrir, voir, exporter (Word, PDF) les documents et la cartographie. Les autres rôles sont en lecture seule.
+  "documents.lire": { roles: ["ADMIN_ORGANISATION", "REDACTEUR", "VERIFICATEUR", "APPROBATEUR", "LECTEUR"], etat: "actif" },
+  "documents.rediger": { roles: ["ADMIN_ORGANISATION", "REDACTEUR"], etat: "actif" },
+  "documents.supprimer": { roles: ["ADMIN_ORGANISATION", "REDACTEUR"], etat: "actif" },
+  "cartographie.modifier": { roles: ["ADMIN_ORGANISATION", "REDACTEUR"], etat: "actif" },
   "documents.soumettre": { roles: ["REDACTEUR"], etat: "prevu" },
   "documents.verifier": { roles: ["VERIFICATEUR"], etat: "prevu" },
   "documents.approuver": { roles: ["APPROBATEUR"], etat: "prevu" },

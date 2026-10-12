@@ -7,16 +7,19 @@
     "node": ">=22.12.0"
   },
   "scripts": {
+    "predev": "node scripts/copier-editeur.mjs",
     "dev": "next dev",
+    "prebuild": "node scripts/copier-editeur.mjs",
     "build": "next build",
     "start": "node .next/standalone/server.js",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
-    "test": "npm run test:unit && npm run test:integration",
+    "test": "npm run test:unit && npm run test:editeur && npm run test:integration",
     "test:unit": "vitest run --project unit",
     "test:integration": "vitest run --project integration",
     "db:migrate": "tsx scripts/migrer.ts",
-    "superadmin:creer": "tsx scripts/creer-superadmin.ts"
+    "superadmin:creer": "tsx scripts/creer-superadmin.ts",
+    "test:editeur": "node --test \"editeur/tests/*.test.mjs\""
   },
   "dependencies": {
     "@node-rs/argon2": "2.2.2",

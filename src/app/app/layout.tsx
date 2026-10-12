@@ -7,6 +7,7 @@ export default async function MiseEnPageOrganisation({ children }: { children: R
   const ctx = await exigerOrganisation();
   const { t, organisation } = ctx;
   const liens: LienCoque[] = [{ href: "/app", libelle: t("nav.accueil"), exact: true }];
+  if (aLeDroit(organisation.roles, "documents.lire")) liens.push({ href: "/app/documents", libelle: t("nav.documents") });
   if (aLeDroit(organisation.roles, "organisation.membres.gerer")) liens.push({ href: "/app/membres", libelle: t("nav.membres") });
   if (aLeDroit(organisation.roles, "organisation.journal.lire")) liens.push({ href: "/app/journal", libelle: t("nav.journal") });
 

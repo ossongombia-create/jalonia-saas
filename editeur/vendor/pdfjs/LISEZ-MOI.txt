@@ -1,0 +1,4 @@
+pdf.js (Mozilla) version 6.3.289, build « legacy », minifié — licence Apache 2.0 (voir LICENSE).
+Utilisé uniquement pour LIRE un PDF de cartographie des processus (menu Fichier > Cartographie des processus > Importer un PDF).
+Chargé à la demande, dans le navigateur : le PDF n'est envoyé nulle part.
+Les fichiers ont l'extension .js (et non .mjs) parce que certains serveurs locaux (Live Server) ne servent pas .mjs avec le bon type de fichier.

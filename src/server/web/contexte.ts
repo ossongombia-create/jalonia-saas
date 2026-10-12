@@ -86,7 +86,7 @@ export const lireContexte = cache(async (): Promise<Contexte | null> => {
     fuseau: config().FUSEAU_HORAIRE,
     adhesions,
     organisation,
-    acteur: { id: utilisateur.id, email: utilisateur.email, ip: ipDepuisEntetes(entetes), agent: agentDepuisEntetes(entetes) },
+    acteur: { id: utilisateur.id, email: utilisateur.email, nom: utilisateur.nom, ip: ipDepuisEntetes(entetes), agent: agentDepuisEntetes(entetes) },
   };
 });
 

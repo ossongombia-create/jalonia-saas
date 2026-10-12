@@ -11,6 +11,8 @@ export function proxy(requete: NextRequest) {
   if (PAGES_PUBLIQUES.has(pathname)) return NextResponse.next();
   const aUnCookie = requete.cookies.getAll().some((c) => COOKIE_SESSION.test(c.name));
   if (aUnCookie) return NextResponse.next();
+  // Les routes JSON (éditeur) répondent 401 : une redirection vers la page de connexion ne leur servirait à rien.
+  if (pathname.startsWith("/api/")) return NextResponse.json({ erreur: "session" }, { status: 401, headers: { "Cache-Control": "no-store" } });
   return NextResponse.redirect(new URL("/connexion", requete.url));
 }
 

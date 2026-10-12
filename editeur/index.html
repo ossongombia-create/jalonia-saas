@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <!-- Version d'essai : la page n'a pas à être trouvée par les moteurs de recherche (le lien est donné aux personnes invitées). -->
+  <meta name="robots" content="noindex, nofollow">
+  <!-- Le titre définitif (le nom de l'outil, réglé dans js/config.js) est posé au démarrage par main.js. -->
+  <title>Rédaction graphique de procédures</title>
+  <link rel="icon" type="image/svg+xml" href="img/favicon.svg">
+  <meta name="theme-color" content="#005a70">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body data-vue="accueil">
+  <!-- Colonne sarcelle : la marque, la procédure en cours, les 4 étapes, la langue -->
+  <aside id="rail">
+    <button type="button" id="btn-accueil" class="marque" data-i18n-titre="accueil.retour">
+      <svg class="logo-marque" width="44" height="44" viewBox="0 0 100 100" aria-hidden="true"><defs>
+<linearGradient id="mA" gradientUnits="userSpaceOnUse" x1="14" y1="14" x2="88" y2="72"><stop offset="0" stop-color="#d9cdea"/><stop offset="1" stop-color="#9fd5e2"/></linearGradient>
+<linearGradient id="mB" gradientUnits="userSpaceOnUse" x1="86" y1="86" x2="14" y2="28"><stop offset="0" stop-color="#9fd5e2"/><stop offset="1" stop-color="#d9cdea"/></linearGradient>
+</defs>
+<path d="M21 23.8L50 7L87.2 28.5V58" fill="none" stroke="url(#mA)" stroke-width="10" stroke-linejoin="round"/>
+<path d="M76 77.9L50 93L12.8 71.5V42" fill="none" stroke="url(#mB)" stroke-width="10" stroke-linejoin="round"/>
+<path d="M75.4 56H99L87.2 76Z" fill="#9fd5e2" transform="translate(-0.0 0)"/>
+<path d="M24.6 44H1L12.8 24Z" fill="#d9cdea"/>
+<path d="M41 32H55L64 41V63a5 5 0 0 1-5 5H41a5 5 0 0 1-5-5V37a5 5 0 0 1 5-5Z" fill="none" stroke="#ffffff" stroke-width="3.6" stroke-linejoin="round"/>
+<path d="M55 32.5V41H63.5" fill="none" stroke="#d9cdea" stroke-width="3.2" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M42.5 48.5H51M42.5 54.5H57.5M42.5 60.5H50" fill="none" stroke="#ffffff" stroke-width="3.2" stroke-linecap="round"/></svg>
+      <div class="marque-nom" data-i18n="app.marque"></div>
+      <div class="marque-sous" data-i18n="app.sous_titre"></div>
+    </button>
+    <!-- En ligne (application web de l'organisation) : retour à la liste des documents, après enregistrement (js/en-ligne-ui.js) -->
+    <a id="lien-documents" class="rail-lien lien-documents en-ligne-seulement" href="/app/documents" data-i18n-titre="enligne.mes_documents.aide"><span data-i18n="enligne.retour_documents"></span></a>
+    <div id="carte-procedure" class="carte-procedure"></div>
+    <nav id="parcours"></nav>
+    <div class="rail-bas">
+      <!-- Version d'essai : numéro de version, bouton de retour, guide de démarrage -->
+      <div class="rail-essai">
+        <p class="rail-essai-ligne"><span class="rail-essai-badge" data-i18n="apropos.essai"></span><span id="rail-version"></span></p>
+        <button type="button" id="btn-retour" class="rail-lien local-seulement"><span data-icone="info" data-taille="17"></span><span data-i18n="retour.bouton"></span></button>
+        <a id="lien-guide" class="rail-lien local-seulement" href="guide-fr.html" target="_blank" rel="noopener"><span data-icone="doc" data-taille="17"></span><span data-i18n="retour.guide"></span></a>
+        <button type="button" id="btn-mentions" class="rail-lien"><span data-icone="shield" data-taille="17"></span><span data-i18n="mentions.bouton"></span></button>
+      </div>
+      <div class="langues" role="group" aria-label="Langue">
+        <button type="button" data-langue="fr">FR</button>
+        <button type="button" data-langue="en">EN</button>
+      </div>
+    </div>
+  </aside>
+
+  <div id="corps">
+    <header id="entete">
+      <div class="entete-titre">
+        <p id="entete-kicker"></p>
+        <h1 id="entete-titre"></h1>
+      </div>
+      <div id="barre-outils">
+        <button type="button" id="btn-annuler" class="bouton-rond" data-i18n-titre="fichier.annuler" data-raccourci="Ctrl+Z"><span data-icone="undo"></span></button>
+        <button type="button" id="btn-retablir" class="bouton-rond" data-i18n-titre="fichier.retablir" data-raccourci="Ctrl+Y"><span data-icone="redo"></span></button>
+        <div class="menu-fichier">
+          <button type="button" id="btn-fichier" class="bouton-pilule" aria-haspopup="true" aria-expanded="false" aria-controls="menu-fichier">
+            <span data-icone="folder" data-taille="17"></span><span data-i18n="fichier.menu"></span><span data-icone="chev" data-taille="16"></span>
+          </button>
+          <div id="menu-fichier" role="group" hidden>
+            <button type="button" id="btn-nouvelle" class="local-seulement"><span data-icone="plus" data-taille="17"></span><span data-i18n="fichier.nouvelle"></span></button>
+            <button type="button" id="btn-exemple" class="redaction-seulement"><span data-icone="doc" data-taille="17"></span><span data-i18n="fichier.exemple"></span></button>
+            <button type="button" id="btn-exemple-it" class="redaction-seulement"><span data-icone="doc" data-taille="17"></span><span data-i18n="fichier.exemple_it"></span></button>
+            <button type="button" id="btn-ouvrir" class="redaction-seulement"><span data-icone="folder" data-taille="17"></span><span data-i18n="fichier.ouvrir"></span></button>
+            <button type="button" id="btn-cartographie"><span data-icone="carto" data-taille="17"></span><span data-i18n="fichier.cartographie"></span></button>
+            <button type="button" id="btn-importer-word" class="redaction-seulement"><span data-icone="upload" data-taille="17"></span><span data-i18n="fichier.importer_word"></span></button>
+            <button type="button" id="btn-copie-json" class="en-ligne-seulement"><span data-icone="dl" data-taille="17"></span><span data-i18n="enligne.copie_json"></span></button>
+          </div>
+        </div>
+        <span id="etat-fichier" class="etat-fichier" role="status" hidden data-i18n-titre="fichier.non_enregistre.aide"><span data-icone="warn" data-taille="16"></span><span data-i18n="fichier.non_enregistre"></span></span>
+        <span id="etat-synchro" class="etat-synchro en-ligne-seulement" role="status" aria-live="polite"></span>
+        <button type="button" id="btn-enregistrer" class="bouton-plein redaction-seulement"><span data-icone="save" data-taille="17"></span><span data-i18n="fichier.enregistrer"></span></button>
+        <input type="file" id="fichier-entree" accept=".json,application/json" hidden>
+        <input type="file" id="fichier-word" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document" hidden>
+      </div>
+    </header>
+    <p id="bandeau-lecture-seule" class="bandeau-lecture-seule en-ligne-seulement" role="note" hidden data-i18n="enligne.lecture_seule"></p>
+
+    <main id="zone-travail">
+      <section id="colonne-saisie">
+        <aside id="rapport-import" hidden>
+          <h3 data-i18n="import.titre"></h3>
+          <ul id="rapport-liste"></ul>
+          <button type="button" id="rapport-fermer" data-i18n="import.fermer"></button>
+        </aside>
+        <div id="etape-contenu"></div>
+      </section>
+    </main>
+
+    <div id="etape-navigation"></div>
+
+    <!-- Accueil « Mon espace » (v0.22) : dessiné par js/accueil-ui.js ; visible quand <body data-vue="accueil"> -->
+    <section id="accueil" aria-labelledby="accueil-titre"></section>
+
+    <section id="zone-diagnostic" aria-live="polite" data-etat="ok">
+      <button type="button" id="diagnostic-bascule" aria-expanded="false" aria-controls="diagnostic" data-i18n-titre="diag.deplier">
+        <span class="icone-diagnostic" id="diagnostic-icone"></span>
+        <span class="titre-diagnostic" data-i18n="zone.diagnostic"></span>
+        <span id="diagnostic-resume"></span>
+        <span id="diagnostic-premier"></span>
+        <span class="fleche-diagnostic" data-icone="chev" data-taille="18"></span>
+      </button>
+      <ul id="diagnostic"></ul>
+    </section>
+  </div>
+
+  <dialog id="fenetre-apercu" aria-labelledby="apercu-titre">
+    <div class="apercu-boite">
+      <div class="apercu-entete">
+        <h2 id="apercu-titre"></h2>
+        <span id="apercu-info"></span>
+        <button type="button" id="apercu-fermer" data-i18n="apercu.fermer"></button>
+      </div>
+      <div class="apercu-corps">
+        <div id="zone-dessin"></div>
+        <div id="apercu-document"></div>
+      </div>
+    </div>
+  </dialog>
+  <dialog id="fenetre-carto" aria-labelledby="carto-titre">
+    <div class="apercu-boite">
+      <div class="apercu-entete">
+        <h2 id="carto-titre" data-i18n="carto.titre"></h2>
+        <span id="carto-info"></span>
+        <span id="carto-etat" class="etat-synchro en-ligne-seulement" role="status" aria-live="polite"></span>
+        <button type="button" id="carto-fermer" data-i18n="apercu.fermer"></button>
+      </div>
+      <div class="apercu-corps"><p id="carto-lecture-seule" class="bandeau-lecture-seule en-ligne-seulement" role="note" hidden data-i18n="enligne.lecture_seule_carto"></p><div id="carto-contenu"></div></div>
+    </div>
+  </dialog>
+  <dialog id="fenetre-retour" aria-labelledby="retour-titre">
+    <div class="retour-boite">
+      <div class="apercu-entete">
+        <h2 id="retour-titre"></h2>
+        <button type="button" id="retour-fermer" data-i18n="apercu.fermer"></button>
+      </div>
+      <div id="retour-contenu"></div>
+    </div>
+  </dialog>
+  <dialog id="fenetre-mentions" aria-labelledby="mentions-titre">
+    <div class="retour-boite">
+      <div class="apercu-entete">
+        <h2 id="mentions-titre"></h2>
+        <button type="button" id="mentions-fermer" data-i18n="apercu.fermer"></button>
+      </div>
+      <div id="mentions-contenu"></div>
+    </div>
+  </dialog>
+  <!-- En ligne : l'enregistrement est refusé (conflit, session expirée…) : explication et choix (js/en-ligne-ui.js) -->
+  <dialog id="fenetre-synchro" class="en-ligne-seulement" aria-labelledby="synchro-titre">
+    <div class="retour-boite">
+      <div class="apercu-entete">
+        <h2 id="synchro-titre"></h2>
+        <button type="button" id="synchro-fermer" data-i18n="apercu.fermer"></button>
+      </div>
+      <div id="synchro-contenu"></div>
+    </div>
+  </dialog>
+  <!-- En ligne : écran d'ouverture (chargement du document, ou explication si l'ouverture est impossible) -->
+  <div id="ecran-en-ligne" class="en-ligne-seulement" role="status" aria-live="polite">
+    <p id="ecran-en-ligne-texte"></p>
+    <div id="ecran-en-ligne-actions"></div>
+  </div>
+  <div id="zone-impression" aria-hidden="true"></div>
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>

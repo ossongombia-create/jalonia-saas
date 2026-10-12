@@ -23,3 +23,6 @@ npm-debug.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# copie de l'éditeur générée à la compilation (source : editeur/)
+/public/editeur/

@@ -18,6 +18,10 @@ export const ACTIONS = [
   "MEMBRE_AJOUTE",
   "DROITS_MODIFIES",
   "MEMBRE_RETIRE",
+  "DOCUMENT_CREE",
+  "DOCUMENT_MODIFIE",
+  "DOCUMENT_SUPPRIME",
+  "CARTOGRAPHIE_MODIFIEE",
 ] as const;
 
 export type Action = (typeof ACTIONS)[number];

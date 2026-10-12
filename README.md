@@ -10,7 +10,7 @@ des autres par PostgreSQL lui-même.
 | Incrément | Contenu | État |
 |---|---|---|
 | 1 — Socle | Connexion, sessions suivies et révocables, superadmin (organisations, utilisateurs, sessions, journal d'audit, matrice des droits), espace organisation (membres, rôles, journal), isolation par schéma et rôle PostgreSQL, français / anglais | ✔ |
-| 2 — Documents Qualigramme | Reprise des fonctions de l'application d'origine (cartographie, procédures, instructions, logigramme, export Word, questionnement, modèles) | à venir |
+| 2 — Documents Qualigramme | L'éditeur d'origine (cartographie N1 et fiches, procédures N2, instructions N3, logigramme, export et import Word, PDF, questionnement avec « sans objet », synthèse, modèles) en ligne : documents et cartographie enregistrés automatiquement dans l'espace de l'organisation, versions et conflits gérés, lecture seule selon le rôle, suppression tracée | ✔ |
 | 3 — Cycle de vie | Versions, vérification, approbation, publication, archivage, traçabilité | à venir |
 | 4 — Pilotage | Risques / opportunités / actions, objectifs et indicateurs | à venir |
 | 5 — Exploitation | Mode maintenance (planification, alertes par e-mail et fenêtre), e-mails (SMTP) | à venir |
@@ -31,7 +31,9 @@ src/
   actions/        actions serveur (chacune revérifie l'identité et les droits)
   components/     composants d'interface
   lib/            code partagé : rôles et droits (rbac.ts), validation, traductions (i18n/)
-  server/         accès aux données : base, authentification, organisations, membres, audit…
+  server/         accès aux données : base, authentification, organisations, membres, documents, audit…
+editeur/          l'éditeur Qualigramme d'origine (JavaScript, sans dépendance) et ses tests (node --test)
+                  → copié dans public/editeur/ à chaque « npm run build » / « npm run dev », en mode « en ligne »
 db/migrations/
   plateforme/     schéma « platform » (appliqué une fois)
   organisation/   gabarit appliqué à CHAQUE organisation
@@ -60,8 +62,13 @@ npm run dev
 npm run typecheck          # types
 npm run lint               # règles de code
 npm run test:unit          # tests unitaires
+npm run test:editeur       # tests de l'éditeur Qualigramme (node --test)
 npm run test:integration   # tests sur une vraie base PostgreSQL
 ```
+
+L'éditeur (`editeur/`) reste utilisable seul, en local : ouvrir `editeur/index.html` (brouillon dans le
+navigateur, enregistrement en fichier .json). Dans l'application web, la copie `public/editeur/` porte
+`<html data-mode="en-ligne">` : le document et la cartographie viennent du serveur et y sont enregistrés.
 
 Les tests d'intégration créent une base PostgreSQL temporaire (puis la suppriment). Ils ont besoin d'un
 superutilisateur PostgreSQL **de test** (variable `PG_TEST_ADMIN_URL`, par défaut

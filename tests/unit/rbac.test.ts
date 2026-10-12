@@ -14,7 +14,7 @@ describe("rôles et droits", () => {
   });
 
   it("le superadmin n'a PAS de droit implicite sur les documents des organisations", () => {
-    for (const d of LISTE_DROITS.filter((x) => x.startsWith("documents.") || x.startsWith("organisation."))) {
+    for (const d of LISTE_DROITS.filter((x) => !x.startsWith("plateforme."))) {
       expect(aLeDroit([ROLE_SUPERADMIN], d), d).toBe(false);
     }
   });
@@ -27,6 +27,17 @@ describe("rôles et droits", () => {
     expect(aLeDroit(["APPROBATEUR"], "documents.approuver")).toBe(true);
     expect(aLeDroit(["LECTEUR"], "documents.lire")).toBe(true);
     expect(aLeDroit(["LECTEUR"], "documents.rediger")).toBe(false);
+  });
+
+  it("documents : rédaction, suppression et cartographie pour l'administrateur et le rédacteur ; lecture seule pour les autres", () => {
+    for (const r of ["ADMIN_ORGANISATION", "REDACTEUR"] as const) {
+      for (const d of ["documents.lire", "documents.rediger", "documents.supprimer", "cartographie.modifier"] as const) expect(aLeDroit([r], d), `${r} / ${d}`).toBe(true);
+    }
+    for (const r of ["VERIFICATEUR", "APPROBATEUR", "LECTEUR"] as const) {
+      expect(aLeDroit([r], "documents.lire"), r).toBe(true);
+      for (const d of ["documents.rediger", "documents.supprimer", "cartographie.modifier"] as const) expect(aLeDroit([r], d), `${r} / ${d}`).toBe(false);
+    }
+    for (const d of ["documents.lire", "documents.rediger", "documents.supprimer", "cartographie.modifier"] as const) expect(DROITS[d].etat, d).toBe("actif");
   });
 
   it("plusieurs rôles se cumulent ; aucun rôle = aucun droit", () => {

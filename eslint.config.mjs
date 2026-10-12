@@ -12,6 +12,9 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Éditeur Qualigramme d'origine (JavaScript du navigateur, testé par ses propres tests : npm run test:editeur).
+    "editeur/**",
+    "public/editeur/**",
   ]),
 ]);
 
