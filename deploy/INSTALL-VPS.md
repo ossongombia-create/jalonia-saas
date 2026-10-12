@@ -5,6 +5,10 @@ Serveur : Vultr, 1 Go de mémoire, IP **155.138.146.14**. Adresse finale : **htt
 Durée : environ 30 minutes. Chaque bloc se copie-colle **tel quel**, dans l'ordre, dans une session SSH
 connectée en **root**. Si vous êtes connecté avec un autre utilisateur, tapez d'abord `sudo -i`.
 
+> **Si un collage affiche `^[[200~` au début de la commande** (« command not found ») : le terminal ne gère
+> pas le « collage encadré ». Tapez **au clavier** `bind 'set enable-bracketed-paste off'`, puis, pour que
+> ce soit permanent : `echo 'set enable-bracketed-paste off' >> ~/.inputrc`.
+
 > Aucune valeur secrète n'est à recopier à la main : les mots de passe de la base et le secret des sessions
 > sont générés sur le serveur et ne quittent jamais le fichier `/etc/jalonia/jalonia.env`.
 
@@ -13,6 +17,8 @@ connectée en **root**. Si vous êtes connecté avec un autre utilisateur, tapez
 ## Étape 0 — Le nom de domaine (chez le gestionnaire DNS de mosa-apps.com)
 
 Créez un enregistrement **A** : nom `jalonia`, valeur `155.138.146.14`, TTL par défaut.
+**Chez Cloudflare : nuage GRIS (« DNS only »)**, pas orange. Avec le nuage orange, Caddy ne gère pas
+lui-même le certificat et Jalonia enregistrerait l'adresse IP de Cloudflare au lieu de celle des utilisateurs.
 Vérifiez ensuite depuis le serveur (étape 1) que le nom répond :
 
 ```bash
@@ -162,13 +168,19 @@ systemctl enable jalonia
 
 ## Étape 9 — HTTPS (Caddy)
 
+Caddy doit être seul sur les ports 80 et 443. Si un autre serveur web est installé (nginx, Apache), il
+répondrait à sa place (erreur 404) : on le désactive d'abord.
+
 ```bash
+ss -ltnp | grep -E ':(80|443) '
+systemctl disable --now nginx apache2 2>/dev/null; true
 cp /opt/jalonia/depot/deploy/Caddyfile /etc/caddy/Caddyfile
 caddy validate --config /etc/caddy/Caddyfile
 systemctl restart caddy
+systemctl is-active caddy
 ```
 
-`caddy validate` doit se terminer par « Valid configuration ».
+`caddy validate` doit se terminer par « Valid configuration », et `systemctl is-active caddy` répondre `active`.
 
 ## Étape 10 — Premier déploiement
 
