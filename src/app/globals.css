@@ -160,14 +160,15 @@ a:hover {
   padding: 0 0.4rem;
 }
 .rail-logo {
-  font-size: 1.5rem;
-  font-weight: 700;
-  color: #fff;
-  text-decoration: none;
-  letter-spacing: 0.01em;
+  display: block;
+  line-height: 0;
+  border-radius: 6px;
 }
-.rail-logo:hover {
-  color: #fff;
+.rail-logo img {
+  display: block;
+  width: 100%;
+  max-width: 214px;
+  height: auto;
 }
 .rail-espace {
   font-size: 0.85rem;
@@ -617,19 +618,6 @@ legend {
   max-width: 440px;
   padding: 1.8rem 1.9rem;
 }
-.marque-simple {
-  text-align: center;
-  color: #fff;
-  margin-bottom: 1.2rem;
-}
-.marque-simple strong {
-  display: block;
-  font-size: 2rem;
-  font-weight: 700;
-}
-.marque-simple span {
-  color: var(--rail-doux);
-}
 .liste-organisations {
   list-style: none;
   padding: 0;
@@ -698,4 +686,13 @@ a.stat:hover {
 }
 code {
   font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+}
+
+/* ----- Logo dans les cartes (connexion, mot de passe, choix d'organisation) ----- */
+.logo-carte {
+  display: block;
+  width: 100%;
+  max-width: 300px;
+  height: auto;
+  margin: 0.4rem auto 1.4rem;
 }

@@ -15,6 +15,7 @@ export function proxy(requete: NextRequest) {
 }
 
 export const config = {
-  // Tout, sauf la sonde de santé, les fichiers statiques de Next.js et l'icône.
-  matcher: ["/((?!api/sante|_next/static|_next/image|favicon\\.ico).*)"],
+  // Tout, sauf : la sonde de santé, les fichiers statiques de Next.js, et ce que le navigateur demande SANS
+  // être connecté — icônes, manifeste d'installation (sinon : redirection, et icône ou installation cassées).
+  matcher: ["/((?!api/sante|_next/static|_next/image|favicon\\.ico$|icon(?:\\.svg)?$|apple-icon(?:\\.png)?$|manifest\\.webmanifest$|icones/).*)"],
 };

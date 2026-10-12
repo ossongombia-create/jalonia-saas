@@ -4,6 +4,7 @@ import { actionChangerLangue, actionDeconnexion } from "@/actions/compte";
 import type { Contexte } from "@/server/web/contexte";
 import { ChoixLangue } from "./ChoixLangue";
 import { LienNav } from "./LienNav";
+import { Logo } from "./Logo";
 
 export interface LienCoque {
   href: string;
@@ -26,7 +27,7 @@ export function Coque({ ctx, espace, liens, liensSecondaires = [], children }: P
       <aside className="rail">
         <div className="rail-marque">
           <Link href="/" className="rail-logo">
-            {t("app.nom")}
+            <Logo variante="clair" largeur={214} prioritaire />
           </Link>
           <span className="rail-espace">{espace}</span>
         </div>

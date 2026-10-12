@@ -2,6 +2,7 @@ import Link from "next/link";
 import { actionChoisirOrganisation, actionDeconnexion } from "@/actions/compte";
 import { exigerContexte } from "@/server/web/contexte";
 import { titrePage } from "@/server/web/metadonnees";
+import { Logo } from "@/components/Logo";
 
 export const generateMetadata = titrePage("org_choix.titre");
 
@@ -12,10 +13,8 @@ export default async function PageChoisirOrganisation() {
 
   return (
     <div className="page-simple">
-      <div className="marque-simple">
-        <strong>{t("app.nom")}</strong>
-      </div>
       <section className="carte">
+        <Logo variante="couleur" largeur={300} className="logo-carte" prioritaire />
         <h1>{t("org_choix.titre")}</h1>
         {actives.length === 0 ? (
           <p>{t("org_choix.aucune")}</p>
