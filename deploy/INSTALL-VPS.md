@@ -10,7 +10,12 @@ connectée en **root**. Si vous êtes connecté avec un autre utilisateur, tapez
 > ce soit permanent : `echo 'set enable-bracketed-paste off' >> ~/.inputrc`.
 
 > Aucune valeur secrète n'est à recopier à la main : les mots de passe de la base et le secret des sessions
-> sont générés sur le serveur et ne quittent jamais le fichier `/etc/jalonia/jalonia.env`.
+> sont générés sur le serveur et ne quittent jamais les fichiers `/etc/jalonia/jalonia.env` (configuration
+> de l'application, lue par systemd) et `/etc/jalonia/proprietaire.env` (mot de passe du rôle propriétaire
+> de la base, lu seulement pour les migrations).
+
+> **Jalonia est déjà installé et en service ?** Ne refaites pas les étapes ci-dessous : appliquez une fois la
+> section [Durcissement d'une installation existante](#durcissement-dune-installation-existante-une-fois).
 
 ---
 
@@ -91,10 +96,17 @@ node -v
 
 `node -v` doit afficher `v24.…`.
 
-## Étape 5 — Utilisateur système et dossiers
+## Étape 5 — Comptes système et dossiers
+
+Deux comptes, sans mot de passe ni connexion possible :
+
+- **jalonia** récupère le code, le construit et lance les migrations de la base ;
+- **jalonia-run** fait tourner l'application. Il ne possède rien : il ne peut modifier ni le code, ni le
+  script de déploiement, ni lire les fichiers de configuration.
 
 ```bash
 useradd --system --create-home --home-dir /home/jalonia --shell /usr/sbin/nologin jalonia
+useradd --system --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin jalonia-run
 mkdir -p /opt/jalonia/versions
 chown -R jalonia:jalonia /opt/jalonia
 ```
@@ -121,9 +133,15 @@ sudo -u jalonia -H git clone git@github.com:ossongombia-create/jalonia-saas.git 
 La première commande doit répondre « …successfully authenticated… » (elle se termine volontairement par
 un code d'erreur : c'est normal). La seconde télécharge le code.
 
-## Étape 7 — Base de données et fichier de configuration
+## Étape 7 — Base de données et fichiers de configuration
 
-Copiez-collez **tout le bloc en une fois** (les variables ne vivent que le temps de ce bloc) :
+Copiez-collez **tout le bloc en une fois** (les variables ne vivent que le temps de ce bloc). Chaque fichier
+reçoit ses droits **avant** d'être rempli :
+
+- `/etc/jalonia/jalonia.env` : configuration de l'application, lisible **par root seulement** (systemd la
+  lit et la transmet au service). Elle ne contient **pas** le mot de passe du rôle propriétaire ;
+- `/etc/jalonia/proprietaire.env` : mot de passe du rôle propriétaire de la base, lisible par root et par
+  le compte **jalonia** (migrations, création d'un superadmin), jamais par **jalonia-run**.
 
 ```bash
 cd /tmp
@@ -131,9 +149,9 @@ MDP_PROPRIETAIRE=$(openssl rand -hex 24)
 MDP_APP=$(openssl rand -hex 24)
 SECRET=$(openssl rand -base64 48 | tr -d '\n')
 mkdir -p /etc/jalonia
+: > /etc/jalonia/jalonia.env && chown root:root /etc/jalonia/jalonia.env && chmod 600 /etc/jalonia/jalonia.env
 cat > /etc/jalonia/jalonia.env <<EOF
 DATABASE_URL=postgresql://jalonia_app:${MDP_APP}@127.0.0.1:5432/jalonia
-DATABASE_URL_PROPRIETAIRE=postgresql://jalonia_owner:${MDP_PROPRIETAIRE}@127.0.0.1:5432/jalonia
 AUTH_SECRET=${SECRET}
 AUTH_URL=https://jalonia.mosa-apps.com
 AUTH_TRUST_HOST=true
@@ -141,13 +159,17 @@ SESSION_INACTIVITE_MINUTES=120
 SESSION_DUREE_HEURES=8
 FUSEAU_HORAIRE=UTC
 EOF
-chown root:jalonia /etc/jalonia/jalonia.env
-chmod 640 /etc/jalonia/jalonia.env
+: > /etc/jalonia/proprietaire.env && chown root:jalonia /etc/jalonia/proprietaire.env && chmod 640 /etc/jalonia/proprietaire.env
+cat > /etc/jalonia/proprietaire.env <<EOF
+DATABASE_URL_PROPRIETAIRE=postgresql://jalonia_owner:${MDP_PROPRIETAIRE}@127.0.0.1:5432/jalonia
+EOF
 sudo -u postgres psql -v ON_ERROR_STOP=1 -v nom_base=jalonia -v mdp_proprietaire="$MDP_PROPRIETAIRE" -v mdp_app="$MDP_APP" < /opt/jalonia/depot/deploy/preparer-base.sql
 unset MDP_PROPRIETAIRE MDP_APP SECRET
+ls -l /etc/jalonia
 ```
 
-Le dernier message doit être « Base prête. ».
+Le message « Base prête. » doit apparaître, puis les deux fichiers :
+`-rw------- 1 root root … jalonia.env` et `-rw-r----- 1 root jalonia … proprietaire.env`.
 
 **Fuseau horaire des dates affichées** : remplacez `UTC` par le vôtre (ex. `Africa/Libreville`,
 `Africa/Douala`, `Europe/Paris`) avec :
@@ -158,13 +180,18 @@ nano /etc/jalonia/jalonia.env
 
 (modifiez la ligne `FUSEAU_HORAIRE=`, puis Ctrl+O, Entrée, Ctrl+X).
 
-## Étape 8 — Service de l'application
+## Étape 8 — Service de l'application et script de déploiement
 
 ```bash
 cp /opt/jalonia/depot/deploy/jalonia.service /etc/systemd/system/jalonia.service
 systemctl daemon-reload
 systemctl enable jalonia
+install -o root -g root -m 750 /opt/jalonia/depot/deploy/deployer.sh /usr/local/sbin/jalonia-deployer
 ```
+
+La dernière ligne installe **la copie de root** du script de déploiement : root n'exécute jamais un script
+qu'un autre compte pourrait modifier. Quand une nouvelle version de Jalonia change ce script,
+`jalonia-deployer` s'arrête avant de construire et affiche les commandes à taper (voir « Au quotidien »).
 
 ## Étape 9 — HTTPS (Caddy)
 
@@ -185,17 +212,17 @@ systemctl is-active caddy
 ## Étape 10 — Premier déploiement
 
 ```bash
-bash /opt/jalonia/depot/deploy/deployer.sh
+jalonia-deployer
 ```
 
-Compter 5 à 10 minutes (installation des dépendances et construction). La dernière ligne doit être
-« ✔ Jalonia … est en service. ».
+Compter 5 à 10 minutes (installation des dépendances et construction). Attendus : « ✔ Jalonia … est en
+service. », puis les contrôles de sécurité, tous marqués ✔, et « ✔ Tous les contrôles sont satisfaits. ».
 
 ## Étape 11 — Créer votre compte superadministrateur
 
 ```bash
 cd "$(readlink -f /opt/jalonia/courant)/../.."
-sudo -u jalonia -H npx tsx --env-file=/etc/jalonia/jalonia.env scripts/creer-superadmin.ts
+sudo -u jalonia -H npx tsx --env-file=/etc/jalonia/proprietaire.env scripts/creer-superadmin.ts
 cd /root
 ```
 
@@ -208,9 +235,11 @@ c'est normal). 12 caractères minimum.
 curl -s http://127.0.0.1:3000/api/sante
 curl -sI https://jalonia.mosa-apps.com/connexion | head -1
 systemctl status jalonia --no-pager | head -5
+jalonia-deployer --verifier
 ```
 
-Attendus : `{"etat":"ok"}`, puis `HTTP/2 200`, puis `active (running)`.
+Attendus : `{"etat":"ok"}`, puis `HTTP/2 200`, puis `active (running)`, puis « ✔ Tous les contrôles sont
+satisfaits. ».
 Ouvrez **https://jalonia.mosa-apps.com** et connectez-vous.
 
 ## Étape 13 — Sauvegarde quotidienne
@@ -229,13 +258,117 @@ régulièrement une **hors du VPS**.
 
 | Besoin | Commande (en root) |
 |---|---|
-| Mettre à jour vers la dernière version | `bash /opt/jalonia/depot/deploy/deployer.sh` |
+| Mettre à jour vers la dernière version | `jalonia-deployer` |
+| Vérifier la sécurité de l'installation | `jalonia-deployer --verifier` |
 | Voir les journaux de l'application | `journalctl -u jalonia -f` (Ctrl+C pour quitter) |
 | Redémarrer l'application | `systemctl restart jalonia` |
 | Créer un autre superadmin, ou retrouver l'accès | refaire l'étape 11 (un compte existant est promu et reçoit le nouveau mot de passe) |
 
 Si une mise à jour ne démarre pas, le script **revient tout seul** à la version précédente et affiche
 les dernières lignes du journal.
+
+**« Le script de déploiement a changé dans cette version »** : `jalonia-deployer` s'est arrêté avant de
+construire ; la version en service n'a pas changé. Relisez la différence, installez la nouvelle copie, puis
+relancez (le script affiche ces trois commandes) :
+
+```bash
+diff -u /usr/local/sbin/jalonia-deployer /opt/jalonia/depot/deploy/deployer.sh
+install -o root -g root -m 750 /opt/jalonia/depot/deploy/deployer.sh /usr/local/sbin/jalonia-deployer
+jalonia-deployer
+```
+
+## Durcissement d'une installation existante (une fois)
+
+Pour une installation faite avec les instructions précédentes : l'application tourne sous le compte
+`jalonia`, qui possède aussi son code, et `/etc/jalonia/jalonia.env` contient le mot de passe du rôle
+propriétaire. On la reconnaît ainsi : `systemctl show -p User --value jalonia` répond `jalonia` (et non
+`jalonia-run`). Après ce durcissement :
+
+- l'application tourne sous **jalonia-run**, qui ne peut modifier ni le code, ni le script de déploiement,
+  ni lire `/etc/jalonia` ;
+- le mot de passe du rôle propriétaire n'est plus transmis à l'application ;
+- root lance le déploiement depuis sa propre copie du script (`jalonia-deployer`).
+
+Durée : 15 minutes, dont 5 à 10 de construction. L'application reste en service, sauf pendant ses
+redémarrages (quelques secondes). Tapez les blocs **dans l'ordre**, en root.
+
+**1. Déployer la nouvelle version** (avec la commande habituelle, une dernière fois) :
+
+```bash
+bash /opt/jalonia/depot/deploy/deployer.sh
+```
+
+Attendu : « ✔ Jalonia … est en service. ». Si des contrôles marqués ✘ s'affichent ensuite, c'est normal à
+ce stade : les blocs suivants les corrigent.
+
+**2. Créer le compte de l'application et garder une copie de l'existant** (pour revenir en arrière) :
+
+```bash
+id jalonia-run >/dev/null 2>&1 || useradd --system --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin jalonia-run
+install -d -m 700 /root/avant-durcissement
+[ -e /root/avant-durcissement/jalonia.env ] || cp -p /etc/jalonia/jalonia.env /etc/systemd/system/jalonia.service /root/avant-durcissement/
+id jalonia-run
+ls -l /root/avant-durcissement
+```
+
+Attendus : une ligne `uid=… (jalonia-run)…`, puis les deux copies `jalonia.env` et `jalonia.service`.
+
+**3. Séparer le mot de passe du rôle propriétaire** dans son propre fichier :
+
+```bash
+cd /etc/jalonia
+: > proprietaire.env.nouveau && chown root:jalonia proprietaire.env.nouveau && chmod 640 proprietaire.env.nouveau
+grep '^DATABASE_URL_PROPRIETAIRE=' jalonia.env > proprietaire.env.nouveau
+: > jalonia.env.nouveau && chown root:root jalonia.env.nouveau && chmod 600 jalonia.env.nouveau
+grep -v '^DATABASE_URL_PROPRIETAIRE=' jalonia.env > jalonia.env.nouveau
+if [ "$(grep -c '^DATABASE_URL_PROPRIETAIRE=' proprietaire.env.nouveau)" = 1 ] && [ "$(grep -c '' proprietaire.env.nouveau)" = 1 ] && grep -q '^DATABASE_URL=' jalonia.env.nouveau && ! grep -q 'DATABASE_URL_PROPRIETAIRE' jalonia.env.nouveau; then mv proprietaire.env.nouveau proprietaire.env && mv jalonia.env.nouveau jalonia.env && echo "OK : fichiers séparés"; else rm -f proprietaire.env.nouveau jalonia.env.nouveau; echo "STOP : contenu inattendu, rien n'a été modifié (déjà fait ? vérifiez avec : ls -l /etc/jalonia)"; fi
+ls -l /etc/jalonia
+cd /root
+```
+
+Attendus : « OK : fichiers séparés », puis `-rw------- 1 root root … jalonia.env` et
+`-rw-r----- 1 root jalonia … proprietaire.env`. **Si « STOP » s'affiche, n'allez pas plus loin.**
+
+**4. Installer le nouveau service et la copie de root du script de déploiement** :
+
+```bash
+cp /opt/jalonia/depot/deploy/jalonia.service /etc/systemd/system/jalonia.service
+systemctl daemon-reload
+systemctl restart jalonia
+install -o root -g root -m 750 /opt/jalonia/depot/deploy/deployer.sh /usr/local/sbin/jalonia-deployer
+sleep 10
+curl -s http://127.0.0.1:3000/api/sante
+```
+
+Attendu : `{"etat":"ok"}` (si la réponse est vide, attendez quelques secondes et relancez la dernière
+ligne ; si elle reste vide, appliquez le retour arrière ci-dessous).
+
+**5. Vérifier** :
+
+```bash
+jalonia-deployer --verifier
+```
+
+Attendu : neuf lignes ✔, puis « ✔ Tous les contrôles sont satisfaits. ». Ouvrez ensuite
+**https://jalonia.mosa-apps.com** et connectez-vous.
+
+Désormais, pour mettre à jour : **`jalonia-deployer`** (l'ancienne commande est refusée et l'indique).
+Après quelques jours sans problème, supprimez les copies de sauvegarde (elles contiennent le mot de passe
+du rôle propriétaire) : `rm -r /root/avant-durcissement`.
+
+**6. En cas de problème : retour arrière** (remet le service et le fichier de configuration d'avant) :
+
+```bash
+cp -p /root/avant-durcissement/jalonia.service /etc/systemd/system/jalonia.service
+cp -p /root/avant-durcissement/jalonia.env /etc/jalonia/jalonia.env
+systemctl daemon-reload
+systemctl restart jalonia
+sleep 10
+curl -s http://127.0.0.1:3000/api/sante
+```
+
+Attendu : `{"etat":"ok"}`. Les mises à jour se font toujours avec `jalonia-deployer` (il signale alors
+les contrôles non satisfaits, sans bloquer).
 
 ## Restaurer une sauvegarde (en cas de besoin)
 

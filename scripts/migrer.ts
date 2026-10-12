@@ -1,6 +1,7 @@
 // Applique les migrations de la base (plateforme puis chaque organisation).
-// Usage (à la racine du projet) :  npx tsx --env-file=/etc/jalonia/jalonia.env scripts/migrer.ts
-// Utilise le rôle PROPRIÉTAIRE (DATABASE_URL_PROPRIETAIRE). Sans effet si tout est déjà à jour.
+// Usage (à la racine du projet) :  npx tsx --env-file=/etc/jalonia/proprietaire.env scripts/migrer.ts
+// Utilise le rôle PROPRIÉTAIRE (DATABASE_URL_PROPRIETAIRE, seule variable lue). Sans effet si tout est déjà à jour.
+// (En production, le déploiement — deploy/deployer.sh — le lance lui-même.)
 import { Pool } from "pg";
 import { migrer } from "../src/server/migrations/lanceur";
 

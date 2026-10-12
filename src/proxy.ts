@@ -8,6 +8,9 @@ const PAGES_PUBLIQUES = new Set(["/connexion"]);
 
 export function proxy(requete: NextRequest) {
   const { pathname } = requete.nextUrl;
+  // Optimiseur d'images désactivé (next.config.ts) : on répond 404 ici, avant que Next.js ne tente de créer son
+  // dossier de cache dans le code en service, qui est en lecture seule (erreur au journal à chaque requête).
+  if (pathname === "/_next/image") return new NextResponse(null, { status: 404, headers: { "Cache-Control": "no-store" } });
   if (PAGES_PUBLIQUES.has(pathname)) return NextResponse.next();
   const aUnCookie = requete.cookies.getAll().some((c) => COOKIE_SESSION.test(c.name));
   if (aUnCookie) return NextResponse.next();
@@ -19,5 +22,6 @@ export function proxy(requete: NextRequest) {
 export const config = {
   // Tout, sauf : la sonde de santé, les fichiers statiques de Next.js, et ce que le navigateur demande SANS
   // être connecté — icônes, manifeste d'installation (sinon : redirection, et icône ou installation cassées).
-  matcher: ["/((?!api/sante|_next/static|_next/image|favicon\\.ico$|icon(?:\\.svg)?$|apple-icon(?:\\.png)?$|manifest\\.webmanifest$|icones/).*)"],
+  // (/_next/image passe par ici : voir plus haut.)
+  matcher: ["/((?!api/sante|_next/static|favicon\\.ico$|icon(?:\\.svg)?$|apple-icon(?:\\.png)?$|manifest\\.webmanifest$|icones/).*)"],
 };

@@ -1,5 +1,9 @@
 # Service systemd de Jalonia. À copier dans /etc/systemd/system/jalonia.service
 # /opt/jalonia/courant est un lien vers la version déployée (voir deploy/deployer.sh).
+#
+# L'application tourne sous le compte « jalonia-run », qui ne possède rien : il ne peut modifier ni le code,
+# ni le script de déploiement, ni lire les fichiers de /etc/jalonia (audit S0). systemd lit lui-même
+# /etc/jalonia/jalonia.env (en root) et transmet les variables au processus.
 [Unit]
 Description=Jalonia (application Next.js)
 After=network-online.target postgresql.service
@@ -7,8 +11,8 @@ Wants=network-online.target postgresql.service
 
 [Service]
 Type=simple
-User=jalonia
-Group=jalonia
+User=jalonia-run
+Group=jalonia-run
 WorkingDirectory=/opt/jalonia/courant
 EnvironmentFile=/etc/jalonia/jalonia.env
 Environment=NODE_ENV=production
@@ -19,18 +23,30 @@ Environment=NODE_OPTIONS=--max-old-space-size=384
 ExecStart=/usr/bin/node /opt/jalonia/courant/server.js
 Restart=on-failure
 RestartSec=5
+MemoryMax=700M
 
-# Durcissement
+# Durcissement : tout le système de fichiers en lecture seule pour le service (il n'écrit nulle part),
+# aucun privilège, aucun accès aux dossiers personnels, aux périphériques ni aux réglages du noyau.
 NoNewPrivileges=true
-PrivateTmp=true
-ProtectSystem=full
+CapabilityBoundingSet=
+UMask=0077
+ProtectSystem=strict
 ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
 ProtectKernelTunables=true
 ProtectKernelModules=true
+ProtectKernelLogs=true
 ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+RestrictNamespaces=true
+RestrictRealtime=true
 RestrictSUIDSGID=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
 LockPersonality=true
-MemoryMax=700M
+SystemCallArchitectures=native
+# (Pas de MemoryDenyWriteExecute : le compilateur JavaScript de Node en a besoin.)
 
 [Install]
 WantedBy=multi-user.target

@@ -77,4 +77,4 @@ développement uniquement : ils refusent de s'exécuter sur le serveur de produc
 
 ## Installation sur le serveur
 
-Voir **[deploy/INSTALL-VPS.md](deploy/INSTALL-VPS.md)**. Mise à jour : `sudo bash /opt/jalonia/depot/deploy/deployer.sh`.
+Voir **[deploy/INSTALL-VPS.md](deploy/INSTALL-VPS.md)**. Mise à jour : `sudo jalonia-deployer` (installation faite avec les instructions précédentes : appliquer d'abord, une fois, la section « Durcissement d'une installation existante »).

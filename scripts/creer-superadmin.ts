@@ -2,7 +2,7 @@
 // attribue le mot de passe saisi (sert aussi à RÉCUPÉRER un accès superadmin perdu).
 // C'est le SEUL moyen de créer un superadmin : l'application web n'en a pas le droit (droits PostgreSQL).
 //
-// Usage (à la racine du projet) :  npx tsx --env-file=/etc/jalonia/jalonia.env scripts/creer-superadmin.ts
+// Usage (à la racine du projet) :  npx tsx --env-file=/etc/jalonia/proprietaire.env scripts/creer-superadmin.ts
 // Le mot de passe est saisi sans être affiché, deux fois.
 import { createInterface } from "node:readline";
 import { Writable } from "node:stream";

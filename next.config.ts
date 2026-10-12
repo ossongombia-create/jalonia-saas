@@ -19,6 +19,10 @@ const nextConfig: NextConfig = {
   // Sortie autonome : un dossier .next/standalone qui tourne avec « node server.js », sans le dépôt complet.
   output: "standalone",
   poweredByHeader: false,
+  // Pas d'optimiseur d'images (/_next/image répond 404) : l'application n'affiche que des SVG (déjà servis tels
+  // quels) ; et le service, en lecture seule (deploy/jalonia.service), ne pourrait pas garder les images calculées
+  // en cache : chaque requête referait le calcul.
+  images: { unoptimized: true },
   // « cacheComponents » est volontairement désactivé : application d'administration entièrement
   // dynamique (chaque page dépend de l'utilisateur et de son organisation). Voir docs/DECISIONS.md.
   async headers() {
