@@ -368,6 +368,16 @@ let ACTIONS;
   for (const qui of ["lecteurA", "verifA", "adminB", "superadmin"]) await cas(qui, "actionSupprimerDocument", suppression, "erreur.interdit");
   await cas("adminB", "actionSupprimerDocument", { organisationId: ORG_B, documentId: DOC }, "erreur.introuvable", { note: "document de A depuis B" });
   await cas("redacA", "actionSupprimerDocument", suppression, "succes", { effet: () => sql(`SELECT count(*) FROM "${SCHEMA_A}".documents WHERE id = '${DOC}'`) === "0" });
+  // Procédure liée à une instruction de travail (D2) : sans confirmation, refus sans écriture ; confirmée, seule la
+  // procédure est supprimée.
+  const liee = await api("redacA", "POST", "/api/documents", { organisationId: ORG_A, contenu: { ...procedure("Procédure liée"), etapes: [{ id: "e1", niveau3: { actif: true, code: "IT-LIEN-01" } }] } });
+  const itLiee = await api("redacA", "POST", "/api/documents", { organisationId: ORG_A, contenu: { meta: { typeDocument: "instruction", titre: "Instruction liée", reference: "IT-LIEN-01" }, roles: [], etapes: [] } });
+  assert.deepEqual([liee.statut, itLiee.statut], [201, 201]);
+  const existe = (id) => sql(`SELECT count(*) FROM "${SCHEMA_A}".documents WHERE id = '${id}'`) === "1";
+  await cas("redacA", "actionSupprimerDocument", { organisationId: ORG_A, documentId: liee.json.id }, "docs.suppression_liee", { note: "liée, sans confirmation" });
+  await cas("redacA", "actionSupprimerDocument", { organisationId: ORG_A, documentId: itLiee.json.id }, "docs.suppression_liee", { note: "instruction citée, sans confirmation" });
+  await cas("adminA", "actionSupprimerDocument", { organisationId: ORG_A, documentId: liee.json.id, confirmerLiens: "1" }, "succes",
+    { note: "liée, confirmée", effet: () => !existe(liee.json.id) && existe(itLiee.json.id) });
 
   // ======================================================================================== actions : membres
   etape("actions « membres » (organisation A)");

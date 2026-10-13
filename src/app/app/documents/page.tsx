@@ -2,13 +2,16 @@
 // procédures (niveau 2) et instructions de travail (niveau 3). Chacun s'ouvre dans l'éditeur Qualigramme
 // (/editeur/index.html), qui enregistre automatiquement sur le serveur.
 // Lecture : tous les rôles de l'organisation. Création : rédaction. Suppression : droit de suppression.
+// La section « Cohérence » signale les incohérences ENTRE documents (codes, instructions de travail, sous-procédures,
+// processus) : elle ne modifie rien. La suppression d'un document lié à d'autres avertit et demande confirmation.
 import { actionSupprimerDocument } from "@/actions/documents";
 import { BoutonCreerDocument } from "@/components/BoutonCreerDocument";
 import { FormulaireAction } from "@/components/FormulaireAction";
 import { formaterDate } from "@/lib/format";
 import { aLeDroit } from "@/lib/rbac";
 import { poolApplication } from "@/server/db/pools";
-import { lireCartographie, listerDocuments } from "@/server/documents/service";
+import { lireCartographie, lireCoherence, listerDocuments } from "@/server/documents/service";
+import type { DocumentCite } from "@/server/documents/coherence";
 import { exigerOrganisation } from "@/server/web/contexte";
 import { titrePage } from "@/server/web/metadonnees";
 
@@ -20,7 +23,9 @@ export default async function PageDocuments() {
   const ctx = await exigerOrganisation("documents.lire");
   const { t, organisation, langue, fuseau } = ctx;
   const pool = poolApplication();
-  const [documents, cartographie] = await Promise.all([listerDocuments(pool, organisation), lireCartographie(pool, organisation)]);
+  const [documents, cartographie, coherence] = await Promise.all([listerDocuments(pool, organisation), lireCartographie(pool, organisation), lireCoherence(pool, organisation)]);
+  const aVerifier = new Set(coherence.constats.filter((c) => c.gravite === "alerte").flatMap((c) => c.documents.map((d) => d.id)));
+  const nomDe = (d: DocumentCite) => (d.reference && d.titre ? `${d.reference} — ${d.titre}` : d.reference || d.titre || t("docs.sans_titre"));
   const peutRediger = aLeDroit(organisation.roles, "documents.rediger");
   const peutSupprimer = aLeDroit(organisation.roles, "documents.supprimer");
 
@@ -78,7 +83,15 @@ export default async function PageDocuments() {
                         {t(d.type === "procedure" ? "docs.type.procedure" : d.type === "instruction" ? "docs.type.instruction" : "docs.type.aucun")}
                       </span>
                     </td>
-                    <td className="nowrap">{d.reference || "—"}</td>
+                    <td className="nowrap">
+                      {d.reference || "—"}
+                      {aVerifier.has(d.id) ? (
+                        <>
+                          <br />
+                          <a className="etiquette etiquette-alerte" href="#coherence">{t("docs.a_verifier")}</a>
+                        </>
+                      ) : null}
+                    </td>
                     <td>{d.titre ? <strong>{d.titre}</strong> : <span className="discret">{t("docs.sans_titre")}</span>}</td>
                     <td className="nowrap">
                       {formaterDate(langue, d.modifieLe, fuseau)}
@@ -97,10 +110,19 @@ export default async function PageDocuments() {
                             libelleEnCours={t("commun.en_cours")}
                             variante="danger"
                             vider={false}
-                            confirmation={t("docs.confirmer_suppression", { titre: d.titre || d.reference || t("docs.sans_titre") })}
+                            confirmation={
+                              coherence.dependances[d.id]
+                                ? t("docs.confirmer_suppression_liens", {
+                                    titre: d.titre || d.reference || t("docs.sans_titre"),
+                                    n: coherence.dependances[d.id]!.length,
+                                    liste: coherence.dependances[d.id]!.map((l) => `${nomDe(l)} (${t(`docs.lien.${l.lien}`)})`).join(" ; "),
+                                  })
+                                : t("docs.confirmer_suppression", { titre: d.titre || d.reference || t("docs.sans_titre") })
+                            }
                           >
                             <input type="hidden" name="organisationId" value={organisation.id} />
                             <input type="hidden" name="documentId" value={d.id} />
+                            {coherence.dependances[d.id] ? <input type="hidden" name="confirmerLiens" value="1" /> : null}
                           </FormulaireAction>
                         ) : null}
                       </div>
@@ -112,6 +134,33 @@ export default async function PageDocuments() {
           </div>
         )}
       </section>
+
+      {documents.length > 0 ? (
+        <section className="carte" id="coherence">
+          <h2>{t("coherence.titre")}</h2>
+          <p className="discret">{t("coherence.texte")}</p>
+          {coherence.constats.length === 0 ? (
+            <p className="vide">{t("coherence.aucun")}</p>
+          ) : (
+            <ul className="liste-constats">
+              {coherence.constats.map((c, i) => (
+                <li key={`${c.cle}-${c.code ?? c.processus ?? ""}-${i}`} className={c.gravite === "alerte" ? "constat constat-alerte" : "constat"}>
+                  <span className={c.gravite === "alerte" ? "etiquette etiquette-alerte" : "etiquette"}>{t(c.gravite === "alerte" ? "coherence.alerte" : "coherence.info")}</span>{" "}
+                  {t(`coherence.${c.cle}`, { code: c.code ?? "", processus: c.processus ?? "" })}
+                  <ul>
+                    {c.documents.map((d) => (
+                      <li key={d.id}>
+                        <a href={`${EDITEUR}?doc=${encodeURIComponent(d.id)}`}>{nomDe(d)}</a>{" "}
+                        <span className="discret petit">({t(d.type === "procedure" ? "docs.type.procedure" : d.type === "instruction" ? "docs.type.instruction" : "docs.type.aucun")})</span>
+                      </li>
+                    ))}
+                  </ul>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      ) : null}
     </>
   );
 }

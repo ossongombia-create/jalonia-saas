@@ -92,8 +92,10 @@ const fs = require("node:fs");
   etape("liste des documents : 3 documents, types et codes affichés");
   await p.click("#lien-documents");
   await p.waitForURL(`${BASE}/app/documents`);
-  const lignes = await p.$$eval("table.tableau tbody tr", (l) => l.map((tr) => [...tr.querySelectorAll("td")].slice(0, 3).map((td) => td.textContent.trim())));
+  // (Premier nœud de chaque cellule : le repère « À vérifier » de la cohérence entre documents suit le code.)
+  const lignes = await p.$$eval("table.tableau tbody tr", (l) => l.map((tr) => [...tr.querySelectorAll("td")].slice(0, 3).map((td) => td.firstChild.textContent.trim())));
   console.log("  liste :", JSON.stringify(lignes));
+  console.log("  cohérence :", (await p.locator("#coherence").innerText()).replace(/\s*\n\s*/g, " | "));
   assert.equal(lignes.length, 3);
   assert.ok(lignes.some((l) => l[0] === "Instruction de travail" && l[1] === "IT-CUI-01"));
   assert.ok(await p.isVisible("text=Dernière modification le"), "cartographie : date et auteur affichés");

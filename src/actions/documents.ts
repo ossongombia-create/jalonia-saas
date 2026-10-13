@@ -43,7 +43,8 @@ export async function actionSupprimerDocument(_etat: EtatAction, formulaire: For
   return executer(ctx.langue, async () => {
     const org = autoriser(ctx, formulaire, "documents.supprimer");
     const documentId = valider(identifiant, champ(formulaire, "documentId"));
-    await supprimerDocument(poolApplication(), org, documentId, ctx.acteur);
+    // « confirmerLiens » : la personne a vu l'avertissement des documents liés (ils ne sont pas supprimés avec celui-ci).
+    await supprimerDocument(poolApplication(), org, documentId, ctx.acteur, { confirmerLiens: champ(formulaire, "confirmerLiens") === "1" });
     return { cle: "docs.supprime" };
   });
 }

@@ -17,6 +17,7 @@ import type { OrganisationCible } from "../membres/service";
 import { journaliserOrganisation, journaliserPlateforme, type EntreeJournal } from "../audit/journal";
 import { ErreurMetier } from "../erreurs";
 import { nomActeur, traceActeur, type Acteur } from "../acteur";
+import { analyserCoherence, dependancesDe, lireLiens, lireProcessusCartographie, type Constat, type Dependance } from "./coherence";
 
 /** Taille maximale d'un contenu (JSON compact, en octets) : la limite des fichiers .json de l'éditeur. */
 export const TAILLE_MAX_CONTENU = 2_000_000;
@@ -279,21 +280,48 @@ export async function enregistrerDocument(pool: Pool, org: OrganisationCible, id
   });
 }
 
-export async function supprimerDocument(pool: Pool, org: OrganisationCible, id: string, acteur: Acteur): Promise<void> {
+/**
+ * Supprime un document. S'il est lié à d'autres (instructions de travail d'une procédure, procédure qui cite une
+ * instruction ou appelle une sous-procédure : voir coherence.ts), la suppression exige `confirmerLiens` — la personne a
+ * vu l'avertissement — et les documents liés ne sont jamais supprimés avec lui. Les liens confirmés sont tracés.
+ */
+export async function supprimerDocument(pool: Pool, org: OrganisationCible, id: string, acteur: Acteur, options: { confirmerLiens?: boolean } = {}): Promise<void> {
   if (!estIdentifiant(id)) throw new ErreurMetier("erreur.introuvable");
   await enTransaction(pool, async (client) => {
     const r = await dansOrganisation(client, org, async () => {
+      const liees = dependancesDe(await lireLiens(client), id);
+      if (liees.length > 0 && !options.confirmerLiens) throw new ErreurMetier("docs.suppression_liee");
       const sup = await client.query<{ type: TypeDocument; titre: string; reference: string; version: number }>(
         "DELETE FROM documents WHERE id = $1 RETURNING type, titre, reference, version",
         [id],
       );
       const d = sup.rows[0];
       if (!d) throw new ErreurMetier("erreur.introuvable");
-      const entree: EntreeJournal = { action: "DOCUMENT_SUPPRIME", ...traceActeur(acteur), cibleType: "document", cibleId: id, details: d };
+      const details = liees.length > 0 ? { ...d, liensConfirmes: liees.map((l) => ({ id: l.id, lien: l.lien, reference: l.reference, titre: l.titre })) } : d;
+      const entree: EntreeJournal = { action: "DOCUMENT_SUPPRIME", ...traceActeur(acteur), cibleType: "document", cibleId: id, details };
       await journaliserOrganisation(client, entree);
       return { entree, type: d.type };
     });
     await journaliserPlateforme(client, versPlateforme(org, r.entree, { type: r.type }));
+  });
+}
+
+export interface Coherence {
+  constats: Constat[];
+  /** Pour chaque document lié à d'autres : ces documents (avertissement avant suppression). */
+  dependances: Record<string, Dependance[]>;
+}
+
+/** Contrôles de cohérence entre tous les documents de l'organisation (coherence.ts) : ils signalent, sans rien modifier. */
+export async function lireCoherence(pool: Pool, org: OrganisationCible): Promise<Coherence> {
+  return avecOrganisation(pool, org, async (client) => {
+    const [liens, processus] = [await lireLiens(client), await lireProcessusCartographie(client)];
+    const dependances: Record<string, Dependance[]> = {};
+    for (const d of liens) {
+      const liees = dependancesDe(liens, d.id);
+      if (liees.length > 0) dependances[d.id] = liees;
+    }
+    return { constats: analyserCoherence(liens, processus), dependances };
   });
 }
 
