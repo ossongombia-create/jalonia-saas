@@ -15,8 +15,9 @@ connectée en **root**. Si vous êtes connecté avec un autre utilisateur, tapez
 > de la base, lu seulement pour les migrations).
 
 > **Jalonia est déjà installé et en service ?** Ne refaites pas les étapes ci-dessous : appliquez une fois les
-> sections [Durcissement d'une installation existante](#durcissement-dune-installation-existante-une-fois) et
-> [Second facteur sur une installation existante](#second-facteur-sur-une-installation-existante-une-fois).
+> sections [Durcissement d'une installation existante](#durcissement-dune-installation-existante-une-fois),
+> [Second facteur sur une installation existante](#second-facteur-sur-une-installation-existante-une-fois) et
+> [Ancres des journaux sur une installation existante](#ancres-des-journaux-sur-une-installation-existante-une-fois).
 
 ---
 
@@ -258,8 +259,11 @@ install -m 755 /opt/jalonia/depot/deploy/sauvegarde.sh /etc/cron.daily/jalonia-s
 /etc/cron.daily/jalonia-sauvegarde && ls -l /var/backups/jalonia
 ```
 
-Une sauvegarde par jour, 14 jours conservés, dans `/var/backups/jalonia`. Pensez à en copier
-régulièrement une **hors du VPS**.
+Une sauvegarde par jour, 14 jours conservés, dans `/var/backups/jalonia`, avec chaque jour un petit fichier
+`ancres-AAAA-MM-JJ.txt` : la dernière empreinte de chaque journal d'audit. Pensez à copier régulièrement les
+sauvegardes **et les fichiers d'ancres hors du VPS** (par exemple en vous les envoyant par e-mail) : une ancre
+gardée ailleurs prouve plus tard qu'aucune ligne antérieure du journal n'a été retouchée, même par quelqu'un
+qui aurait tous les droits sur la base.
 
 ---
 
@@ -272,6 +276,7 @@ régulièrement une **hors du VPS**.
 | Voir les journaux de l'application | `journalctl -u jalonia -f` (Ctrl+C pour quitter) |
 | Redémarrer l'application | `systemctl restart jalonia` |
 | Créer un autre superadmin, ou retrouver l'accès | refaire l'étape 11 (un compte existant est promu et reçoit le nouveau mot de passe) |
+| Vérifier que les journaux d'audit n'ont pas été retouchés | voir « Vérifier les journaux » ci-dessous |
 | Superadmin : téléphone perdu **et** plus de codes de secours | voir « Retirer le second facteur d'un superadmin » ci-dessous |
 | Autre compte : téléphone perdu | dans Jalonia, superadmin → Utilisateurs → la personne → « Retirer le second facteur » |
 
@@ -287,6 +292,19 @@ diff -u /usr/local/sbin/jalonia-deployer /opt/jalonia/depot/deploy/deployer.sh
 install -o root -g root -m 750 /opt/jalonia/depot/deploy/deployer.sh /usr/local/sbin/jalonia-deployer
 jalonia-deployer
 ```
+
+**Vérifier les journaux** (chaîne d'empreintes recalculée depuis le début ; avec les ancres, contrôle en plus
+qu'aucune ligne antérieure à chaque ancre n'a changé) :
+
+```bash
+cd "$(readlink -f /opt/jalonia/courant)/../.."
+sudo -u jalonia -H npx tsx --env-file=/etc/jalonia/proprietaire.env scripts/verifier-journal.ts --ancres /var/backups/jalonia/ancres-*.txt
+cd /root
+```
+
+Attendu : une ligne ✔ par journal, puis « ✔ … journal(aux) intact(s). ». Pour une ancre gardée hors du serveur,
+copiez-la d'abord sur le serveur et donnez son chemin après `--ancres`. Une ligne ✘ désigne le journal et le rang
+en cause : ne touchez à rien et prévenez la personne chargée de la sécurité.
 
 **Retirer le second facteur d'un superadmin** (il en activera un nouveau à sa prochaine connexion ; ses
 sessions sont fermées ; tracé dans les journaux) :
@@ -315,6 +333,17 @@ Attendu : `1`. La ligne n'est ajoutée qu'une fois, même si le bloc est recoll�
 `/etc/jalonia/jalonia.env` en lieu sûr**, hors du serveur : sans cette clé, chaque second facteur devrait être
 réinitialisé. À votre prochaine connexion, Jalonia vous demandera d'activer le vôtre (code QR, puis codes de
 secours à noter).
+
+## Ancres des journaux sur une installation existante (une fois)
+
+La sauvegarde quotidienne écrit désormais les ancres des journaux. Réinstallez sa copie (après la mise à jour) :
+
+```bash
+install -m 755 /opt/jalonia/depot/deploy/sauvegarde.sh /etc/cron.daily/jalonia-sauvegarde
+/etc/cron.daily/jalonia-sauvegarde && ls -l /var/backups/jalonia | tail -3
+```
+
+Attendu : un fichier `ancres-AAAA-MM-JJ.txt` du jour.
 
 ## Durcissement d'une installation existante (une fois)
 
