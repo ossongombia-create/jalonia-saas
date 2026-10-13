@@ -4,6 +4,7 @@ import {
   actionDesactiverUtilisateur,
   actionReactiverUtilisateur,
   actionReinitialiserMotDePasse,
+  actionReinitialiserSecondFacteur,
   actionRevoquerSessionsUtilisateur,
 } from "@/actions/plateforme";
 import { FormulaireAction } from "@/components/FormulaireAction";
@@ -51,6 +52,7 @@ export default async function PageUtilisateur({ params }: { params: Promise<{ id
             <span className={u.statut === "actif" ? "etiquette etiquette-ok" : "etiquette etiquette-erreur"}>{t(`statut.${u.statut}`)}</span>
             {u.verrouilleJusqua ? <span className="etiquette etiquette-erreur">{t("users.verrouille", { heure: formaterDate(langue, u.verrouilleJusqua, fuseau) })}</span> : null}
             {u.doitChangerMdp ? <span className="etiquette etiquette-alerte">{t("users.doit_changer")}</span> : null}
+            {u.mfaActif ? <span className="etiquette etiquette-ok">{t("mfa.etiquette_actif")}</span> : <span className="etiquette">{t("mfa.etiquette_inactif")}</span>}
             <span className="etiquette">{t(`langue.${u.langue}`)}</span>
           </div>
         </div>
@@ -88,6 +90,15 @@ export default async function PageUtilisateur({ params }: { params: Promise<{ id
                 <input type="text" name="motDePasse" required minLength={12} maxLength={200} autoComplete="new-password" spellCheck={false} />
                 <small>{t("mdp.regle")}</small>
               </label>
+            </FormulaireAction>
+          </div>
+        ) : null}
+        {gerable && u.mfaActif ? (
+          <div className="pied-carte">
+            <h3>{t("mfa.reinitialiser")}</h3>
+            <p className="discret petit">{t("mfa.reinitialiser_aide")}</p>
+            <FormulaireAction action={actionReinitialiserSecondFacteur} libelle={t("mfa.reinitialiser")} libelleEnCours={t("commun.en_cours")} variante="danger" confirmation={t("mfa.reinitialiser_confirmation")}>
+              <input type="hidden" name="utilisateurId" value={u.id} />
             </FormulaireAction>
           </div>
         ) : null}

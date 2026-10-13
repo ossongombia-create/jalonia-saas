@@ -32,7 +32,7 @@ describe("traductions", () => {
 
   it("toutes les clés de message citées dans le code existent (erreurs, succès)", () => {
     const code = fichiers(path.resolve("src")).map((f) => readFileSync(f, "utf8")).join("\n");
-    const citees = new Set([...code.matchAll(/["'`]((?:erreur|membres|users|orgs|sessions|mdp|commun|connexion|docs|nav|org|invitation)(?:\.[a-z_]+)+)["'`]/g)].map((m) => m[1]!));
+    const citees = new Set([...code.matchAll(/["'`]((?:erreur|membres|users|orgs|sessions|mdp|commun|connexion|docs|nav|org|invitation|mfa)(?:\.[a-z_]+)+)["'`]/g)].map((m) => m[1]!));
     const manquantes = [...citees].filter((c) => !estCle(c));
     expect(manquantes).toEqual([]);
   });

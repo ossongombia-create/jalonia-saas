@@ -14,8 +14,9 @@ connectée en **root**. Si vous êtes connecté avec un autre utilisateur, tapez
 > de l'application, lue par systemd) et `/etc/jalonia/proprietaire.env` (mot de passe du rôle propriétaire
 > de la base, lu seulement pour les migrations).
 
-> **Jalonia est déjà installé et en service ?** Ne refaites pas les étapes ci-dessous : appliquez une fois la
-> section [Durcissement d'une installation existante](#durcissement-dune-installation-existante-une-fois).
+> **Jalonia est déjà installé et en service ?** Ne refaites pas les étapes ci-dessous : appliquez une fois les
+> sections [Durcissement d'une installation existante](#durcissement-dune-installation-existante-une-fois) et
+> [Second facteur sur une installation existante](#second-facteur-sur-une-installation-existante-une-fois).
 
 ---
 
@@ -148,6 +149,7 @@ cd /tmp
 MDP_PROPRIETAIRE=$(openssl rand -hex 24)
 MDP_APP=$(openssl rand -hex 24)
 SECRET=$(openssl rand -base64 48 | tr -d '\n')
+CLE_MFA=$(openssl rand -base64 32)
 mkdir -p /etc/jalonia
 : > /etc/jalonia/jalonia.env && chown root:root /etc/jalonia/jalonia.env && chmod 600 /etc/jalonia/jalonia.env
 cat > /etc/jalonia/jalonia.env <<EOF
@@ -158,15 +160,20 @@ AUTH_TRUST_HOST=true
 SESSION_INACTIVITE_MINUTES=120
 SESSION_DUREE_HEURES=8
 FUSEAU_HORAIRE=UTC
+CLE_SECOND_FACTEUR=${CLE_MFA}
 EOF
 : > /etc/jalonia/proprietaire.env && chown root:jalonia /etc/jalonia/proprietaire.env && chmod 640 /etc/jalonia/proprietaire.env
 cat > /etc/jalonia/proprietaire.env <<EOF
 DATABASE_URL_PROPRIETAIRE=postgresql://jalonia_owner:${MDP_PROPRIETAIRE}@127.0.0.1:5432/jalonia
 EOF
 sudo -u postgres psql -v ON_ERROR_STOP=1 -v nom_base=jalonia -v mdp_proprietaire="$MDP_PROPRIETAIRE" -v mdp_app="$MDP_APP" < /opt/jalonia/depot/deploy/preparer-base.sql
-unset MDP_PROPRIETAIRE MDP_APP SECRET
+unset MDP_PROPRIETAIRE MDP_APP SECRET CLE_MFA
 ls -l /etc/jalonia
 ```
+
+`CLE_SECOND_FACTEUR` chiffre les seconds facteurs des comptes (codes à 6 chiffres) : **gardez une copie de
+`/etc/jalonia/jalonia.env` en lieu sûr**, hors du serveur. Sans cette clé, chaque second facteur devrait être
+réinitialisé.
 
 Le message « Base prête. » doit apparaître, puis les deux fichiers :
 `-rw------- 1 root root … jalonia.env` et `-rw-r----- 1 root jalonia … proprietaire.env`.
@@ -240,7 +247,9 @@ jalonia-deployer --verifier
 
 Attendus : `{"etat":"ok"}`, puis `HTTP/2 200`, puis `active (running)`, puis « ✔ Tous les contrôles sont
 satisfaits. ».
-Ouvrez **https://jalonia.mosa-apps.com** et connectez-vous.
+Ouvrez **https://jalonia.mosa-apps.com** et connectez-vous. **Second facteur obligatoire pour un superadmin** :
+à la première connexion, Jalonia montre un code QR à scanner avec une application d'authentification (Google
+Authenticator, Microsoft Authenticator, FreeOTP…), puis 10 codes de secours à noter et ranger hors du téléphone.
 
 ## Étape 13 — Sauvegarde quotidienne
 
@@ -263,6 +272,8 @@ régulièrement une **hors du VPS**.
 | Voir les journaux de l'application | `journalctl -u jalonia -f` (Ctrl+C pour quitter) |
 | Redémarrer l'application | `systemctl restart jalonia` |
 | Créer un autre superadmin, ou retrouver l'accès | refaire l'étape 11 (un compte existant est promu et reçoit le nouveau mot de passe) |
+| Superadmin : téléphone perdu **et** plus de codes de secours | voir « Retirer le second facteur d'un superadmin » ci-dessous |
+| Autre compte : téléphone perdu | dans Jalonia, superadmin → Utilisateurs → la personne → « Retirer le second facteur » |
 
 Si une mise à jour ne démarre pas, le script **revient tout seul** à la version précédente et affiche
 les dernières lignes du journal.
@@ -276,6 +287,34 @@ diff -u /usr/local/sbin/jalonia-deployer /opt/jalonia/depot/deploy/deployer.sh
 install -o root -g root -m 750 /opt/jalonia/depot/deploy/deployer.sh /usr/local/sbin/jalonia-deployer
 jalonia-deployer
 ```
+
+**Retirer le second facteur d'un superadmin** (il en activera un nouveau à sa prochaine connexion ; ses
+sessions sont fermées ; tracé dans les journaux) :
+
+```bash
+cd "$(readlink -f /opt/jalonia/courant)/../.."
+sudo -u jalonia -H npx tsx --env-file=/etc/jalonia/proprietaire.env scripts/reinitialiser-second-facteur.ts
+cd /root
+```
+
+Saisissez l'e-mail du compte, puis `oui`.
+
+## Second facteur sur une installation existante (une fois)
+
+Pour une installation faite avant l'arrivée du second facteur : `/etc/jalonia/jalonia.env` ne contient pas encore
+`CLE_SECOND_FACTEUR`. Ajoutez-la **avant ou juste après** la mise à jour (sans elle, les superadmins ne peuvent
+plus entrer dans l'interface : le second facteur leur est obligatoire) :
+
+```bash
+grep -q '^CLE_SECOND_FACTEUR=' /etc/jalonia/jalonia.env || echo "CLE_SECOND_FACTEUR=$(openssl rand -base64 32)" >> /etc/jalonia/jalonia.env
+grep -c '^CLE_SECOND_FACTEUR=' /etc/jalonia/jalonia.env
+systemctl restart jalonia
+```
+
+Attendu : `1`. La ligne n'est ajoutée qu'une fois, même si le bloc est recollé. **Gardez une copie de
+`/etc/jalonia/jalonia.env` en lieu sûr**, hors du serveur : sans cette clé, chaque second facteur devrait être
+réinitialisé. À votre prochaine connexion, Jalonia vous demandera d'activer le vôtre (code QR, puis codes de
+secours à noter).
 
 ## Durcissement d'une installation existante (une fois)
 
@@ -349,7 +388,8 @@ ligne ; si elle reste vide, appliquez le retour arrière ci-dessous).
 jalonia-deployer --verifier
 ```
 
-Attendu : neuf lignes ✔, puis « ✔ Tous les contrôles sont satisfaits. ». Ouvrez ensuite
+Attendu : dix lignes ✔, puis « ✔ Tous les contrôles sont satisfaits. » (si la ligne de la clé du second facteur
+est ✘, appliquez d'abord la section « Second facteur sur une installation existante »). Ouvrez ensuite
 **https://jalonia.mosa-apps.com** et connectez-vous.
 
 Désormais, pour mettre à jour : **`jalonia-deployer`** (l'ancienne commande est refusée et l'indique).

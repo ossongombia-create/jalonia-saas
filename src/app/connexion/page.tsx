@@ -4,22 +4,21 @@ import { actionChangerLangue, actionConnexion } from "@/actions/compte";
 import { ChoixLangue } from "@/components/ChoixLangue";
 import { FormulaireAction } from "@/components/FormulaireAction";
 import { traducteur } from "@/lib/i18n";
-import { accueilDe, lireContexte, lireLangue } from "@/server/web/contexte";
+import { accueilDe, lireConnexionEnAttente, lireContexte, lireLangue } from "@/server/web/contexte";
+import { parametreSuite, suiteValide } from "@/lib/suite";
 import { Logo } from "@/components/Logo";
 
 export async function generateMetadata(): Promise<Metadata> {
   return { title: traducteur(await lireLangue())("connexion.titre") };
 }
 
-// Retour possible après la connexion : une invitation ouverte avant de se connecter (seul chemin accepté, revérifié
-// par l'action de connexion).
-const SUITE_PERMISE = /^\/invitation\/[A-Za-z0-9_-]{43}$/;
-
+// Point d'aiguillage de la connexion : déjà connecté → accueil (ou l'invitation ouverte avant la connexion,
+// « ?suite= ») ; mot de passe donné mais second facteur attendu → /connexion/second-facteur ; sinon le formulaire.
 export default async function PageConnexion({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
-  const brut = (await searchParams).suite;
-  const suite = typeof brut === "string" && SUITE_PERMISE.test(brut) ? brut : "";
+  const suite = suiteValide((await searchParams).suite);
   const ctx = await lireContexte();
   if (ctx) redirect(suite || accueilDe(ctx));
+  if (await lireConnexionEnAttente()) redirect(`/connexion/second-facteur${parametreSuite(suite)}`);
   const langue = await lireLangue();
   const t = traducteur(langue);
 

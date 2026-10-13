@@ -86,6 +86,8 @@ configuration_illisible() {
   ! en_service test -r "$ENV_SERVICE" && { [[ ! -e $ENV_PROPRIETAIRE ]] || ! en_service test -r "$ENV_PROPRIETAIRE"; }
 }
 service_sans_proprietaire() { ! grep -q '^[[:space:]]*\(export[[:space:]]\+\)\?DATABASE_URL_PROPRIETAIRE=' "$ENV_SERVICE"; }
+# Clé du second facteur : sans elle, les superadmins ne peuvent plus se connecter à l'interface (obligatoire).
+cle_second_facteur() { grep -q '^CLE_SECOND_FACTEUR=[A-Za-z0-9+/]\{43\}=$' "$ENV_SERVICE"; }
 copie_installee_a_jour() { [[ -f $INSTALLE ]] && cmp -s "$INSTALLE" "$DEPOT/deploy/deployer.sh"; }
 copie_installee_protegee() {
   [[ -f $INSTALLE && ! -L $INSTALLE && $(stat -c %u "$INSTALLE") == 0 ]] && (( (8#$(stat -c %a "$INSTALLE") & 8#022) == 0 ))
@@ -100,6 +102,7 @@ controles() {
   controle "$UTILISATEUR_SERVICE ne peut pas modifier le dépôt ni le script de déploiement" scripts_non_modifiables
   controle "$UTILISATEUR_SERVICE ne peut lire aucun fichier de /etc/jalonia" configuration_illisible
   controle "le service ne reçoit pas le mot de passe du rôle propriétaire" service_sans_proprietaire
+  controle "la clé du second facteur (CLE_SECOND_FACTEUR) est configurée" cle_second_facteur
   controle "$INSTALLE appartient à root et n'est modifiable que par lui" copie_installee_protegee
   controle "$INSTALLE est identique à la version du dépôt" copie_installee_a_jour
   controle "l'application répond" sante

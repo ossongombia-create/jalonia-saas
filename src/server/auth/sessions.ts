@@ -1,5 +1,6 @@
 // Sessions : validées à CHAQUE requête. Une session est refusée si elle est terminée (déconnexion,
-// révocation), inactive depuis trop longtemps, trop ancienne, ou si l'utilisateur a été désactivé.
+// révocation), inactive depuis trop longtemps, trop ancienne, si l'utilisateur a été désactivé, ou si elle attend
+// encore le second facteur (elle ne sert alors qu'à la page /connexion/second-facteur : lireSessionEnAttente).
 import type { Pool, PoolClient } from "pg";
 import { enTransaction } from "../db/transactions";
 import { journaliserPlateforme } from "../audit/journal";
@@ -27,6 +28,7 @@ export interface SessionValide {
 
 interface Ligne {
   fin: Date | null;
+  en_attente_mfa: boolean;
   expiree: boolean;
   a_rafraichir: boolean;
   organisation_id: string | null;
@@ -46,7 +48,7 @@ export async function validerSession(pool: Pool, ids: { utilisateurId: string; s
   if (!MOTIF_UUID.test(ids.sessionId) || !MOTIF_UUID.test(ids.utilisateurId)) return null;
   return enTransaction(pool, async (client) => {
     const lu = await client.query<Ligne>(
-      `SELECT s.fin, s.organisation_id,
+      `SELECT s.fin, s.en_attente_mfa, s.organisation_id,
               (s.derniere_activite < now() - ($3::int * interval '1 minute')
                 OR s.debut < now() - ($4::int * interval '1 hour')) AS expiree,
               (s.derniere_activite < now() - interval '60 seconds') AS a_rafraichir,
@@ -57,7 +59,7 @@ export async function validerSession(pool: Pool, ids: { utilisateurId: string; s
       [ids.sessionId, ids.utilisateurId, regles.inactiviteMinutes, regles.dureeMaxHeures],
     );
     const l = lu.rows[0];
-    if (!l || l.fin !== null || l.statut !== "actif") return null;
+    if (!l || l.fin !== null || l.statut !== "actif" || l.en_attente_mfa) return null;
     if (l.expiree) {
       await fermer(client, ids.sessionId, "expiration");
       await journaliserPlateforme(client, { action: "SESSION_EXPIREE", acteurId: l.id, acteurEmail: l.email, cibleType: "session", cibleId: ids.sessionId });
@@ -70,6 +72,46 @@ export async function validerSession(pool: Pool, ids: { utilisateurId: string; s
       organisationId: l.organisation_id,
     };
   });
+}
+
+export interface SessionEnAttente {
+  sessionId: string;
+  utilisateur: { id: string; email: string; nom: string; estSuperadmin: boolean; langue: Langue };
+  /** Le second facteur est déjà activé (sinon : enrôlement, cas d'un superadmin). */
+  mfaActif: boolean;
+}
+
+/** Session ouverte par le mot de passe et qui attend le second facteur (au plus `minutes`), sinon null. */
+export async function lireSessionEnAttente(pool: Pool, ids: { utilisateurId: string; sessionId: string }, minutes: number): Promise<SessionEnAttente | null> {
+  if (!MOTIF_UUID.test(ids.sessionId) || !MOTIF_UUID.test(ids.utilisateurId)) return null;
+  return enTransaction(pool, async (client) => {
+    const lu = await client.query<{ trop_ancienne: boolean; email: string; nom: string; est_superadmin: boolean; langue: Langue; mfa_actif: boolean }>(
+      `SELECT s.debut < now() - ($3::int * interval '1 minute') AS trop_ancienne,
+              u.email, u.nom, u.est_superadmin, u.langue, u.mfa_active_le IS NOT NULL AS mfa_actif
+         FROM platform.sessions s JOIN platform.utilisateurs u ON u.id = s.utilisateur_id
+        WHERE s.id = $1 AND s.utilisateur_id = $2 AND s.fin IS NULL AND s.en_attente_mfa AND u.statut = 'actif'`,
+      [ids.sessionId, ids.utilisateurId, minutes],
+    );
+    const l = lu.rows[0];
+    if (!l) return null;
+    if (l.trop_ancienne) {
+      await fermer(client, ids.sessionId, "expiration");
+      return null;
+    }
+    return {
+      sessionId: ids.sessionId,
+      utilisateur: { id: ids.utilisateurId, email: l.email, nom: l.nom, estSuperadmin: l.est_superadmin, langue: l.langue },
+      mfaActif: l.mfa_actif,
+    };
+  });
+}
+
+/** Abandon d'une connexion en attente du second facteur (bouton « Annuler »). */
+export async function abandonnerSessionEnAttente(pool: Pool, ids: { utilisateurId: string; sessionId: string }): Promise<void> {
+  if (!MOTIF_UUID.test(ids.sessionId) || !MOTIF_UUID.test(ids.utilisateurId)) return;
+  await enTransaction(pool, (client) =>
+    client.query("UPDATE platform.sessions SET fin = now(), motif_fin = 'deconnexion' WHERE id = $1 AND utilisateur_id = $2 AND fin IS NULL AND en_attente_mfa", [ids.sessionId, ids.utilisateurId]),
+  );
 }
 
 async function fermer(client: PoolClient, sessionId: string, motif: "deconnexion" | "expiration" | "revocation"): Promise<void> {

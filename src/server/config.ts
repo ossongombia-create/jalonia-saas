@@ -10,6 +10,13 @@ const schema = z.object({
   SESSION_DUREE_HEURES: z.coerce.number().int().min(1).max(72).default(8),
   // Fuseau horaire d'affichage des dates (nom IANA, ex. Africa/Libreville, Europe/Paris).
   FUSEAU_HORAIRE: z.string().default("UTC").refine(fuseauValide, "FUSEAU_HORAIRE inconnu (ex. Africa/Libreville)"),
+  // Clé (32 octets en base64) qui chiffre les secrets du second facteur et les codes de secours. Facultative pour
+  // démarrer ; sans elle, personne ne peut activer de second facteur et les superadmins ne peuvent plus se connecter
+  // à l'interface (le second facteur leur est obligatoire). Générer avec : openssl rand -base64 32
+  CLE_SECOND_FACTEUR: z
+    .string()
+    .optional()
+    .refine((v) => v === undefined || v.trim() === "" || Buffer.from(v.trim(), "base64").length === 32, "CLE_SECOND_FACTEUR doit faire 32 octets en base64"),
 });
 
 function fuseauValide(fuseau: string): boolean {
@@ -39,3 +46,9 @@ export function config(): Config {
 
 /** Nom du rôle PostgreSQL de l'application (créé à l'installation, voir deploy/preparer-base.sql). */
 export const ROLE_APPLICATION = "jalonia_app";
+
+/** Clé du second facteur, ou null si elle n'est pas configurée. */
+export function cleSecondFacteur(): Buffer | null {
+  const v = config().CLE_SECOND_FACTEUR?.trim();
+  return v ? Buffer.from(v, "base64") : null;
+}

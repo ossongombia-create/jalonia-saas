@@ -6,6 +6,7 @@ import { redirect } from "next/navigation";
 import { AuthError } from "next-auth";
 import { signIn, signOut } from "@/auth";
 import { cheminInterne } from "@/lib/chemins";
+import { parametreSuite, suiteValide } from "@/lib/suite";
 import { estLangue, traduireMessage } from "@/lib/i18n";
 import { identifiant, schemaChangementMotDePasse, schemaConnexion } from "@/lib/validation";
 import type { EtatAction } from "@/lib/etat-action";
@@ -16,12 +17,6 @@ import { COOKIE_ORGANISATION, accueilDe, exigerContexte, lireContexte, lireLangu
 import { poserCookieLangue, poserCookieOrganisation } from "@/server/web/cookies";
 import { champ, executer, valider } from "@/server/web/actions";
 
-/** Après connexion : retour vers une invitation (seul chemin accepté), sinon l'accueil. */
-const SUITE_PERMISE = /^\/invitation\/[A-Za-z0-9_-]{43}$/;
-
-function cheminApresConnexion(suite: string): string {
-  return SUITE_PERMISE.test(suite) ? suite : "/";
-}
 
 export async function actionConnexion(_etat: EtatAction, formulaire: FormData): Promise<EtatAction> {
   const langue = await lireLangue();
@@ -33,9 +28,9 @@ export async function actionConnexion(_etat: EtatAction, formulaire: FormData): 
     if (erreur instanceof AuthError) return { ok: false, message: traduireMessage(langue, "connexion.echec"), jeton: Date.now() };
     throw erreur;
   }
-  // La page d'accueil oriente selon le profil (changement de mot de passe, plateforme, organisation) ; une
-  // invitation ouverte avant la connexion est reprise.
-  redirect(cheminApresConnexion(champ(formulaire, "suite")));
+  // La page de connexion oriente : second facteur à donner, sinon l'accueil (selon le profil) ou l'invitation
+  // ouverte avant la connexion.
+  redirect(`/connexion${parametreSuite(suiteValide(champ(formulaire, "suite")))}`);
 }
 
 export async function actionDeconnexion(): Promise<void> {

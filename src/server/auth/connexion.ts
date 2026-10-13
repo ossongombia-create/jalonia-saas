@@ -12,6 +12,9 @@
 // Déroulement : une lecture courte (limites, compte), la vérification HORS transaction (calcul coûteux : aucune
 // connexion à la base n'est retenue pendant ce temps), puis une écriture courte (résultat, session, journal) qui
 // revérifie que le compte n'a pas changé entre-temps (désactivation, nouveau mot de passe, verrouillage).
+//
+// Second facteur (second-facteur.ts) : pour un superadmin, ou un compte qui l'a activé, la session ouverte par le
+// mot de passe est « en attente » : inutilisable tant que le code n'a pas été donné.
 import type { Pool, PoolClient } from "pg";
 import { enTransaction } from "../db/transactions";
 import { ipValide, journaliserPlateforme, type EntreeJournal } from "../audit/journal";
@@ -36,7 +39,7 @@ export interface DemandeConnexion {
 export type RaisonRefus = "identifiants" | "verrouille" | "desactive" | "limite" | "occupe";
 
 export type ResultatConnexion =
-  | { ok: true; utilisateur: { id: string; email: string; nom: string; estSuperadmin: boolean }; sessionId: string }
+  | { ok: true; utilisateur: { id: string; email: string; nom: string; estSuperadmin: boolean }; sessionId: string; secondFacteur: boolean }
   | { ok: false; raison: RaisonRefus };
 
 interface LigneUtilisateur {
@@ -47,6 +50,7 @@ interface LigneUtilisateur {
   est_superadmin: boolean;
   statut: "actif" | "desactive";
   verrouille: boolean;
+  mfa_actif: boolean;
 }
 
 // ---------- Refus tracés une fois par fenêtre ----------
@@ -117,7 +121,7 @@ export async function authentifier(pool: Pool, d: DemandeConnexion): Promise<Res
   const lu = await enTransaction(pool, async (client) => {
     const compteurs = await compter(client, ip, d.email);
     const u = await client.query<LigneUtilisateur>(
-      `SELECT id, email, nom, mot_de_passe_hash, est_superadmin, statut,
+      `SELECT id, email, nom, mot_de_passe_hash, est_superadmin, statut, mfa_active_le IS NOT NULL AS mfa_actif,
               (verrouille_jusqua IS NOT NULL AND verrouille_jusqua > now()) AS verrouille
          FROM platform.utilisateurs WHERE email = $1`,
       [d.email],
@@ -201,12 +205,15 @@ export async function authentifier(pool: Pool, d: DemandeConnexion): Promise<Res
       return { ok: false, raison: "identifiants" };
     }
     await enregistrerTentative(client, ip, d.email, true);
+    const secondFacteur = u.est_superadmin || u.mfa_actif;
     const session = await client.query<{ id: string }>(
-      "INSERT INTO platform.sessions (utilisateur_id, ip, agent) VALUES ($1, $2::inet, $3) RETURNING id",
-      [u.id, ip, d.agent ? d.agent.slice(0, 500) : null],
+      "INSERT INTO platform.sessions (utilisateur_id, ip, agent, en_attente_mfa) VALUES ($1, $2::inet, $3, $4) RETURNING id",
+      [u.id, ip, d.agent ? d.agent.slice(0, 500) : null, secondFacteur],
     );
     const sessionId = session.rows[0]!.id;
-    await journaliserPlateforme(client, { action: "CONNEXION", ...acteur, cibleType: "session", cibleId: sessionId });
-    return { ok: true, utilisateur: { id: u.id, email: u.email, nom: u.nom, estSuperadmin: u.est_superadmin }, sessionId };
+    await journaliserPlateforme(client, {
+      action: "CONNEXION", ...acteur, cibleType: "session", cibleId: sessionId, ...(secondFacteur ? { details: { secondFacteur: "attendu" } } : {}),
+    });
+    return { ok: true, utilisateur: { id: u.id, email: u.email, nom: u.nom, estSuperadmin: u.est_superadmin }, sessionId, secondFacteur };
   });
 }

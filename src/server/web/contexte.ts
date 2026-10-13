@@ -13,7 +13,8 @@ import { aLeDroit, type Droit, type RoleOrganisation } from "@/lib/rbac";
 import { config } from "../config";
 import { enTransaction } from "../db/transactions";
 import { poolApplication } from "../db/pools";
-import { noterOrganisationDeSession, validerSession, type UtilisateurSession } from "../auth/sessions";
+import { lireSessionEnAttente, noterOrganisationDeSession, validerSession, type SessionEnAttente, type UtilisateurSession } from "../auth/sessions";
+import { MINUTES_SESSION_EN_ATTENTE } from "../auth/second-facteur";
 import type { Acteur } from "../acteur";
 import type { OrganisationCible } from "../membres/service";
 import { agentDepuisEntetes, ipDepuisEntetes } from "./reseau";
@@ -88,6 +89,16 @@ export const lireContexte = cache(async (): Promise<Contexte | null> => {
     organisation,
     acteur: { id: utilisateur.id, email: utilisateur.email, nom: utilisateur.nom, ip: ipDepuisEntetes(entetes), agent: agentDepuisEntetes(entetes) },
   };
+});
+
+/**
+ * Connexion commencée (mot de passe donné) qui attend encore le second facteur, ou null. Une telle session n'ouvre
+ * RIEN d'autre que la page /connexion/second-facteur : lireContexte() la refuse.
+ */
+export const lireConnexionEnAttente = cache(async (): Promise<SessionEnAttente | null> => {
+  const session = (await auth()) as { uid?: unknown; sid?: unknown } | null;
+  if (!session || typeof session.uid !== "string" || typeof session.sid !== "string") return null;
+  return lireSessionEnAttente(poolApplication(), { utilisateurId: session.uid, sessionId: session.sid }, MINUTES_SESSION_EN_ATTENTE);
 });
 
 /** Langue d'affichage, connecté ou non (cookie, sinon français). */

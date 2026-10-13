@@ -15,6 +15,7 @@ import {
   revoquerSessionsUtilisateur,
 } from "@/server/utilisateurs/service";
 import { revoquerSession } from "@/server/consultation/service";
+import { reinitialiserSecondFacteur } from "@/server/auth/second-facteur";
 import { exigerSuperadmin } from "@/server/web/contexte";
 import { champ, executer, valider } from "@/server/web/actions";
 
@@ -84,6 +85,15 @@ export async function actionReinitialiserMotDePasse(_etat: EtatAction, formulair
     const mdp = valider(z.string().max(200, "erreur.mdp_trop_long"), champ(formulaire, "motDePasse"));
     await reinitialiserMotDePasse(poolApplication(), cible(formulaire), mdp, ctx.acteur);
     return { cle: "users.reinitialise" };
+  });
+}
+
+/** Retire le second facteur d'un compte (téléphone perdu) : jamais celui d'un superadmin (ligne de commande). */
+export async function actionReinitialiserSecondFacteur(_etat: EtatAction, formulaire: FormData): Promise<EtatAction> {
+  const ctx = await exigerSuperadmin();
+  return executer(ctx.langue, async () => {
+    await reinitialiserSecondFacteur(poolApplication(), cible(formulaire), ctx.acteur);
+    return { cle: "mfa.reinitialise" };
   });
 }
 

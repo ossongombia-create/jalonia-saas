@@ -14,13 +14,21 @@ export interface Reussite {
   variables?: Variables;
   /** Chemin d'un lien à transmettre (voir EtatAction.lien). */
   lien?: string;
+  /** Codes à noter (voir EtatAction.codes). */
+  codes?: string[];
 }
 
-export async function executer(langue: Langue, travail: () => Promise<Reussite>): Promise<EtatAction> {
+/**
+ * `rafraichir: false` : la page n'est PAS recalculée après le succès. Indispensable quand la réponse montre une
+ * information unique (codes de secours) que le recalcul de la page ferait disparaître.
+ */
+export async function executer(langue: Langue, travail: () => Promise<Reussite>, options: { rafraichir?: boolean } = {}): Promise<EtatAction> {
   try {
     const r = await travail();
-    refresh();
-    return { ok: true, message: traduireMessage(langue, r.cle, r.variables), jeton: Date.now(), ...(r.lien ? { lien: r.lien } : {}) };
+    if (options.rafraichir !== false) refresh();
+    return {
+      ok: true, message: traduireMessage(langue, r.cle, r.variables), jeton: Date.now(), ...(r.lien ? { lien: r.lien } : {}), ...(r.codes ? { codes: r.codes } : {}),
+    };
   } catch (erreur) {
     unstable_rethrow(erreur); // redirect(), notFound()… doivent remonter à Next.js
     if (erreur instanceof ErreurMetier) return { ok: false, message: traduireMessage(langue, erreur.cle), jeton: Date.now() };

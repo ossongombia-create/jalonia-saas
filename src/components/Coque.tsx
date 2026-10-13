@@ -53,6 +53,7 @@ export function Coque({ ctx, espace, liens, liensSecondaires = [], children }: P
             <span>{ctx.utilisateur.email}</span>
           </div>
           <LienNav href="/compte/mot-de-passe">{t("commun.mon_mot_de_passe")}</LienNav>
+          <LienNav href="/compte/second-facteur">{t("mfa.mon_second_facteur")}</LienNav>
           <ChoixLangue action={actionChangerLangue} langue={ctx.langue} libelle={t("commun.langue")} />
           <form action={actionDeconnexion}>
             <button type="submit" className="bouton bouton-rail">

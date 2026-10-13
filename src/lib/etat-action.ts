@@ -7,6 +7,8 @@ export interface EtatAction {
   jeton: number;
   /** Lien à transmettre (chemin du site, ex. invitation), affiché avec un bouton « Copier ». */
   lien?: string;
+  /** Codes de secours à noter, montrés une seule fois. */
+  codes?: string[];
 }
 
 export const ETAT_INITIAL: EtatAction = { ok: false, message: null, jeton: 0 };

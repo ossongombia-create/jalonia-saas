@@ -19,6 +19,7 @@ export interface UtilisateurResume {
   estSuperadmin: boolean;
   statut: "actif" | "desactive";
   doitChangerMdp: boolean;
+  mfaActif: boolean;
   verrouilleJusqua: Date | null;
   derniereConnexion: Date | null;
   creeLe: Date;
@@ -33,10 +34,10 @@ export function listerUtilisateurs(pool: Pool, regles: ReglesSession): Promise<U
 
 async function lireResumes(client: PoolClient, regles: ReglesSession, seulementId: string | null): Promise<UtilisateurResume[]> {
   const r = await client.query<{
-    id: string; email: string; nom: string; est_superadmin: boolean; statut: "actif" | "desactive"; doit_changer_mdp: boolean;
+    id: string; email: string; nom: string; est_superadmin: boolean; statut: "actif" | "desactive"; doit_changer_mdp: boolean; mfa_actif: boolean;
     verrouille_jusqua: Date | null; derniere_connexion: Date | null; cree_le: Date; organisations: string[]; sessions_ouvertes: number; secondes_30j: number;
   }>(
-    `SELECT u.id, u.email, u.nom, u.est_superadmin, u.statut, u.doit_changer_mdp,
+    `SELECT u.id, u.email, u.nom, u.est_superadmin, u.statut, u.doit_changer_mdp, u.mfa_active_le IS NOT NULL AS mfa_actif,
             CASE WHEN u.verrouille_jusqua > now() THEN u.verrouille_jusqua END AS verrouille_jusqua,
             u.derniere_connexion, u.cree_le,
             COALESCE((SELECT array_agg(o.nom ORDER BY o.nom)
@@ -55,7 +56,7 @@ async function lireResumes(client: PoolClient, regles: ReglesSession, seulementI
     [regles.inactiviteMinutes, regles.dureeMaxHeures, seulementId],
   );
   return r.rows.map((u) => ({
-    id: u.id, email: u.email, nom: u.nom, estSuperadmin: u.est_superadmin, statut: u.statut, doitChangerMdp: u.doit_changer_mdp,
+    id: u.id, email: u.email, nom: u.nom, estSuperadmin: u.est_superadmin, statut: u.statut, doitChangerMdp: u.doit_changer_mdp, mfaActif: u.mfa_actif,
     verrouilleJusqua: u.verrouille_jusqua, derniereConnexion: u.derniere_connexion, creeLe: u.cree_le,
     organisations: u.organisations, sessionsOuvertes: u.sessions_ouvertes, secondes30j: u.secondes_30j,
   }));

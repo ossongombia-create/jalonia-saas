@@ -596,6 +596,46 @@ input[readonly] {
   font-size: 0.85rem;
 }
 
+.etapes-mfa {
+  padding-left: 1.4rem;
+  display: grid;
+  gap: 0.6rem;
+  margin: 0.8rem 0 1rem;
+}
+/* Codes de secours affichés : l'enrôlement est terminé (session valable) ; on retire les étapes et « Annuler ». */
+.carte:has(.codes-secours) .etapes-mfa,
+.carte:has(.codes-secours) .abandon-connexion {
+  display: none;
+}
+.codes-secours h2 {
+  margin-top: 1rem;
+}
+.liste-codes {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr));
+  gap: 0.4rem 1.2rem;
+  padding-left: 1.6rem;
+  margin: 0.8rem 0 1rem;
+}
+.liste-codes code,
+.secret-totp {
+  font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
+  font-size: 1rem;
+  letter-spacing: 0.04em;
+}
+.qr-totp {
+  display: block;
+  width: 200px;
+  height: 200px;
+  margin: 0.6rem 0;
+  border: 1px solid var(--trait);
+  border-radius: 8px;
+  background: #fff;
+}
+.secret-totp {
+  word-break: break-all;
+}
+
 /* ----- Messages ----- */
 .message {
   margin: 0;
