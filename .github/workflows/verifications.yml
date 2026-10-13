@@ -1,0 +1,83 @@
+# Vérifications à chaque envoi sur main et à chaque demande de fusion : types, règles de code, tests unitaires,
+# tests de l'éditeur, tests d'intégration (vraie base PostgreSQL), puis parcours navigateur et matrice des
+# autorisations sur le serveur de production construit (npm run test:e2e).
+# Aucun secret : la base de test vit dans le conteneur PostgreSQL de la tâche ; les secrets du serveur de test
+# sont tirés au sort par tests/e2e/lancer.mjs.
+name: Vérifications
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: verifications-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verifications:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: jalonia_test_admin
+          POSTGRES_PASSWORD: jalonia_test_admin
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U jalonia_test_admin -d postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      PG_TEST_ADMIN_URL: postgresql://jalonia_test_admin:jalonia_test_admin@127.0.0.1:5432/postgres
+    steps:
+      # Actions épinglées par empreinte de commit (une étiquette peut être déplacée).
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24 # comme le serveur (deploy/INSTALL-VPS.md, étape 4)
+          cache: npm
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - name: Dépendances
+        run: npm ci
+      - name: Client PostgreSQL (psql)
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends postgresql-client
+
+      - name: Types
+        run: npm run typecheck
+      - name: Règles de code
+        run: npm run lint
+      - name: Tests unitaires
+        run: npm run test:unit
+      - name: Tests de l'éditeur
+        run: npm run test:editeur
+      - name: Tests d'intégration (PostgreSQL)
+        run: npm run test:integration
+
+      - name: Chromium (Playwright) et décodage des codes QR (OpenCV)
+        run: |
+          npx playwright install --with-deps chromium
+          python -m pip install opencv-python-headless==4.13.0.92
+      - name: Parcours navigateur et matrice des autorisations
+        run: npm run test:e2e
+      - name: Captures et journal du serveur de test (en cas d'échec)
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: parcours-navigateur
+          path: tests/e2e/.etat/
+          include-hidden-files: true
+          retention-days: 7
+          if-no-files-found: ignore

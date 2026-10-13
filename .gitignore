@@ -26,3 +26,6 @@ next-env.d.ts
 
 # copie de l'éditeur générée à la compilation (source : editeur/)
 /public/editeur/
+
+# parcours navigateur : base, captures, journal du serveur de test (tests/e2e/lancer.mjs)
+/tests/e2e/.etat/

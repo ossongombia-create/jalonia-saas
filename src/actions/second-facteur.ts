@@ -18,7 +18,7 @@ import {
 } from "@/server/auth/second-facteur";
 import type { Acteur } from "@/server/acteur";
 import { ErreurMetier } from "@/server/erreurs";
-import { exigerContexte, lireConnexionEnAttente } from "@/server/web/contexte";
+import { exigerContexte, lireConnexionEnAttente, lireContexte } from "@/server/web/contexte";
 import { agentDepuisEntetes, ipDepuisEntetes } from "@/server/web/reseau";
 import { champ, executer } from "@/server/web/actions";
 
@@ -65,11 +65,18 @@ export async function actionActiverSecondFacteurConnexion(_etat: EtatAction, for
   );
 }
 
-/** « Annuler » sur la page du code : la connexion commencée est abandonnée. */
+/**
+ * « Annuler » sur la page du code : la connexion commencée est abandonnée. Une session COMPLÈTE n'est pas touchée
+ * (sinon le cookie disparaîtrait alors que la session resterait ouverte en base) : la déconnexion a son action.
+ */
 export async function actionAbandonnerConnexion(): Promise<void> {
   const attente = await lireConnexionEnAttente();
-  if (attente) await abandonnerSessionEnAttente(poolApplication(), { sessionId: attente.sessionId, utilisateurId: attente.utilisateur.id });
-  await signOut({ redirect: false });
+  if (attente) {
+    await abandonnerSessionEnAttente(poolApplication(), { sessionId: attente.sessionId, utilisateurId: attente.utilisateur.id });
+    await signOut({ redirect: false });
+  } else if (!(await lireContexte())) {
+    await signOut({ redirect: false }); // cookie d'une session déjà close ou expirée : on le retire
+  }
   redirect("/connexion");
 }
 

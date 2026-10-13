@@ -11,9 +11,9 @@ import { estLangue, traduireMessage } from "@/lib/i18n";
 import { identifiant, schemaChangementMotDePasse, schemaConnexion } from "@/lib/validation";
 import type { EtatAction } from "@/lib/etat-action";
 import { poolApplication } from "@/server/db/pools";
-import { terminerSession, noterOrganisationDeSession } from "@/server/auth/sessions";
+import { abandonnerSessionEnAttente, terminerSession, noterOrganisationDeSession } from "@/server/auth/sessions";
 import { changerLangue, changerMotDePasse } from "@/server/utilisateurs/service";
-import { COOKIE_ORGANISATION, accueilDe, exigerContexte, lireContexte, lireLangue } from "@/server/web/contexte";
+import { COOKIE_ORGANISATION, accueilDe, exigerContexte, lireConnexionEnAttente, lireContexte, lireLangue } from "@/server/web/contexte";
 import { poserCookieLangue, poserCookieOrganisation } from "@/server/web/cookies";
 import { champ, executer, valider } from "@/server/web/actions";
 
@@ -36,6 +36,11 @@ export async function actionConnexion(_etat: EtatAction, formulaire: FormData): 
 export async function actionDeconnexion(): Promise<void> {
   const ctx = await lireContexte();
   if (ctx) await terminerSession(poolApplication(), ctx.sessionId, ctx.acteur);
+  else {
+    // Connexion commencée (code du second facteur pas encore donné) : close elle aussi, pas seulement oubliée.
+    const attente = await lireConnexionEnAttente();
+    if (attente) await abandonnerSessionEnAttente(poolApplication(), { sessionId: attente.sessionId, utilisateurId: attente.utilisateur.id });
+  }
   (await cookies()).delete(COOKIE_ORGANISATION);
   await signOut({ redirect: false });
   redirect("/connexion");

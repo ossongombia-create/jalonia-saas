@@ -64,6 +64,7 @@ npm run lint               # règles de code
 npm run test:unit          # tests unitaires
 npm run test:editeur       # tests de l'éditeur Qualigramme (node --test)
 npm run test:integration   # tests sur une vraie base PostgreSQL
+npm run test:e2e           # construction, puis parcours navigateur et matrice des autorisations
 ```
 
 L'éditeur (`editeur/`) reste utilisable seul, en local : ouvrir `editeur/index.html` (brouillon dans le
@@ -74,6 +75,15 @@ Les tests d'intégration créent une base PostgreSQL temporaire (puis la supprim
 superutilisateur PostgreSQL **de test** (variable `PG_TEST_ADMIN_URL`, par défaut
 `postgresql://jalonia_test_admin:jalonia_test_admin@127.0.0.1:5432/postgres`). À lancer sur un poste de
 développement uniquement : ils refusent de s'exécuter sur le serveur de production.
+
+`npm run test:e2e` construit l'application, crée sa propre base de test (même `PG_TEST_ADMIN_URL`), démarre le
+serveur de production construit sur un port libre, joue les parcours navigateur (`tests/e2e/p1.cjs` à `p7.cjs`), les
+sondes de la politique de sécurité du contenu et la matrice des autorisations (`tests/e2e/autorisations.cjs` : toutes
+les actions serveur appelées directement par huit profils), puis supprime tout. Prérequis : `psql`, Chromium de
+Playwright (`npx playwright install chromium`), et pour le décodage du code QR de la partie 7, `python3` avec
+`opencv-python-headless` (sinon `E2E_SANS_QR=1`, signalé dans la sortie). Ne pas le lancer en même temps que les
+tests d'intégration (mêmes rôles PostgreSQL). Captures et journal du serveur : `tests/e2e/.etat/`. Les mêmes
+vérifications tournent à chaque envoi sur GitHub (`.github/workflows/verifications.yml`).
 
 ## Installation sur le serveur
 
