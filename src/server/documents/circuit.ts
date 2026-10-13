@@ -12,6 +12,10 @@
 //   rédigée (dernier auteur), ne peut ni la vérifier ni l'approuver ; celle qui l'a vérifiée ne peut pas l'approuver.
 // - La version soumise est copiée dans l'historique (copie « soumission ») : c'est elle qui est vérifiée, approuvée, publiée
 //   puis archivée, sans changer ; le document garde le numéro de la version publiée (version_publiee).
+// - Revue périodique (revues.ts) : un approbateur « confirme la revue » d'un document publié (il reste publié, nouvelle
+//   échéance) ; sinon le document est révisé.
+// - Notifications (notifications/service.ts) : soumis → vérificateurs ; vérifié → approbateurs ; refusé ou publié → la
+//   personne qui a soumis et l'auteur. Jamais à soi-même ni à qui la séparation des tâches interdit de décider.
 // - Chaque décision est rangée (decisions_document, ajout seul) avec la version, le motif et l'empreinte SHA-256 du
 //   contenu : c'est une TRACE D'APPROBATION, pas une signature électronique (aucune valeur légale revendiquée).
 import type { Pool, PoolClient } from "pg";
@@ -24,6 +28,7 @@ import { ErreurMetier } from "../erreurs";
 import { nomActeur, traceActeur, type Acteur } from "../acteur";
 import { estIdentifiant, type EtatDocument, type TypeDocument } from "./service";
 import { copier, type MotifCopie } from "./copies";
+import { ayantRole, membresDestinataires, notifier, type NouvelleNotification } from "../notifications/service";
 
 export type { EtatDocument };
 /** Les états, dans l'ordre du circuit (la contrainte CHECK de la migration 0005 porte la même liste : test unitaire). */
@@ -40,6 +45,8 @@ export const TRANSITIONS = {
   refuser_approbation: { de: ["en_approbation"], vers: "brouillon", droit: "documents.approuver", motifObligatoire: true, action: "DOCUMENT_REFUSE", copie: null },
   archiver: { de: ["publie"], vers: "archive", droit: "documents.archiver", motifObligatoire: true, action: "DOCUMENT_ARCHIVE", copie: null },
   reviser: { de: ["publie"], vers: "brouillon", droit: "documents.soumettre", motifObligatoire: false, action: "DOCUMENT_REVISE", copie: null },
+  // Revue périodique (revues.ts) : le document publié est revu et maintenu tel quel ; nouvelle échéance.
+  confirmer_revue: { de: ["publie"], vers: "publie", droit: "documents.approuver", motifObligatoire: false, action: "DOCUMENT_REVUE_CONFIRMEE", copie: null },
 } as const satisfies Record<string, { de: readonly EtatDocument[]; vers: EtatDocument; droit: Droit; motifObligatoire: boolean; action: Action; copie: MotifCopie | null }>;
 
 export type Transition = keyof typeof TRANSITIONS;
@@ -105,6 +112,8 @@ export interface EtatCircuit {
   etat: EtatDocument;
   versionPubliee: number | null;
   publieLe: Date | null;
+  /** Dernière approbation ou dernière revue confirmée (revues.ts). */
+  revueLe: Date | null;
   intervenants: Intervenants;
   decisions: Decision[];
 }
@@ -128,8 +137,8 @@ async function lireIntervenants(client: PoolClient, id: string, auteur: string |
 export async function lireCircuit(pool: Pool, org: OrganisationCible, id: string): Promise<EtatCircuit | null> {
   if (!estIdentifiant(id)) return null;
   return avecOrganisation(pool, org, async (client) => {
-    const d = await client.query<{ id: string; type: TypeDocument; titre: string; reference: string; version: number; etat: EtatDocument; version_publiee: number | null; publie_le: Date | null; modifie_par: string | null }>(
-      "SELECT id, type, titre, reference, version, etat, version_publiee, publie_le, modifie_par FROM documents WHERE id = $1 AND supprime_le IS NULL",
+    const d = await client.query<{ id: string; type: TypeDocument; titre: string; reference: string; version: number; etat: EtatDocument; version_publiee: number | null; publie_le: Date | null; revue_le: Date | null; modifie_par: string | null }>(
+      "SELECT id, type, titre, reference, version, etat, version_publiee, publie_le, revue_le, modifie_par FROM documents WHERE id = $1 AND supprime_le IS NULL",
       [id],
     );
     const doc = d.rows[0];
@@ -140,7 +149,7 @@ export async function lireCircuit(pool: Pool, org: OrganisationCible, id: string
     );
     return {
       id: doc.id, type: doc.type, titre: doc.titre, reference: doc.reference, version: doc.version, etat: doc.etat,
-      versionPubliee: doc.version_publiee, publieLe: doc.publie_le,
+      versionPubliee: doc.version_publiee, publieLe: doc.publie_le, revueLe: doc.revue_le,
       intervenants: await lireIntervenants(client, id, doc.modifie_par, doc.etat),
       decisions: decisions.rows.map((x) => ({
         version: x.version, transition: x.transition, etatAvant: x.etat_avant, etatApres: x.etat_apres, motif: x.motif, empreinte: x.empreinte, acteurNom: x.acteur_nom, decideLe: x.decide_le,
@@ -165,6 +174,8 @@ export async function appliquerTransition(
   const regle = TRANSITIONS[t];
   const motif = e.motif.trim();
   return enTransaction(pool, async (client) => {
+    // Membres actifs (tables de la plateforme : lues avant de passer dans l'organisation), pour les notifications.
+    const membres = await membresDestinataires(client, org.id);
     const r = await dansOrganisation(client, org, async () => {
       const lu = await client.query<{ version: number; etat: EtatDocument; modifie_par: string | null; type: TypeDocument; titre: string; reference: string; empreinte: string }>(
         `SELECT version, etat, modifie_par, type, titre, reference, encode(sha256(convert_to(contenu::text, 'UTF8')), 'hex') AS empreinte
@@ -174,20 +185,47 @@ export async function appliquerTransition(
       const doc = lu.rows[0];
       if (!doc) throw new ErreurMetier("erreur.introuvable");
       if (doc.version !== e.versionVue) throw new ErreurMetier("versions.document_modifie");
-      const refus = refusTransition(t, doc.etat, e.roles, acteur.id, await lireIntervenants(client, id, doc.modifie_par, doc.etat), motif);
+      const intervenants = await lireIntervenants(client, id, doc.modifie_par, doc.etat);
+      const refus = refusTransition(t, doc.etat, e.roles, acteur.id, intervenants, motif);
       if (refus) throw new ErreurMetier(refus);
 
-      await client.query(
+      const decision = await client.query<{ id: string }>(
         `INSERT INTO decisions_document (document_id, version, transition, etat_avant, etat_apres, motif, empreinte, acteur, acteur_nom)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id::text AS id`,
         [id, doc.version, t, doc.etat, regle.vers, motif, doc.empreinte, acteur.id, nomActeur(acteur)],
       );
       if (t === "approuver") {
-        await client.query("UPDATE documents SET etat = $2, version_publiee = version, publie_le = now() WHERE id = $1", [id, regle.vers]);
+        await client.query("UPDATE documents SET etat = $2, version_publiee = version, publie_le = now(), revue_le = now() WHERE id = $1", [id, regle.vers]);
+      } else if (t === "confirmer_revue") {
+        await client.query("UPDATE documents SET revue_le = now() WHERE id = $1", [id]);
       } else {
         await client.query("UPDATE documents SET etat = $2 WHERE id = $1", [id, regle.vers]);
       }
       if (regle.copie) await copier(client, id, regle.copie);
+
+      // Notifications de la décision (jamais à soi-même).
+      const destinataires = (() => {
+        const soumisPar = t === "soumettre" ? acteur.id : intervenants.soumisPar;
+        switch (t) {
+          case "soumettre": return { nature: "a_verifier" as const, qui: ayantRole(membres, ["VERIFICATEUR"], [acteur.id, doc.modifie_par]) };
+          case "verifier": return { nature: "a_approuver" as const, qui: ayantRole(membres, ["APPROBATEUR"], [acteur.id, doc.modifie_par, soumisPar]) };
+          case "refuser_verification":
+          case "refuser_approbation":
+          case "approuver": {
+            const qui = [...new Set([soumisPar, doc.modifie_par])].filter((x): x is string => !!x && x !== acteur.id && membres.some((m) => m.id === x));
+            return { nature: t === "approuver" ? ("publie" as const) : ("refuse" as const), qui };
+          }
+          default: return null;
+        }
+      })();
+      if (destinataires) {
+        const liste: NouvelleNotification[] = destinataires.qui.map((destinataire) => ({
+          destinataire, nature: destinataires.nature, cle: `circuit:${decision.rows[0]!.id}`, documentId: id,
+          details: { titre: doc.titre, reference: doc.reference, version: doc.version, par: nomActeur(acteur), ...(motif && destinataires.nature === "refuse" ? { motif } : {}) },
+        }));
+        await notifier(client, liste);
+      }
+
       const meta = { type: doc.type, titre: doc.titre, reference: doc.reference };
       const entree: EntreeJournal = {
         action: regle.action, ...traceActeur(acteur), cibleType: "document", cibleId: id,

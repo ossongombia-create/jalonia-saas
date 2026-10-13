@@ -5,7 +5,7 @@
 //    migrations, superadministrateur créé par le VRAI script (scripts/creer-superadmin.ts), données de départ
 //    (tests/e2e/preparer.ts) ;
 // 2. serveur de production construit (.next/standalone), démarré sur un port libre, secrets tirés au sort ;
-// 3. parties p1 à p11, sondes CSP, matrice des autorisations — l'une après l'autre, arrêt à la première erreur ;
+// 3. parties p1 à p12, sondes CSP, matrice des autorisations — l'une après l'autre, arrêt à la première erreur ;
 // 4. journal du serveur relu après chaque partie : aucune erreur ;
 // 5. tout est supprimé (base, rôles des organisations), même en cas d'échec.
 //
@@ -31,7 +31,7 @@ const RACINE = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..
 const ICI = path.join(RACINE, "tests/e2e");
 const ETAT = path.join(ICI, ".etat");
 const TSX = path.join(RACINE, "node_modules/.bin/tsx");
-const PARTIES = ["p1", "p2", "p3", "p4", "p5", "p6", "p7", "p8", "p9", "p10", "p11", "sonde-csp", "sonde-csp-blocage", "autorisations"];
+const PARTIES = ["p1", "p2", "p3", "p4", "p5", "p6", "p7", "p8", "p9", "p10", "p11", "p12", "sonde-csp", "sonde-csp-blocage", "autorisations"];
 const SUPERADMIN = { email: "superadmin@e2e.test", nom: "Superadmin E2E", mdp: "superadmin-e2e-motdepasse" }; // (outils.cjs)
 const MINUTES_PAR_PARTIE = 10;
 
@@ -170,7 +170,8 @@ async function principal() {
     await attendreServeur(base, serveur);
     console.log(`✔ ${base}`);
 
-    const envParties = { E2E_BASE: base, E2E_URL_PROPRIETAIRE: urlProprietaire, E2E_ETAT: ETAT };
+    // (L'adresse du rôle de l'APPLICATION sert à lancer les tâches quotidiennes construites, comme le minuteur en production.)
+    const envParties = { E2E_BASE: base, E2E_URL_PROPRIETAIRE: urlProprietaire, E2E_URL_APPLICATION: urlApplication, E2E_ETAT: ETAT };
     const fichierJournal = path.join(ETAT, "serveur.log");
     for (const p of demandees) {
       titre(p);

@@ -1,0 +1,132 @@
+// Notifications dans l'application (audit W2 ; migration organisation 0006).
+//
+// Une notification est adressée à UNE personne de l'organisation : document à vérifier ou à approuver, document refusé
+// ou publié, revue à faire ou en retard, action confiée ou en retard. Chacune porte une clé : la même notification
+// n'est jamais créée deux fois pour la même personne (les tâches quotidiennes peuvent repasser sans doublon).
+// Chacun ne lit et ne marque que les siennes, dans l'organisation ouverte.
+// L'envoi par e-mail viendra avec le module SMTP (audit O2) ; les notifications restent la source.
+import type { Pool, PoolClient } from "pg";
+import type { RoleOrganisation } from "@/lib/rbac";
+import { avecOrganisation } from "../db/transactions";
+import type { OrganisationCible } from "../membres/service";
+
+export const NATURES = [
+  "a_verifier", "a_approuver", "refuse", "publie",
+  "revue_proche", "revue_retard", "revue_escalade",
+  "action_confiee", "action_proche", "action_retard", "action_escalade",
+] as const;
+export type NatureNotification = (typeof NATURES)[number];
+
+/** Ce que le texte de la notification affiche (instantané : le titre au moment de la notification). */
+export interface DetailsNotification {
+  titre?: string;
+  reference?: string;
+  version?: number;
+  motif?: string;
+  par?: string;
+  echeance?: string;
+  jours?: number;
+}
+
+export interface NouvelleNotification {
+  destinataire: string;
+  nature: NatureNotification;
+  cle: string;
+  documentId?: string | null;
+  actionId?: string | null;
+  details: DetailsNotification;
+}
+
+export interface Notification {
+  id: string;
+  nature: NatureNotification;
+  documentId: string | null;
+  actionId: string | null;
+  details: DetailsNotification;
+  creeeLe: Date;
+  lueLe: Date | null;
+}
+
+export interface MembreDestinataire {
+  id: string;
+  nom: string;
+  roles: RoleOrganisation[];
+}
+
+const MOTIF_MAX = 300;
+const TEXTE_MAX = 200;
+const court = (v: string | undefined, max: number) => (v === undefined ? undefined : v.length > max ? `${v.slice(0, max)}…` : v);
+
+/**
+ * Membres ACTIFS de l'organisation et leurs rôles (tables de la plateforme : à appeler AVANT de passer dans
+ * l'organisation, dans la même transaction).
+ */
+export async function membresDestinataires(client: PoolClient, organisationId: string): Promise<MembreDestinataire[]> {
+  const r = await client.query<{ id: string; nom: string; roles: RoleOrganisation[] }>(
+    `SELECT u.id, u.nom, a.roles FROM platform.adhesions a JOIN platform.utilisateurs u ON u.id = a.utilisateur_id
+      WHERE a.organisation_id = $1 AND u.statut = 'actif' ORDER BY u.id`,
+    [organisationId],
+  );
+  return r.rows;
+}
+
+/** Les membres qui ont l'un des rôles, sauf les personnes exclues (sans doublon). */
+export function ayantRole(membres: readonly MembreDestinataire[], roles: readonly RoleOrganisation[], exclus: readonly (string | null | undefined)[] = []): string[] {
+  return membres.filter((m) => m.roles.some((r) => roles.includes(r)) && !exclus.includes(m.id)).map((m) => m.id);
+}
+
+/** Crée les notifications (client DANS l'organisation) ; une notification déjà créée (même clé) est ignorée. */
+export async function notifier(client: PoolClient, liste: readonly NouvelleNotification[]): Promise<number> {
+  let creees = 0;
+  for (const n of liste) {
+    const details: DetailsNotification = {
+      ...n.details,
+      titre: court(n.details.titre, TEXTE_MAX),
+      reference: court(n.details.reference, TEXTE_MAX),
+      motif: court(n.details.motif, MOTIF_MAX),
+      par: court(n.details.par, TEXTE_MAX),
+    };
+    const r = await client.query(
+      `INSERT INTO notifications (destinataire, nature, cle, document_id, action_id, details) VALUES ($1, $2, $3, $4, $5, $6)
+       ON CONFLICT (destinataire, cle) DO NOTHING`,
+      [n.destinataire, n.nature, n.cle, n.documentId ?? null, n.actionId ?? null, JSON.stringify(details)],
+    );
+    creees += r.rowCount ?? 0;
+  }
+  return creees;
+}
+
+export async function listerNotifications(pool: Pool, org: OrganisationCible, utilisateurId: string, limite = 100): Promise<Notification[]> {
+  return avecOrganisation(pool, org, async (client) => {
+    const r = await client.query<{ id: string; nature: NatureNotification; document_id: string | null; action_id: string | null; details: DetailsNotification; creee_le: Date; lue_le: Date | null }>(
+      `SELECT id::text AS id, nature, document_id, action_id, details, creee_le, lue_le FROM notifications
+        WHERE destinataire = $1 ORDER BY id DESC LIMIT $2`,
+      [utilisateurId, limite],
+    );
+    return r.rows.map((l) => ({ id: l.id, nature: l.nature, documentId: l.document_id, actionId: l.action_id, details: l.details, creeeLe: l.creee_le, lueLe: l.lue_le }));
+  });
+}
+
+export async function compterNonLues(pool: Pool, org: OrganisationCible, utilisateurId: string): Promise<number> {
+  return avecOrganisation(pool, org, async (client) => {
+    const r = await client.query<{ n: number }>("SELECT count(*)::int AS n FROM notifications WHERE destinataire = $1 AND lue_le IS NULL", [utilisateurId]);
+    return r.rows[0]?.n ?? 0;
+  });
+}
+
+/** Marque comme lues les notifications de la personne (toutes, ou celles dont l'identifiant est donné). */
+export async function marquerLues(pool: Pool, org: OrganisationCible, utilisateurId: string, ids: readonly string[] | "toutes"): Promise<number> {
+  return avecOrganisation(pool, org, async (client) => {
+    if (ids === "toutes") {
+      return (await client.query("UPDATE notifications SET lue_le = now() WHERE destinataire = $1 AND lue_le IS NULL", [utilisateurId])).rowCount ?? 0;
+    }
+    const valides = ids.filter((i) => /^\d{1,18}$/.test(i));
+    if (valides.length === 0) return 0;
+    return (await client.query("UPDATE notifications SET lue_le = now() WHERE destinataire = $1 AND lue_le IS NULL AND id = ANY ($2::bigint[])", [utilisateurId, valides])).rowCount ?? 0;
+  });
+}
+
+/** Ménage (tâches quotidiennes) : les notifications LUES de plus de `jours` jours. */
+export async function purgerNotificationsLues(client: PoolClient, jours: number): Promise<number> {
+  return (await client.query("DELETE FROM notifications WHERE lue_le IS NOT NULL AND lue_le < now() - make_interval(days => $1)", [jours])).rowCount ?? 0;
+}

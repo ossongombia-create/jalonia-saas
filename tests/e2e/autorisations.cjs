@@ -20,7 +20,7 @@ const ETRANGERE = "https://pirate.example";
 // ---------- Textes (français) des refus attendus ----------
 const TEXTES = {};
 for (const ligne of fs.readFileSync(path.join(RACINE, "src/lib/i18n/fr.ts"), "utf8").split("\n")) {
-  const m = /^\s*"([a-z0-9_.]+)":\s*("(?:[^"\\]|\\.)*"),\s*$/.exec(ligne);
+  const m = /^\s*"([A-Za-z0-9_.]+)":\s*("(?:[^"\\]|\\.)*"),\s*$/.exec(ligne);
   if (m) TEXTES[m[1]] = JSON.parse(m[2]);
 }
 function texte(cle) {
@@ -42,6 +42,8 @@ const REGLES = {
   actionSupprimerDocument: { regle: "documents.supprimer dans l'organisation OUVERTE (mise à la corbeille)" },
   actionRetablirDocument: { regle: "documents.supprimer dans l'organisation OUVERTE ; document de CETTE organisation" },
   actionRestaurerVersion: { regle: "documents.rediger dans l'organisation OUVERTE ; document de CETTE organisation" },
+  actionModifierParametres: { regle: "organisation.parametres dans l'organisation OUVERTE" },
+  actionToutMarquerLu: { regle: "membre de l'organisation OUVERTE ; seulement SES notifications" },
   actionTransitionDocument: { regle: "droit de la décision dans l'organisation OUVERTE (soumettre, réviser : rédaction ; vérifier : vérificateur ; approuver, archiver : approbateur) ; document de CETTE organisation ; séparation des tâches" },
   actionInviterMembre: { regle: "superadmin, ou organisation.membres.gerer dans l'organisation OUVERTE" },
   actionAnnulerInvitation: { regle: "idem ; invitation de CETTE organisation" },
@@ -99,7 +101,9 @@ const EMPREINTE = `SELECT md5(concat_ws('#',
   (SELECT string_agg(row(id, utilisateur_id, fin, motif_fin, en_attente_mfa, echecs_mfa)::text, ',' ORDER BY id) FROM platform.sessions),
   (SELECT count(*)::text FROM platform.journal),
   (SELECT string_agg(query_to_xml(format(
-     'SELECT (SELECT string_agg(row(id, titre, version, modifie_le, supprime_le, etat, version_publiee)::text, '','' ORDER BY id) FROM %1$I.documents) AS d,
+     'SELECT (SELECT string_agg(row(id, titre, version, modifie_le, supprime_le, etat, version_publiee, revue_le)::text, '','' ORDER BY id) FROM %1$I.documents) AS d,
+             (SELECT string_agg(row(periode_revue_mois, rappel_jours, escalade_jours, modifie_le)::text, '','') FROM %1$I.parametres) AS pa,
+             (SELECT string_agg(row(id, destinataire, lue_le)::text, '','' ORDER BY id) FROM %1$I.notifications) AS n,
              (SELECT count(*) FROM %1$I.versions_document) AS v,
              (SELECT count(*) FROM %1$I.decisions_document) AS dd,
              (SELECT string_agg(row(version, modifie_le)::text, '','') FROM %1$I.cartographie) AS c,
@@ -282,6 +286,8 @@ let ACTIONS;
     attendus("/app/documents/corbeille", (q) => (q === "superadmin" ? "→/choisir-organisation" : "200")),
     attendus(`/app/documents/${docPages.json.id}/historique`, pageDeA),
     attendus(`/app/documents/${docPages.json.id}/validation`, pageDeA),
+    attendus("/app/notifications", (q) => (q === "superadmin" ? "→/choisir-organisation" : "200")),
+    attendus("/app/parametres", (q) => (q === "superadmin" ? "→/choisir-organisation" : ADMINS.includes(q) ? "200" : "404")),
     attendus("/app/membres", (q) => (q === "superadmin" ? "→/choisir-organisation" : ADMINS.includes(q) ? "200" : "404")),
     attendus("/app/journal", (q) => (q === "superadmin" ? "→/choisir-organisation" : ADMINS.includes(q) ? "200" : "404")),
     attendus("/choisir-organisation", () => "200"),
@@ -483,6 +489,27 @@ let ACTIONS;
   await casC("redacA", decision("reviser"), "circuit.etat_incompatible", { note: "l'archivage est définitif" });
   assert.equal(sql(`SELECT string_agg(transition, ',' ORDER BY id) FROM "${SCHEMA_A}".decisions_document WHERE document_id = '${DOCC}'`),
     "soumettre,verifier,approuver,reviser,soumettre,refuser_verification,soumettre,verifier,approuver,archiver");
+
+  // ======================================================================================== actions : organisation
+  // Paramètres (W2) : administrateur de l'organisation OUVERTE. Notifications : chacun les SIENNES.
+  etape("actions « paramètres » et « notifications »");
+  const parametresA = () => sql(`SELECT periode_revue_mois || '/' || rappel_jours || '/' || escalade_jours FROM "${SCHEMA_A}".parametres`);
+  const reglages = { organisationId: ORG_A, periodeRevueMois: "12", rappelJours: "15", escaladeJours: "10" };
+  for (const qui of ["faux", "attente"]) await cas(qui, "actionModifierParametres", reglages, "session");
+  for (const qui of ["lecteurA", "redacA", "verifA", "approA", "adminB", "superadmin"]) await cas(qui, "actionModifierParametres", reglages, "erreur.interdit");
+  await cas("adminA", "actionModifierParametres", { ...reglages, periodeRevueMois: "0" }, "parametres.erreur.periodeRevueMois", { note: "hors bornes" });
+  await cas("adminA", "actionModifierParametres", { ...reglages, rappelJours: "abc" }, "parametres.erreur.rappelJours", { note: "pas un nombre" });
+  await cas("adminA", "actionModifierParametres", { ...reglages, escaladeJours: "10.5" }, "parametres.erreur.escaladeJours", { note: "pas un entier" });
+  await cas("adminA", "actionModifierParametres", reglages, "succes", { effet: () => parametresA() === "12/15/10" });
+  await cas("adminB", "actionModifierParametres", { ...reglages, organisationId: ORG_B, periodeRevueMois: "36" }, "succes",
+    { note: "sa propre organisation", effet: () => sql(`SELECT periode_revue_mois FROM "${SCHEMA_B}".parametres`) === "36" && parametresA() === "12/15/10" });
+  const nonLues = (email) => Number(sql(`SELECT count(*) FROM "${SCHEMA_A}".notifications WHERE lue_le IS NULL AND destinataire = (SELECT id FROM platform.utilisateurs WHERE email = '${email}')`));
+  const [verifNonLues, approNonLues] = [nonLues("verif-a@droits.test"), nonLues("appro-a@droits.test")];
+  assert.ok(verifNonLues > 0 && approNonLues > 0, "le circuit a notifié vérificateur et approbateur");
+  const toutLu = { organisationId: ORG_A };
+  for (const qui of ["faux", "attente"]) await cas(qui, "actionToutMarquerLu", toutLu, "session");
+  for (const qui of ["adminB", "superadmin"]) await cas(qui, "actionToutMarquerLu", toutLu, "erreur.interdit");
+  await cas("verifA", "actionToutMarquerLu", toutLu, "succes", { effet: () => nonLues("verif-a@droits.test") === 0 && nonLues("appro-a@droits.test") === approNonLues });
 
   // ======================================================================================== actions : membres
   etape("actions « membres » (organisation A)");

@@ -38,7 +38,9 @@ export const ACTIONS = [
   "DOCUMENT_APPROUVE",
   "DOCUMENT_ARCHIVE",
   "DOCUMENT_REVISE",
+  "DOCUMENT_REVUE_CONFIRMEE",
   "CARTOGRAPHIE_MODIFIEE",
+  "PARAMETRES_MODIFIES",
 ] as const;
 
 export type Action = (typeof ACTIONS)[number];

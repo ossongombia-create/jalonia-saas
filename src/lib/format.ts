@@ -9,6 +9,12 @@ export function formaterDate(langue: Langue, date: Date | string | null | undefi
   return new Intl.DateTimeFormat(LOCALES[langue], { dateStyle: "short", timeStyle: "short", timeZone: fuseau }).format(d);
 }
 
+/** Un jour (AAAA-MM-JJ, sans heure ni fuseau : échéances) : « 13/10/2026 ». */
+export function formaterJour(langue: Langue, jour: string | null | undefined): string {
+  if (!jour || !/^\d{4}-\d{2}-\d{2}$/.test(jour)) return "—";
+  return new Intl.DateTimeFormat(LOCALES[langue], { dateStyle: "short", timeZone: "UTC" }).format(new Date(`${jour}T00:00:00Z`));
+}
+
 /** Durée lisible à partir d'un nombre de secondes : « 45 min », « 3 h 05 min ». */
 export function formaterDuree(t: Traducteur, secondes: number | null | undefined): string {
   if (secondes === null || secondes === undefined || !Number.isFinite(secondes)) return "—";

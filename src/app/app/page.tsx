@@ -11,7 +11,7 @@ const MODULES: { cle: Cle; disponible: boolean }[] = [
   { cle: "org.module.cartographie", disponible: true },
   { cle: "org.module.procedures", disponible: true },
   { cle: "org.module.instructions", disponible: true },
-  { cle: "org.module.cycle", disponible: false },
+  { cle: "org.module.cycle", disponible: true },
   { cle: "org.module.risques", disponible: false },
   { cle: "org.module.indicateurs", disponible: false },
 ];

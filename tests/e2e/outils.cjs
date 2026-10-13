@@ -15,6 +15,7 @@ function exiger(nom) {
 }
 const BASE = exiger("E2E_BASE");
 const URL_PROPRIETAIRE = exiger("E2E_URL_PROPRIETAIRE");
+const URL_APPLICATION = exiger("E2E_URL_APPLICATION");
 const ETAT = exiger("E2E_ETAT");
 const SORTIE = path.join(ETAT, "captures");
 const MDP = "motdepasse-e2e-demo";
@@ -135,4 +136,4 @@ function etape(texte) {
   console.log("▶ " + texte);
 }
 
-module.exports = { BASE, MDP, SORTIE, SUPERADMIN, ETAT, fichierEtat, sql, lancer, connecter, anonyme, codeTotp, pasCourant, codeFrais, noterSecret, oublierSecret, lireMfa, passerSecondFacteur, api, editeurPret, attendreEtat, capture, etape, assert };
+module.exports = { BASE, URL_APPLICATION, MDP, SORTIE, SUPERADMIN, ETAT, fichierEtat, sql, lancer, connecter, anonyme, codeTotp, pasCourant, codeFrais, noterSecret, oublierSecret, lireMfa, passerSecondFacteur, api, editeurPret, attendreEtat, capture, etape, assert };

@@ -8,12 +8,14 @@
 import { actionSupprimerDocument } from "@/actions/documents";
 import { BoutonCreerDocument } from "@/components/BoutonCreerDocument";
 import { FormulaireAction } from "@/components/FormulaireAction";
-import { formaterDate } from "@/lib/format";
+import { jourLocal } from "@/lib/dates";
+import { formaterDate, formaterJour } from "@/lib/format";
 import { aLeDroit } from "@/lib/rbac";
 import { poolApplication } from "@/server/db/pools";
 import Link from "next/link";
 import { lireCartographie, lireCoherence, listerDocuments } from "@/server/documents/service";
 import { listerCorbeille } from "@/server/documents/versions";
+import { lireParametresOrganisation, revueDe } from "@/server/documents/revues";
 import type { DocumentCite } from "@/server/documents/coherence";
 import { exigerOrganisation } from "@/server/web/contexte";
 import { titrePage } from "@/server/web/metadonnees";
@@ -26,9 +28,11 @@ export default async function PageDocuments() {
   const ctx = await exigerOrganisation("documents.lire");
   const { t, organisation, langue, fuseau } = ctx;
   const pool = poolApplication();
-  const [documents, cartographie, coherence, corbeille] = await Promise.all([
+  const [documents, cartographie, coherence, corbeille, parametres] = await Promise.all([
     listerDocuments(pool, organisation), lireCartographie(pool, organisation), lireCoherence(pool, organisation), listerCorbeille(pool, organisation),
+    lireParametresOrganisation(pool, organisation),
   ]);
+  const aujourdhui = jourLocal(new Date(), fuseau);
   const aVerifier = new Set(coherence.constats.filter((c) => c.gravite === "alerte").flatMap((c) => c.documents.map((d) => d.id)));
   const nomDe = (d: DocumentCite) => (d.reference && d.titre ? `${d.reference} — ${d.titre}` : d.reference || d.titre || t("docs.sans_titre"));
   const peutRediger = aLeDroit(organisation.roles, "documents.rediger");
@@ -111,6 +115,22 @@ export default async function PageDocuments() {
                           <span className="discret petit">{t("docs.publiee", { v: d.versionPubliee })}</span>
                         </>
                       ) : null}
+                      {(() => {
+                        const revue = revueDe(d, parametres, fuseau, aujourdhui);
+                        if (!revue) return null;
+                        return (
+                          <>
+                            <br />
+                            {revue.situation === "a_jour" ? (
+                              <span className="discret petit">{t("revue.avant", { date: formaterJour(langue, revue.echeance) })}</span>
+                            ) : (
+                              <span className="etiquette etiquette-alerte" data-revue={revue.situation}>
+                                {t(revue.situation === "proche" ? "revue.etiquette.proche" : "revue.etiquette.retard")}
+                              </span>
+                            )}
+                          </>
+                        );
+                      })()}
                     </td>
                     <td className="nowrap">
                       {formaterDate(langue, d.modifieLe, fuseau)}

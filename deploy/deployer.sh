@@ -89,6 +89,13 @@ service_sans_proprietaire() { ! grep -q '^[[:space:]]*\(export[[:space:]]\+\)\?D
 # Clé du second facteur : sans elle, les superadmins ne peuvent plus se connecter à l'interface (obligatoire).
 cle_second_facteur() { grep -q '^CLE_SECOND_FACTEUR=[A-Za-z0-9+/]\{43\}=$' "$ENV_SERVICE"; }
 copie_installee_a_jour() { [[ -f $INSTALLE ]] && cmp -s "$INSTALLE" "$DEPOT/deploy/deployer.sh"; }
+# Tâches quotidiennes (rappels de revue) : minuteur actif, et unités installées identiques à celles du dépôt (elles sont
+# installées À LA MAIN par root, après relecture : root ne copie jamais lui-même un fichier modifiable par « jalonia »).
+minuteur_taches_actif() { systemctl is-active --quiet jalonia-taches.timer; }
+unites_taches_a_jour() {
+  cmp -s /etc/systemd/system/jalonia-taches.service "$DEPOT/deploy/jalonia-taches.service" \
+    && cmp -s /etc/systemd/system/jalonia-taches.timer "$DEPOT/deploy/jalonia-taches.timer"
+}
 copie_installee_protegee() {
   [[ -f $INSTALLE && ! -L $INSTALLE && $(stat -c %u "$INSTALLE") == 0 ]] && (( (8#$(stat -c %a "$INSTALLE") & 8#022) == 0 ))
 }
@@ -105,6 +112,8 @@ controles() {
   controle "la clé du second facteur (CLE_SECOND_FACTEUR) est configurée" cle_second_facteur
   controle "$INSTALLE appartient à root et n'est modifiable que par lui" copie_installee_protegee
   controle "$INSTALLE est identique à la version du dépôt" copie_installee_a_jour
+  controle "le minuteur des tâches quotidiennes (jalonia-taches.timer) est actif" minuteur_taches_actif
+  controle "les unités des tâches quotidiennes installées sont celles du dépôt" unites_taches_a_jour
   controle "l'application répond" sante
   if (( ECHECS > 0 )); then
     echo "⚠ $ECHECS contrôle(s) en échec : voir deploy/INSTALL-VPS.md (« Durcissement d'une installation existante » et « Au quotidien »)." >&2

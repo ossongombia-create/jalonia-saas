@@ -265,6 +265,22 @@ sauvegardes **et les fichiers d'ancres hors du VPS** (par exemple en vous les en
 gardée ailleurs prouve plus tard qu'aucune ligne antérieure du journal n'a été retouchée, même par quelqu'un
 qui aurait tous les droits sur la base.
 
+## Étape 14 — Tâches quotidiennes (rappels de revue)
+
+Chaque jour vers 6 h, Jalonia prévient les approbateurs des revues de documents à faire ou en retard, et les
+administrateurs des retards qui durent (réglages : page « Paramètres » de chaque organisation). Les tâches tournent
+sous le compte du service web, avec ses seuls droits.
+
+```bash
+install -m 644 /opt/jalonia/depot/deploy/jalonia-taches.service /etc/systemd/system/jalonia-taches.service
+install -m 644 /opt/jalonia/depot/deploy/jalonia-taches.timer /etc/systemd/system/jalonia-taches.timer
+systemctl daemon-reload && systemctl enable --now jalonia-taches.timer
+systemctl start jalonia-taches.service && journalctl -u jalonia-taches -n 5 --no-pager
+```
+
+Attendu : une ligne `{"evenement":"taches_quotidiennes",…,"erreurs":[]}`. `systemctl list-timers jalonia-taches`
+indique le prochain passage.
+
 ---
 
 ## Au quotidien
@@ -274,6 +290,7 @@ qui aurait tous les droits sur la base.
 | Mettre à jour vers la dernière version | `jalonia-deployer` |
 | Vérifier la sécurité de l'installation | `jalonia-deployer --verifier` |
 | Voir les journaux de l'application | `journalctl -u jalonia -f` (Ctrl+C pour quitter) |
+| Voir le dernier passage des tâches quotidiennes | `journalctl -u jalonia-taches -n 5 --no-pager` |
 | Redémarrer l'application | `systemctl restart jalonia` |
 | Créer un autre superadmin, ou retrouver l'accès | refaire l'étape 11 (un compte existant est promu et reçoit le nouveau mot de passe) |
 | Vérifier que les journaux d'audit n'ont pas été retouchés | voir « Vérifier les journaux » ci-dessous |
@@ -344,6 +361,12 @@ install -m 755 /opt/jalonia/depot/deploy/sauvegarde.sh /etc/cron.daily/jalonia-s
 ```
 
 Attendu : un fichier `ancres-AAAA-MM-JJ.txt` du jour.
+
+## Tâches quotidiennes sur une installation existante (une fois)
+
+Après la mise à jour qui apporte les revues périodiques, installez le minuteur : mêmes commandes qu'à l'étape 14.
+`jalonia-deployer --verifier` signale ensuite si le minuteur n'est pas actif, ou si les fichiers installés ne sont
+plus ceux du dépôt (dans ce cas, relisez la différence avec `diff -u`, puis réinstallez-les).
 
 ## Durcissement d'une installation existante (une fois)
 

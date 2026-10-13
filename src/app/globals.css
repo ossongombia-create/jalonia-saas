@@ -447,6 +447,8 @@ a:hover {
 input[type="text"],
 input[type="email"],
 input[type="password"],
+input[type="number"],
+input[type="date"],
 select,
 textarea {
   font: inherit;
@@ -726,6 +728,31 @@ input[readonly] {
 .empreinte {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 0.75rem;
+  overflow-wrap: anywhere;
+}
+
+/* ----- Notifications ----- */
+.liste-notifications {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 0.5rem;
+}
+.notification {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  padding: 0.6rem 0.8rem;
+  border-radius: var(--rayon);
+  border: 1px solid var(--trait-doux);
+}
+.notification-nouvelle {
+  border-color: var(--alerte-trait);
+  background: var(--alerte-fond);
+}
+.notification-texte {
   overflow-wrap: anywhere;
 }
 

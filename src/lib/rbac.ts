@@ -29,6 +29,8 @@ export const DROITS = {
   // ----- Organisation -----
   "organisation.membres.gerer": { roles: ["ADMIN_ORGANISATION"], etat: "actif" },
   "organisation.journal.lire": { roles: ["ADMIN_ORGANISATION"], etat: "actif" },
+  // Revue périodique des documents et rappels (src/server/documents/revues.ts).
+  "organisation.parametres": { roles: ["ADMIN_ORGANISATION"], etat: "actif" },
   // ----- Documents (cycle de vie : brouillon → vérification → approbation → publication → archivage) -----
   // Lire : ouvrir, voir, exporter (Word, PDF) les documents et la cartographie. Les autres rôles sont en lecture seule.
   "documents.lire": { roles: ["ADMIN_ORGANISATION", "REDACTEUR", "VERIFICATEUR", "APPROBATEUR", "LECTEUR"], etat: "actif" },

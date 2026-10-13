@@ -10,12 +10,13 @@ const aucun: Intervenants = { auteur: null, soumisPar: null, verifiePar: null };
 const R = (...r: RoleOrganisation[]) => r;
 
 describe("circuit : transitions et états", () => {
-  it("les états et les transitions sont ceux des contraintes CHECK de la migration 0005", () => {
-    const sql = readFileSync(new URL("../../db/migrations/organisation/0005_circuit.sql", import.meta.url), "utf8");
-    const liste = (re: RegExp) => [...sql.match(re)![1]!.matchAll(/'([a-z_]+)'/g)].map((m) => m[1]);
-    expect(liste(/etat text NOT NULL DEFAULT 'brouillon' CHECK \(etat IN \(([^)]*)\)\)/)).toEqual([...ETATS]);
-    expect(liste(/transition\s+text NOT NULL CHECK \(transition IN \(([^)]*)\)\)/)).toEqual(LISTE_TRANSITIONS);
-    const motifsCopie = liste(/CHECK \(motif IN \(([^)]*)\)\)/);
+  it("les états et les transitions sont ceux des contraintes CHECK des migrations (0005, puis 0006 pour les transitions)", () => {
+    const lire = (f: string) => readFileSync(new URL(`../../db/migrations/organisation/${f}`, import.meta.url), "utf8");
+    const sql = lire("0005_circuit.sql");
+    const liste = (texte: string, re: RegExp) => [...texte.match(re)![1]!.matchAll(/'([a-z_]+)'/g)].map((m) => m[1]);
+    expect(liste(sql, /etat text NOT NULL DEFAULT 'brouillon' CHECK \(etat IN \(([^)]*)\)\)/)).toEqual([...ETATS]);
+    expect(liste(lire("0006_revues_notifications.sql"), /CHECK \(transition IN \(([^)]*)\)\)/)).toEqual(LISTE_TRANSITIONS);
+    const motifsCopie = liste(sql, /CHECK \(motif IN \(([^)]*)\)\)/);
     for (const t of LISTE_TRANSITIONS) {
       const c = TRANSITIONS[t].copie;
       if (c) expect(motifsCopie, t).toContain(c);
@@ -27,8 +28,10 @@ describe("circuit : transitions et états", () => {
       for (const de of TRANSITIONS[t].de) expect(ETATS, t).toContain(de);
       expect(ETATS, t).toContain(TRANSITIONS[t].vers);
     }
-    // Un seul chemin vers « publié » (approuver), un seul vers « archivé » (archiver) ; l'archivage est définitif.
-    expect(LISTE_TRANSITIONS.filter((t) => TRANSITIONS[t].vers === "publie")).toEqual(["approuver"]);
+    // Vers « publié » : approuver (depuis l'approbation) ou confirmer la revue (le document l'est déjà) ; un seul chemin
+    // vers « archivé » (archiver) ; l'archivage est définitif.
+    expect(LISTE_TRANSITIONS.filter((t) => TRANSITIONS[t].vers === "publie")).toEqual(["approuver", "confirmer_revue"]);
+    expect(TRANSITIONS.confirmer_revue.de).toEqual(["publie"]);
     expect(LISTE_TRANSITIONS.filter((t) => TRANSITIONS[t].vers === "archive")).toEqual(["archiver"]);
     expect(LISTE_TRANSITIONS.filter((t) => (TRANSITIONS[t].de as readonly string[]).includes("archive"))).toEqual([]);
   });
@@ -68,6 +71,8 @@ describe("circuit : refus d'une transition", () => {
     }
     expect(refusTransition("reviser", "publie", R("REDACTEUR"), "u", aucun, "")).toBeNull();
     expect(refusTransition("reviser", "publie", R("APPROBATEUR"), "u", aucun, "")).toBe("erreur.interdit");
+    expect(refusTransition("confirmer_revue", "publie", R("APPROBATEUR"), "u", aucun, "")).toBeNull();
+    for (const r of ["ADMIN_ORGANISATION", "REDACTEUR", "VERIFICATEUR", "LECTEUR"] as const) expect(refusTransition("confirmer_revue", "publie", [r], "u", aucun, ""), r).toBe("erreur.interdit");
     // Le droit est vérifié avant l'état : un rôle sans droit n'apprend rien de l'état.
     expect(refusTransition("approuver", "brouillon", R("LECTEUR"), "u", aucun, "")).toBe("erreur.interdit");
     expect(refusTransition("approuver", "en_verification", [], "u", aucun, "")).toBe("erreur.interdit");
@@ -89,7 +94,7 @@ describe("circuit : refus d'une transition", () => {
     expect(refusTransition("refuser_approbation", "en_approbation", R("APPROBATEUR"), "u", aucun, "")).toBe("circuit.motif_requis");
     expect(refusTransition("archiver", "publie", R("APPROBATEUR"), "u", aucun, "")).toBe("circuit.motif_requis");
     expect(refusTransition("archiver", "publie", R("APPROBATEUR"), "u", aucun, "Remplacé par PR-02")).toBeNull();
-    for (const t of ["soumettre", "verifier", "approuver", "reviser"] as const) expect(TRANSITIONS[t].motifObligatoire, t).toBe(false);
+    for (const t of ["soumettre", "verifier", "approuver", "reviser", "confirmer_revue"] as const) expect(TRANSITIONS[t].motifObligatoire, t).toBe(false);
     expect(refusTransition("verifier", "en_verification", R("VERIFICATEUR"), "u", aucun, "x".repeat(MOTIF_MAX))).toBeNull();
     expect(refusTransition("verifier", "en_verification", R("VERIFICATEUR"), "u", aucun, "x".repeat(MOTIF_MAX + 1))).toBe("circuit.motif_trop_long");
   });
@@ -125,9 +130,9 @@ describe("circuit : décisions proposées", () => {
     expect(transitionsPossibles("en_verification", R("VERIFICATEUR", "REDACTEUR"), "alice", i)).toEqual([]);
     expect(transitionsPossibles("en_approbation", R("APPROBATEUR"), "paul", i)).toEqual(["approuver", "refuser_approbation"]);
     expect(transitionsPossibles("en_approbation", R("APPROBATEUR", "VERIFICATEUR"), "carla", i)).toEqual([]);
-    expect(transitionsPossibles("publie", R("APPROBATEUR"), "paul", aucun)).toEqual(["archiver"]);
+    expect(transitionsPossibles("publie", R("APPROBATEUR"), "paul", aucun)).toEqual(["archiver", "confirmer_revue"]);
     expect(transitionsPossibles("publie", R("REDACTEUR"), "alice", aucun)).toEqual(["reviser"]);
-    expect(transitionsPossibles("publie", R("ADMIN_ORGANISATION", "APPROBATEUR"), "zoe", aucun)).toEqual(["archiver", "reviser"]);
+    expect(transitionsPossibles("publie", R("ADMIN_ORGANISATION", "APPROBATEUR"), "zoe", aucun)).toEqual(["archiver", "reviser", "confirmer_revue"]);
     for (const r of ["ADMIN_ORGANISATION", "REDACTEUR", "VERIFICATEUR", "APPROBATEUR", "LECTEUR"] as const) expect(transitionsPossibles("archive", [r], "u", aucun), r).toEqual([]);
   });
 });

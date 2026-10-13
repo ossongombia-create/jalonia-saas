@@ -5,10 +5,12 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { actionTransitionDocument } from "@/actions/documents";
 import { FormulaireAction } from "@/components/FormulaireAction";
-import { formaterDate } from "@/lib/format";
+import { jourLocal } from "@/lib/dates";
+import { formaterDate, formaterJour } from "@/lib/format";
 import { identifiant } from "@/lib/validation";
 import { poolApplication } from "@/server/db/pools";
 import { ETATS, LISTE_TRANSITIONS, MOTIF_MAX, TRANSITIONS, lireCircuit, refusTransition, transitionsPossibles } from "@/server/documents/circuit";
+import { lireParametresOrganisation, revueDe } from "@/server/documents/revues";
 import { exigerOrganisation } from "@/server/web/contexte";
 import { titrePage } from "@/server/web/metadonnees";
 
@@ -26,6 +28,7 @@ export default async function PageValidation({ params, searchParams }: {
   if (!lu.success) notFound();
   const circuit = await lireCircuit(poolApplication(), organisation, lu.data);
   if (!circuit) notFound();
+  const revue = revueDe(circuit, await lireParametresOrganisation(poolApplication(), organisation), fuseau, jourLocal(new Date(), fuseau));
 
   const possibles = transitionsPossibles(circuit.etat, organisation.roles, acteur.id, circuit.intervenants);
   // Décisions que le rôle permettrait mais que la séparation des tâches réserve à une autre personne : on dit pourquoi.
@@ -60,6 +63,11 @@ export default async function PageValidation({ params, searchParams }: {
         <p className="discret">{t(`circuit.etape.${circuit.etat}`)}</p>
         {circuit.versionPubliee !== null && circuit.publieLe ? (
           <p>{t("circuit.publiee", { v: circuit.versionPubliee, date: formaterDate(langue, circuit.publieLe, fuseau) })}</p>
+        ) : null}
+        {revue ? (
+          <p id="revue" data-situation={revue.situation} className={revue.situation === "a_jour" ? undefined : "bandeau bandeau-alerte"}>
+            {t(`circuit.revue.${revue.situation}`, { date: formaterJour(langue, revue.echeance) })}
+          </p>
         ) : null}
         <div className="actions-ligne">
           <a className="bouton bouton-second" href={`${EDITEUR}?doc=${encodeURIComponent(circuit.id)}`}>{t("docs.ouvrir")}</a>

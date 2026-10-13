@@ -1,0 +1,13 @@
+# Minuteur des tâches quotidiennes de Jalonia : chaque jour vers 6 h (heure du serveur), rattrapé au démarrage si le
+# serveur était éteint à l'heure prévue. À copier dans /etc/systemd/system/jalonia-taches.timer, puis :
+#   systemctl daemon-reload && systemctl enable --now jalonia-taches.timer
+[Unit]
+Description=Jalonia (tâches quotidiennes, chaque jour)
+
+[Timer]
+OnCalendar=*-*-* 06:00:00
+RandomizedDelaySec=15min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

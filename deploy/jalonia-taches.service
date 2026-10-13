@@ -1,0 +1,41 @@
+# Tâches quotidiennes de Jalonia (rappels et escalades des revues périodiques, ménage des notifications).
+# À copier dans /etc/systemd/system/jalonia-taches.service, avec deploy/jalonia-taches.timer (voir INSTALL-VPS.md).
+# Lancé par le minuteur, sous le compte du service web (jalonia-run) et avec SON fichier d'environnement : les tâches
+# n'ont aucun droit de plus que l'application (rôle PostgreSQL jalonia_app).
+[Unit]
+Description=Jalonia (tâches quotidiennes)
+After=network-online.target postgresql.service
+Wants=postgresql.service
+
+[Service]
+Type=oneshot
+User=jalonia-run
+Group=jalonia-run
+WorkingDirectory=/opt/jalonia/courant
+EnvironmentFile=/etc/jalonia/jalonia.env
+Environment=NODE_ENV=production
+Environment=NODE_OPTIONS=--max-old-space-size=256
+ExecStart=/usr/bin/node /opt/jalonia/courant/taches/quotidiennes.cjs
+TimeoutStartSec=15min
+MemoryMax=400M
+
+# Même durcissement que le service web.
+NoNewPrivileges=true
+CapabilityBoundingSet=
+UMask=0077
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+LockPersonality=true
+SystemCallArchitectures=native

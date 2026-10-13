@@ -41,6 +41,8 @@ export interface ResumeDocument {
   type: TypeDocument;
   etat: EtatDocument;
   versionPubliee: number | null;
+  /** Dernière approbation ou dernière revue confirmée (revues.ts) : point de départ de l'échéance de revue. */
+  revueLe: Date | null;
   titre: string;
   reference: string;
   version: number;
@@ -191,6 +193,7 @@ interface LigneDocument {
   type: TypeDocument;
   etat: EtatDocument;
   version_publiee: number | null;
+  revue_le: Date | null;
   titre: string;
   reference: string;
   version: number;
@@ -200,11 +203,11 @@ interface LigneDocument {
   modifie_le: Date;
 }
 
-const COLONNES_RESUME = "id, type, etat, version_publiee, titre, reference, version, cree_par_nom, cree_le, modifie_par_nom, modifie_le";
+const COLONNES_RESUME = "id, type, etat, version_publiee, revue_le, titre, reference, version, cree_par_nom, cree_le, modifie_par_nom, modifie_le";
 
 function versResume(l: LigneDocument): ResumeDocument {
   return {
-    id: l.id, type: l.type, etat: l.etat, versionPubliee: l.version_publiee, titre: l.titre, reference: l.reference, version: l.version,
+    id: l.id, type: l.type, etat: l.etat, versionPubliee: l.version_publiee, revueLe: l.revue_le, titre: l.titre, reference: l.reference, version: l.version,
     creeParNom: l.cree_par_nom, creeLe: l.cree_le, modifieParNom: l.modifie_par_nom, modifieLe: l.modifie_le,
   };
 }

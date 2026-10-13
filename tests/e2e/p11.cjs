@@ -28,6 +28,7 @@ const { BASE, sql, lancer, connecter, api, editeurPret, attendreEtat, capture, e
   const ligneListe = (p) => p.locator("tbody tr", { has: p.locator(`a[href="/editeur/index.html?doc=${id}"]`) });
   /** Clique une décision de la page de validation (confirmation acceptée) et attend le rechargement sur le nouvel état. */
   async function decider(p, libelle, etatAttendu, motif) {
+    await p.waitForLoadState("networkidle"); // formulaire interactif (la confirmation passe par le script de la page)
     const bloc = p.locator(".decision-possible", { has: p.locator(`button:has-text("${libelle}")`) });
     if (motif !== undefined) await bloc.locator("textarea").fill(motif);
     let question = "";
@@ -170,7 +171,7 @@ const { BASE, sql, lancer, connecter, api, editeurPret, attendreEtat, capture, e
   await decider(agathe, "Approuver et publier", "publie");
   assert.equal(etatEnBase(), "publie/3/3");
   await agathe.goto(PAGE);
-  assert.deepEqual(await agathe.locator(".decision-possible").evaluateAll((l) => l.map((x) => x.dataset.transition)), ["archiver"]);
+  assert.deepEqual(await agathe.locator(".decision-possible").evaluateAll((l) => l.map((x) => x.dataset.transition)), ["archiver", "confirmer_revue"]);
   await decider(agathe, "Archiver", "archive", "Remplacée par la procédure PR-CIR-02.");
   assert.equal(etatEnBase(), "archive/3/3");
   assert.ok(await agathe.isVisible("text=Aucune décision ne vous revient à cette étape."));
