@@ -382,6 +382,16 @@ let ACTIONS;
     { page: `/plateforme/organisations/${ORG_A}`, effet: (r) => Boolean(r.lien) && enAttente("invite-sa@droits.test", ORG_A) !== "" });
   const JETON_SA = invSA.lien.split("/").pop();
 
+  // Données communes (adhésions, invitations, journal de la plateforme : tables partagées, filtrées par le code et
+  // non par PostgreSQL — voir docs/EVALUATION-RLS.md) : chaque administrateur ne voit que SON organisation.
+  const pageMembres = async (qui) => (await ctx[qui].request.get(`${BASE}/app/membres`)).text();
+  const [membresA, membresB] = [await pageMembres("adminA"), await pageMembres("adminB")];
+  const deA = ["admin-a", "redac-a", "lect-a", "verif-a", "mfa-a", "cible-a", "retrait-a", "invite-a", "invite-sa"].map((n) => `${n}@droits.test`);
+  const deB = ["admin-b", "jetable"].map((n) => `${n}@droits.test`);
+  for (const e of deA) assert.ok(membresA.includes(e) && !membresB.includes(e), `${e} : visible dans A seulement`);
+  for (const e of deB) assert.ok(membresB.includes(e) && !membresA.includes(e), `${e} : visible dans B seulement`);
+  console.log(`  ✔ page « Membres » : ${deA.length} adresses de A (dont 2 invitations en attente) invisibles depuis B, ${deB.length} de B invisibles depuis A`);
+
   const INV_A = enAttente("invite-a@droits.test", ORG_A);
   const annulation = { organisationId: ORG_A, invitationId: INV_A };
   for (const qui of ["faux", "attente"]) await cas(qui, "actionAnnulerInvitation", annulation, "session");
