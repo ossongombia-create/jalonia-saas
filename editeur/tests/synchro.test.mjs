@@ -238,6 +238,8 @@ test("sens des refus du serveur", () => {
   assert.equal(raisonDuRefus(401, { erreur: "session" }), "session");
   assert.equal(raisonDuRefus(403, { erreur: "mot_de_passe" }), "session");
   assert.equal(raisonDuRefus(403, { erreur: "interdit" }), "interdit");
+  assert.equal(raisonDuRefus(403, { erreur: "circuit" }), "circuit");
+  assert.equal(raisonDuRefus(400, { erreur: "circuit" }), "invalide"); // « circuit » n'a de sens qu'avec 403
   assert.equal(raisonDuRefus(404, null), "introuvable");
   assert.equal(raisonDuRefus(413, null), "trop_volumineux");
   assert.equal(raisonDuRefus(400, { erreur: "docs.erreur.contenu_invalide" }), "invalide");

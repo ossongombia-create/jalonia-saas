@@ -33,9 +33,14 @@ export type TypeCreation = (typeof TYPES_CREATION)[number];
 
 export type Contenu = Record<string, unknown>;
 
+/** État dans le circuit de validation (circuit.ts) : seul un brouillon se modifie. */
+export type EtatDocument = "brouillon" | "en_verification" | "en_approbation" | "publie" | "archive";
+
 export interface ResumeDocument {
   id: string;
   type: TypeDocument;
+  etat: EtatDocument;
+  versionPubliee: number | null;
   titre: string;
   reference: string;
   version: number;
@@ -184,6 +189,8 @@ function versPlateforme(org: OrganisationCible, e: EntreeJournal, details: Recor
 interface LigneDocument {
   id: string;
   type: TypeDocument;
+  etat: EtatDocument;
+  version_publiee: number | null;
   titre: string;
   reference: string;
   version: number;
@@ -193,11 +200,11 @@ interface LigneDocument {
   modifie_le: Date;
 }
 
-const COLONNES_RESUME = "id, type, titre, reference, version, cree_par_nom, cree_le, modifie_par_nom, modifie_le";
+const COLONNES_RESUME = "id, type, etat, version_publiee, titre, reference, version, cree_par_nom, cree_le, modifie_par_nom, modifie_le";
 
 function versResume(l: LigneDocument): ResumeDocument {
   return {
-    id: l.id, type: l.type, titre: l.titre, reference: l.reference, version: l.version,
+    id: l.id, type: l.type, etat: l.etat, versionPubliee: l.version_publiee, titre: l.titre, reference: l.reference, version: l.version,
     creeParNom: l.cree_par_nom, creeLe: l.cree_le, modifieParNom: l.modifie_par_nom, modifieLe: l.modifie_le,
   };
 }
@@ -250,14 +257,15 @@ export async function enregistrerDocument(pool: Pool, org: OrganisationCible, id
   const nom = nomActeur(acteur);
   return enTransaction(pool, async (client) => {
     const r = await dansOrganisation(client, org, async () => {
-      const lu = await client.query<{ version: number; modifie_par: string | null; modifie_par_nom: string; modifie_le: Date; validation: string | null }>(
-        `SELECT version, modifie_par, modifie_par_nom, modifie_le,
+      const lu = await client.query<{ version: number; etat: EtatDocument; modifie_par: string | null; modifie_par_nom: string; modifie_le: Date; validation: string | null }>(
+        `SELECT version, etat, modifie_par, modifie_par_nom, modifie_le,
                 CASE WHEN jsonb_typeof(contenu -> 'validation') = 'string' THEN contenu ->> 'validation' END AS validation
            FROM documents WHERE id = $1 AND supprime_le IS NULL FOR UPDATE`,
         [id],
       );
       const avant = lu.rows[0];
       if (!avant) throw new ErreurMetier("erreur.introuvable");
+      if (avant.etat !== "brouillon") throw new ErreurMetier("circuit.non_modifiable"); // version soumise, publiée ou archivée : figée
       const ecrase = avant.version !== e.version;
       if (ecrase && !e.forcer) throw new ConflitVersion({ version: avant.version, modifieParNom: avant.modifie_par_nom, modifieLe: avant.modifie_le });
       // Historique (copies.ts) : l'état d'un collègue ou l'état remplacé est copié AVANT d'écrire ; le nouvel état ensuite
@@ -309,12 +317,14 @@ export async function supprimerDocument(pool: Pool, org: OrganisationCible, id: 
   if (!estIdentifiant(id)) throw new ErreurMetier("erreur.introuvable");
   await enTransaction(pool, async (client) => {
     const r = await dansOrganisation(client, org, async () => {
+      const etat = await client.query<{ etat: EtatDocument }>("SELECT etat FROM documents WHERE id = $1 AND supprime_le IS NULL FOR UPDATE", [id]);
+      if (etat.rows[0] && etat.rows[0].etat !== "brouillon") throw new ErreurMetier("circuit.suppression_impossible"); // publié : on l'archive
       const liees = dependancesDe(await lireLiens(client), id);
       if (liees.length > 0 && !options.confirmerLiens) throw new ErreurMetier("docs.suppression_liee");
       // Corbeille (migration 0004) : le document est marqué, jamais effacé ; son état est copié dans l'historique.
       const sup = await client.query<{ type: TypeDocument; titre: string; reference: string; version: number }>(
         `UPDATE documents SET supprime_le = now(), supprime_par = $2, supprime_par_nom = $3
-          WHERE id = $1 AND supprime_le IS NULL RETURNING type, titre, reference, version`,
+          WHERE id = $1 AND supprime_le IS NULL AND etat = 'brouillon' RETURNING type, titre, reference, version`,
         [id, acteur.id, nomActeur(acteur)],
       );
       const d = sup.rows[0];

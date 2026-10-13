@@ -44,6 +44,8 @@ const PARCOURS: Organisation[] = [
       { email: "redac2@demo.test", nom: "Rémi Rédacteur", roles: ["REDACTEUR"] },
       { email: "lecteur@demo.test", nom: "Léa Lectrice", roles: ["LECTEUR"], langue: "en" },
       { email: "verif@demo.test", nom: "Victor Vérificateur", roles: ["VERIFICATEUR", "APPROBATEUR"] },
+      // Circuit de validation (p11) : celui qui vérifie ne peut pas approuver la même version.
+      { email: "appro@demo.test", nom: "Agathe Approbatrice", roles: ["APPROBATEUR"] },
     ],
   },
   { nom: "Autre Organisation", slug: "autre-org", admin: { email: "autre@demo.test", nom: "Admin Autre Organisation" }, membres: [] },
@@ -59,6 +61,7 @@ const AUTORISATIONS: Organisation[] = [
       { email: "redac-a@droits.test", nom: "Rédacteur A", roles: ["REDACTEUR"] },
       { email: "lect-a@droits.test", nom: "Lecteur A", roles: ["LECTEUR"] },
       { email: "verif-a@droits.test", nom: "Vérificateur A", roles: ["VERIFICATEUR", "APPROBATEUR"] },
+      { email: "appro-a@droits.test", nom: "Approbateur A", roles: ["APPROBATEUR"] },
       // Administrateur À SECOND FACTEUR : sa session « en attente du code » ne doit rien ouvrir.
       { email: "mfa-a@droits.test", nom: "Admin A à second facteur", roles: ["ADMIN_ORGANISATION"] },
       // Cibles des actions (rôles modifiés, retrait).

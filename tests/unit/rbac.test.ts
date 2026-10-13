@@ -40,6 +40,20 @@ describe("rôles et droits", () => {
     for (const d of ["documents.lire", "documents.rediger", "documents.supprimer", "cartographie.modifier"] as const) expect(DROITS[d].etat, d).toBe("actif");
   });
 
+  it("circuit de validation : droits actifs ; soumettre pour qui rédige, vérifier, approuver, publier et archiver pour leurs rôles", () => {
+    const attendus = {
+      "documents.soumettre": ["ADMIN_ORGANISATION", "REDACTEUR"],
+      "documents.verifier": ["VERIFICATEUR"],
+      "documents.approuver": ["APPROBATEUR"],
+      "documents.publier": ["APPROBATEUR"],
+      "documents.archiver": ["APPROBATEUR"],
+    } as const;
+    for (const [d, roles] of Object.entries(attendus) as [keyof typeof attendus, readonly string[]][]) {
+      expect(DROITS[d].etat, d).toBe("actif");
+      for (const r of ROLES_ORGANISATION) expect(aLeDroit([r], d), `${r} / ${d}`).toBe(roles.includes(r));
+    }
+  });
+
   it("plusieurs rôles se cumulent ; aucun rôle = aucun droit", () => {
     expect(aLeDroit(["LECTEUR", "ADMIN_ORGANISATION"], "organisation.membres.gerer")).toBe(true);
     expect(aLeDroit([], "documents.lire")).toBe(false);

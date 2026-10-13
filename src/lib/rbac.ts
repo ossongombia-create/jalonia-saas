@@ -35,11 +35,15 @@ export const DROITS = {
   "documents.rediger": { roles: ["ADMIN_ORGANISATION", "REDACTEUR"], etat: "actif" },
   "documents.supprimer": { roles: ["ADMIN_ORGANISATION", "REDACTEUR"], etat: "actif" },
   "cartographie.modifier": { roles: ["ADMIN_ORGANISATION", "REDACTEUR"], etat: "actif" },
-  "documents.soumettre": { roles: ["REDACTEUR"], etat: "prevu" },
-  "documents.verifier": { roles: ["VERIFICATEUR"], etat: "prevu" },
-  "documents.approuver": { roles: ["APPROBATEUR"], etat: "prevu" },
-  "documents.publier": { roles: ["APPROBATEUR"], etat: "prevu" },
-  "documents.archiver": { roles: ["APPROBATEUR"], etat: "prevu" },
+  // Circuit de validation (src/server/documents/circuit.ts). Soumettre (et réviser un document publié) : qui peut rédiger.
+  // Approuver = publier : l'approbation met le document en application (les deux droits vont ensemble).
+  // Par défaut (à confirmer par Brice), la personne qui a soumis ou rédigé la version ne peut ni la vérifier ni l'approuver,
+  // et celle qui l'a vérifiée ne peut pas l'approuver (séparation des tâches, vérifiée par le serveur).
+  "documents.soumettre": { roles: ["ADMIN_ORGANISATION", "REDACTEUR"], etat: "actif" },
+  "documents.verifier": { roles: ["VERIFICATEUR"], etat: "actif" },
+  "documents.approuver": { roles: ["APPROBATEUR"], etat: "actif" },
+  "documents.publier": { roles: ["APPROBATEUR"], etat: "actif" },
+  "documents.archiver": { roles: ["APPROBATEUR"], etat: "actif" },
 } as const satisfies Record<string, DefinitionDroit>;
 
 export type Droit = keyof typeof DROITS;

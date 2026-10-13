@@ -2,7 +2,8 @@
 //   - ouverture : le document (?doc=…) et la cartographie de l'organisation viennent du serveur, avec les droits de la personne ;
 //     ?vue=cartographie ouvre la cartographie seule ;
 //   - enregistrement automatique sur le serveur (synchro.js) : un état « Enregistré / Enregistrement… » dans l'en-tête ;
-//   - lecture seule pour les rôles qui consultent sans rédiger (le document peut être vu, prévisualisé, exporté en Word et PDF) ;
+//   - lecture seule pour les rôles qui consultent sans rédiger (le document peut être vu, prévisualisé, exporté en Word et PDF),
+//     et pour tout document qui n'est plus un brouillon (circuit de validation : en vérification, en approbation, publié, archivé) ;
 //   - quand l'enregistrement est refusé (conflit, session expirée…), une fenêtre explique quoi faire ; le travail reste dans la page
 //     et peut toujours être téléchargé en .json ;
 //   - « Mes documents » ramène à la liste, après avoir enregistré.
@@ -22,6 +23,7 @@ const $ = (id) => document.getElementById(id);
 export const PAGE_DOCUMENTS = "/app/documents";
 const MOTIF_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const PRIORITE = { inactif: 0, enregistre: 1, modifie: 2, envoi: 3, erreur_reseau: 4, bloque: 5 };
+const ETATS_FIGES = ["en_verification", "en_approbation", "publie", "archive"]; // circuit de validation : seul un brouillon se modifie
 
 let organisation = null; // { id, nom }
 let documentId = null;
@@ -92,8 +94,11 @@ function pire(etats) {
 function afficherEtats() {
   const enTete = $("etat-synchro");
   const global = pire([synchroDoc && synchroDoc.etat(), synchroCarto && synchroCarto.etat()]);
-  enTete.dataset.etat = global.cle === "inactif" ? "lecture" : global.cle;
-  enTete.textContent = texteEtat(global, lectureSeule);
+  // Document en lecture seule : l'en-tête le dit, même si la cartographie (enregistrée à part) est modifiable — sauf
+  // quand celle-ci a quelque chose à signaler (modification en cours d'envoi, coupure, refus).
+  const lectureDoc = lectureSeule && (global.cle === "inactif" || global.cle === "enregistre");
+  enTete.dataset.etat = lectureDoc || global.cle === "inactif" ? "lecture" : global.cle;
+  enTete.textContent = lectureDoc ? t("enligne.etat.lecture_seule") : texteEtat(global, lectureSeule);
   const carto = $("carto-etat");
   const etatCarto = synchroCarto ? synchroCarto.etat() : null;
   carto.dataset.etat = etatCarto ? etatCarto.cle : "lecture";
@@ -156,6 +161,10 @@ function expliquerBlocage(genre, synchro, e) {
       break;
     case "interdit":
       textes.push(t("enligne.bloque.interdit"));
+      boutons.push(copie, retour);
+      break;
+    case "circuit":
+      textes.push(t("enligne.bloque.circuit"));
       boutons.push(copie, retour);
       break;
     case "trop_volumineux":
@@ -315,7 +324,15 @@ export async function demarrerEnLigne({ apresChargement, toutAfficher }) {
   // La page : lecture seule, liens, état.
   if (lectureSeule) {
     document.documentElement.setAttribute("data-lecture-seule", "");
-    $("bandeau-lecture-seule").hidden = false;
+    const bandeau = $("bandeau-lecture-seule");
+    // Document qui n'est plus un brouillon : la raison est le circuit de validation, pas le rôle.
+    const etat = ctx.document && ctx.document.etat;
+    if (ETATS_FIGES.includes(etat)) {
+      bandeau.dataset.i18n = "enligne.lecture_seule_circuit." + etat;
+      bandeau.dataset.etat = etat;
+      bandeau.textContent = t(bandeau.dataset.i18n);
+    }
+    bandeau.hidden = false;
     figerEnPermanence($("etape-contenu"));
   }
   if (cartoLectureSeule) {

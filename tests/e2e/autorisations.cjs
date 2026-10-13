@@ -42,6 +42,7 @@ const REGLES = {
   actionSupprimerDocument: { regle: "documents.supprimer dans l'organisation OUVERTE (mise à la corbeille)" },
   actionRetablirDocument: { regle: "documents.supprimer dans l'organisation OUVERTE ; document de CETTE organisation" },
   actionRestaurerVersion: { regle: "documents.rediger dans l'organisation OUVERTE ; document de CETTE organisation" },
+  actionTransitionDocument: { regle: "droit de la décision dans l'organisation OUVERTE (soumettre, réviser : rédaction ; vérifier : vérificateur ; approuver, archiver : approbateur) ; document de CETTE organisation ; séparation des tâches" },
   actionInviterMembre: { regle: "superadmin, ou organisation.membres.gerer dans l'organisation OUVERTE" },
   actionAnnulerInvitation: { regle: "idem ; invitation de CETTE organisation" },
   actionModifierRoles: { regle: "idem ; membre de CETTE organisation" },
@@ -98,8 +99,9 @@ const EMPREINTE = `SELECT md5(concat_ws('#',
   (SELECT string_agg(row(id, utilisateur_id, fin, motif_fin, en_attente_mfa, echecs_mfa)::text, ',' ORDER BY id) FROM platform.sessions),
   (SELECT count(*)::text FROM platform.journal),
   (SELECT string_agg(query_to_xml(format(
-     'SELECT (SELECT string_agg(row(id, titre, version, modifie_le, supprime_le)::text, '','' ORDER BY id) FROM %1$I.documents) AS d,
+     'SELECT (SELECT string_agg(row(id, titre, version, modifie_le, supprime_le, etat, version_publiee)::text, '','' ORDER BY id) FROM %1$I.documents) AS d,
              (SELECT count(*) FROM %1$I.versions_document) AS v,
+             (SELECT count(*) FROM %1$I.decisions_document) AS dd,
              (SELECT string_agg(row(version, modifie_le)::text, '','') FROM %1$I.cartographie) AS c,
              (SELECT count(*) FROM %1$I.journal) AS j', schema_name), false, false, '')::text, '#' ORDER BY schema_name)
      FROM platform.organisations)))`;
@@ -110,6 +112,7 @@ const COMPTES = {
   lecteurA: "lect-a@droits.test",
   redacA: "redac-a@droits.test",
   verifA: "verif-a@droits.test",
+  approA: "appro-a@droits.test",
   adminA: "admin-a@droits.test",
   adminB: "admin-b@droits.test",
   superadmin: SUPERADMIN.email,
@@ -248,9 +251,9 @@ let ACTIONS;
   const idDe = (email) => sql(`SELECT id FROM platform.utilisateurs WHERE email = '${email}'`);
   const [CIBLE_A, RETRAIT_A, JETABLE, MFA_A, LECT_A] = ["cible-a", "retrait-a", "jetable", "mfa-a", "lect-a"].map((n) => idDe(`${n}@droits.test`));
   for (const v of [ORG_A, ORG_B, CIBLE_A, RETRAIT_A, JETABLE, MFA_A, LECT_A]) assert.match(v, /^[0-9a-f-]{36}$/, "données de départ absentes (tests/e2e/preparer.ts)");
-  const ORG_DE = { lecteurA: ORG_A, redacA: ORG_A, verifA: ORG_A, adminA: ORG_A, adminB: ORG_B };
+  const ORG_DE = { lecteurA: ORG_A, redacA: ORG_A, verifA: ORG_A, approA: ORG_A, adminA: ORG_A, adminB: ORG_B };
 
-  etape("profils : cookie forgé, connexion en attente du second facteur, six comptes connectés");
+  etape("profils : cookie forgé, connexion en attente du second facteur, sept comptes connectés");
   ctx.faux = await navigateur.newContext();
   await poserCookieForge();
   ctx.anonyme = await navigateur.newContext();
@@ -260,7 +263,7 @@ let ACTIONS;
   // ======================================================================================== pages
   etape("pages × profils (code HTTP, page d'arrivée)");
   const ADMINS = ["adminA", "adminB"];
-  const accueil = { lecteurA: "/app", redacA: "/app", verifA: "/app", adminA: "/app", adminB: "/app", superadmin: "/plateforme" };
+  const accueil = { lecteurA: "/app", redacA: "/app", verifA: "/app", approA: "/app", adminA: "/app", adminB: "/app", superadmin: "/plateforme" };
   /** Attendu : « 200 » (la page elle-même), « 404 », ou « →/chemin » (redirigé, arrivée en 200). */
   function attendus(chemin, regle) {
     const a = { faux: "→/connexion", attente: "→/connexion/second-facteur" };
@@ -269,7 +272,7 @@ let ACTIONS;
   }
   const PLATEFORME = ["/plateforme", "/plateforme/organisations", "/plateforme/organisations/nouvelle", `/plateforme/organisations/${ORG_A}`,
     "/plateforme/utilisateurs", `/plateforme/utilisateurs/${LECT_A}`, "/plateforme/sessions", "/plateforme/journal", "/plateforme/droits"];
-  // Un document de A, pour sa page d'historique : B ne la trouve pas (404), même avec l'identifiant.
+  // Un document de A, pour ses pages d'historique et de validation : B ne les trouve pas (404), même avec l'identifiant.
   const docPages = await api("redacA", "POST", "/api/documents", { organisationId: ORG_A, contenu: { meta: { typeDocument: "procedure", titre: "Pour les pages" }, roles: [], etapes: [] } });
   assert.equal(docPages.statut, 201);
   const pageDeA = (q) => (q === "superadmin" ? "→/choisir-organisation" : q === "adminB" ? "404" : "200");
@@ -278,6 +281,7 @@ let ACTIONS;
     attendus("/app/documents", (q) => (q === "superadmin" ? "→/choisir-organisation" : "200")),
     attendus("/app/documents/corbeille", (q) => (q === "superadmin" ? "→/choisir-organisation" : "200")),
     attendus(`/app/documents/${docPages.json.id}/historique`, pageDeA),
+    attendus(`/app/documents/${docPages.json.id}/validation`, pageDeA),
     attendus("/app/membres", (q) => (q === "superadmin" ? "→/choisir-organisation" : ADMINS.includes(q) ? "200" : "404")),
     attendus("/app/journal", (q) => (q === "superadmin" ? "→/choisir-organisation" : ADMINS.includes(q) ? "200" : "404")),
     attendus("/choisir-organisation", () => "200"),
@@ -318,7 +322,7 @@ let ACTIONS;
   // Création : seuls rédacteur et administrateur de A ; B ne peut pas écrire dans A (409 : ce n'est pas son
   // organisation ouverte) ; sans Origin ou depuis un autre site : 403.
   const creation = { organisationId: ORG_A, contenu: procedure("Créée par l'API") };
-  for (const [qui, attendu] of [["faux", 401], ["attente", 401], ["lecteurA", 403], ["verifA", 403], ["adminB", 409], ["superadmin", 403]]) {
+  for (const [qui, attendu] of [["faux", 401], ["attente", 401], ["lecteurA", 403], ["verifA", 403], ["approA", 403], ["adminB", 409], ["superadmin", 403]]) {
     const r = await api(qui, "POST", "/api/documents", creation);
     assert.equal(r.statut, attendu, `POST /api/documents / ${qui}`);
     sansEffet(r, `POST documents / ${qui}`);
@@ -411,6 +415,75 @@ let ACTIONS;
       && sql(`SELECT d.contenu = v.contenu FROM "${SCHEMA_A}".documents d JOIN "${SCHEMA_A}".versions_document v ON v.document_id = d.id AND v.version = 1 WHERE d.id = '${DOC}'`) === "t",
   });
 
+  // ======================================================================================== actions : circuit
+  // Circuit de validation (W1) : chaque décision demande SON droit, dans SON organisation, sur la version vue ; la
+  // séparation des tâches et le motif sont vérifiés par le serveur ; un document soumis ne se modifie plus (ni par
+  // l'API, ni par la restauration, ni par la corbeille). Succès : la page de validation est rechargée (?etat=…).
+  etape("actions « circuit de validation »");
+  const docC = await api("redacA", "POST", "/api/documents", { organisationId: ORG_A, contenu: procedure("Circuit v1") });
+  assert.equal(docC.statut, 201);
+  const DOCC = docC.json.id;
+  assert.equal((await api("redacA", "PUT", `/api/documents/${DOCC}`, { organisationId: ORG_A, version: 1, contenu: procedure("Circuit v2") })).statut, 200);
+  const PAGE_C = `/app/documents/${DOCC}/validation`;
+  const etatC = () => sql(`SELECT etat || '/' || coalesce(version_publiee::text, '-') FROM "${SCHEMA_A}".documents WHERE id = '${DOCC}'`);
+  const decisionsC = () => Number(sql(`SELECT count(*) FROM "${SCHEMA_A}".decisions_document WHERE document_id = '${DOCC}'`));
+  const decision = (transition, motif = "") => ({ organisationId: ORG_A, documentId: DOCC, transition, versionVue: String(versionDe(DOCC)), motif });
+  const vers = (etat) => `redirection:${PAGE_C}?etat=${etat}`;
+  const casC = (qui, champs, attendu, options = {}) => cas(qui, "actionTransitionDocument", champs, attendu, { page: PAGE_C, ...options });
+  const reussite = async (qui, transition, etat, motif = "") => {
+    const n0 = decisionsC();
+    await casC(qui, decision(transition, motif), vers(etat), { note: transition, effet: () => etatC().startsWith(`${etat}/`) && decisionsC() === n0 + 1 });
+  };
+
+  // Soumettre : rédaction.
+  for (const qui of ["faux", "attente"]) await casC(qui, decision("soumettre"), "session");
+  for (const qui of ["lecteurA", "verifA", "approA", "adminB", "superadmin"]) await casC(qui, decision("soumettre"), "erreur.interdit");
+  await casC("adminB", { ...decision("soumettre"), organisationId: ORG_B }, "erreur.introuvable", { note: "document de A depuis B" });
+  await casC("redacA", decision("publier"), "erreur.saisie_invalide", { note: "décision inconnue" });
+  await casC("redacA", { ...decision("soumettre"), versionVue: "1" }, "versions.document_modifie", { note: "page périmée" });
+  await casC("verifA", decision("verifier"), "circuit.etat_incompatible", { note: "vérifier un brouillon (pas encore soumis)" });
+  await casC("redacA", decision("soumettre"), "origine", { origine: ETRANGERE, note: "autre site" });
+  await reussite("redacA", "soumettre", "en_verification");
+  // Document soumis : figé.
+  const figee = await api("redacA", "PUT", `/api/documents/${DOCC}`, { organisationId: ORG_A, version: versionDe(DOCC), forcer: true, contenu: procedure("Modifiée en circuit") });
+  assert.deepEqual([figee.statut, figee.json?.erreur], [403, "circuit"], "PUT d'un document soumis");
+  sansEffet(figee, "PUT document soumis");
+  assert.equal((await api("redacA", "GET", `/api/editeur/contexte?doc=${DOCC}`)).json.droits.rediger, false, "l'éditeur s'ouvre en lecture seule");
+  await cas("redacA", "actionSupprimerDocument", { organisationId: ORG_A, documentId: DOCC }, "circuit.suppression_impossible", { note: "document soumis" });
+  await cas("redacA", "actionRestaurerVersion", { organisationId: ORG_A, documentId: DOCC, version: "1", versionActuelle: String(versionDe(DOCC)) }, "circuit.non_modifiable",
+    { page: `/app/documents/${DOCC}/historique`, note: "document soumis" });
+
+  // Vérifier : vérificateur, pas l'auteur ; refuser exige un motif.
+  for (const qui of ["faux", "attente"]) await casC(qui, decision("verifier"), "session");
+  for (const qui of ["lecteurA", "redacA", "approA", "adminA", "adminB", "superadmin"]) await casC(qui, decision("verifier"), "erreur.interdit");
+  await casC("verifA", decision("refuser_verification"), "circuit.motif_requis", { note: "refus sans motif" });
+  await reussite("verifA", "verifier", "en_approbation");
+
+  // Approuver : approbateur, pas celui qui a vérifié.
+  for (const qui of ["faux", "attente"]) await casC(qui, decision("approuver"), "session");
+  for (const qui of ["lecteurA", "redacA", "adminA", "adminB", "superadmin"]) await casC(qui, decision("approuver"), "erreur.interdit");
+  await casC("verifA", decision("approuver"), "circuit.separation_verificateur", { note: "il a vérifié cette version" });
+  await reussite("approA", "approuver", "publie");
+  assert.equal(etatC(), `publie/${versionDe(DOCC)}`, "version publiée notée");
+
+  // Réviser (rédaction) puis un nouveau cycle ; archiver (approbateur, motif obligatoire).
+  for (const qui of ["lecteurA", "verifA", "approA"]) await casC(qui, decision("reviser"), "erreur.interdit");
+  await reussite("redacA", "reviser", "brouillon");
+  assert.equal(etatC(), `brouillon/${versionDe(DOCC)}`, "la version publiée reste connue pendant la révision");
+  await reussite("redacA", "soumettre", "en_verification");
+  await casC("approA", decision("refuser_verification", "Non"), "erreur.interdit", { note: "un approbateur ne vérifie pas" });
+  await reussite("verifA", "refuser_verification", "brouillon", "Étape 1 à préciser.");
+  await reussite("redacA", "soumettre", "en_verification");
+  await reussite("verifA", "verifier", "en_approbation");
+  await reussite("approA", "approuver", "publie");
+  for (const qui of ["faux", "attente"]) await casC(qui, decision("archiver", "Remplacé"), "session");
+  for (const qui of ["lecteurA", "redacA", "adminA"]) await casC(qui, decision("archiver", "Remplacé"), "erreur.interdit");
+  await casC("approA", decision("archiver"), "circuit.motif_requis", { note: "archiver sans motif" });
+  await reussite("approA", "archiver", "archive", "Remplacé par une nouvelle procédure.");
+  await casC("redacA", decision("reviser"), "circuit.etat_incompatible", { note: "l'archivage est définitif" });
+  assert.equal(sql(`SELECT string_agg(transition, ',' ORDER BY id) FROM "${SCHEMA_A}".decisions_document WHERE document_id = '${DOCC}'`),
+    "soumettre,verifier,approuver,reviser,soumettre,refuser_verification,soumettre,verifier,approuver,archiver");
+
   // ======================================================================================== actions : membres
   etape("actions « membres » (organisation A)");
   const invitationA = { organisationId: ORG_A, email: "invite-a@droits.test", nom: "Invité A", roles: "LECTEUR" };
@@ -428,7 +501,7 @@ let ACTIONS;
   // non par PostgreSQL — voir docs/EVALUATION-RLS.md) : chaque administrateur ne voit que SON organisation.
   const pageMembres = async (qui) => (await ctx[qui].request.get(`${BASE}/app/membres`)).text();
   const [membresA, membresB] = [await pageMembres("adminA"), await pageMembres("adminB")];
-  const deA = ["admin-a", "redac-a", "lect-a", "verif-a", "mfa-a", "cible-a", "retrait-a", "invite-a", "invite-sa"].map((n) => `${n}@droits.test`);
+  const deA = ["admin-a", "redac-a", "lect-a", "verif-a", "appro-a", "mfa-a", "cible-a", "retrait-a", "invite-a", "invite-sa"].map((n) => `${n}@droits.test`);
   const deB = ["admin-b", "jetable"].map((n) => `${n}@droits.test`);
   for (const e of deA) assert.ok(membresA.includes(e) && !membresB.includes(e), `${e} : visible dans A seulement`);
   for (const e of deB) assert.ok(membresB.includes(e) && !membresA.includes(e), `${e} : visible dans B seulement`);
@@ -524,7 +597,7 @@ let ACTIONS;
 
   // ======================================================================================== actions : plateforme
   etape("actions « plateforme » : réservées au superadmin");
-  const NON_SUPERADMINS = ["lecteurA", "redacA", "verifA", "adminA", "adminB"];
+  const NON_SUPERADMINS = ["lecteurA", "redacA", "verifA", "approA", "adminA", "adminB"];
   async function plateforme(action, champs, effet, note) {
     for (const qui of ["faux", "attente"]) await cas(qui, action, champs, "session");
     for (const qui of NON_SUPERADMINS) await cas(qui, action, champs, "404");
@@ -555,11 +628,12 @@ let ACTIONS;
   etape("bilan des actions (✔ autorisé et effectué, ✖ refusé sans écriture)");
   const colonnes = ["anonyme", "faux", "attente", "attente2", "attente3", ...Object.keys(COMPTES)];
   const utilisees = colonnes.filter((c) => Object.values(bilanActions).some((b) => b[c]));
-  console.log(`  ${"".padEnd(38)}${utilisees.map((c) => c.padEnd(11)).join("")}`);
+  const largeur = Object.fromEntries(utilisees.map((c) => [c, Math.max(c.length, ...Object.values(bilanActions).map((b) => (b[c] ?? []).length)) + 2]));
+  console.log(`  ${"".padEnd(38)}${utilisees.map((c) => c.padEnd(largeur[c])).join("")}`);
   for (const action of Object.keys(REGLES)) {
     const b = bilanActions[action];
     assert.ok(b, `action jamais éprouvée : ${action}`);
-    console.log(`  ${action.padEnd(38)}${utilisees.map((c) => (b[c] ? b[c].join("") : "·").padEnd(11)).join("")}`);
+    console.log(`  ${action.padEnd(38)}${utilisees.map((c) => (b[c] ? b[c].join("") : "·").padEnd(largeur[c])).join("")}`);
   }
   const total = Object.values(bilanActions).reduce((s, b) => s + Object.values(b).reduce((t, l) => t + l.length, 0), 0);
   console.log(`  ✔ ${Object.keys(REGLES).length} actions, ${total} appels forgés`);

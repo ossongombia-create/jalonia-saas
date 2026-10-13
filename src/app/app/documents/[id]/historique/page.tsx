@@ -77,7 +77,8 @@ export default async function PageHistorique({ params, searchParams }: {
   const historique = await listerVersions(pool, organisation, lu.data);
   if (!historique) notFound();
   const { document, versions } = historique;
-  const peutRestaurer = aLeDroit(organisation.roles, "documents.rediger") && !document.supprimeLe;
+  // Restaurer : un brouillon seulement (une version soumise ou publiée est figée : circuit.ts).
+  const peutRestaurer = aLeDroit(organisation.roles, "documents.rediger") && !document.supprimeLe && document.etat === "brouillon";
   const actuelleCopiee = versions.some((v) => v.version === document.version);
 
   // Comparaison demandée (?a=…&b=…). La version actuelle se lit dans le document même si elle n'est pas encore copiée.
@@ -138,6 +139,7 @@ export default async function PageHistorique({ params, searchParams }: {
                     <td className="nowrap">
                       v{v.version}
                       {v.version === document.version ? <> <span className="etiquette etiquette-ok">{t("versions.actuelle")}</span></> : null}
+                      {v.version === document.versionPubliee ? <> <span className="etiquette etiquette-etat-publie">{t("versions.publiee")}</span></> : null}
                     </td>
                     <td className="nowrap">{formaterDate(langue, v.enregistreLe, fuseau)}</td>
                     <td>{v.auteurNom || "—"}</td>

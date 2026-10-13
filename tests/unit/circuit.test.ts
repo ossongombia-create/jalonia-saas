@@ -1,0 +1,133 @@
+// Circuit de validation (W1) : règles pures (droits, états, motif, séparation des tâches), sans base.
+import { readFileSync } from "node:fs";
+import { describe, expect, it } from "vitest";
+import { ETATS, LISTE_TRANSITIONS, MOTIF_MAX, TRANSITIONS, estTransition, refusTransition, transitionsPossibles, type Intervenants } from "../../src/server/documents/circuit";
+import { estCle } from "../../src/lib/i18n";
+import { en } from "../../src/lib/i18n/en";
+import type { RoleOrganisation } from "../../src/lib/rbac";
+
+const aucun: Intervenants = { auteur: null, soumisPar: null, verifiePar: null };
+const R = (...r: RoleOrganisation[]) => r;
+
+describe("circuit : transitions et états", () => {
+  it("les états et les transitions sont ceux des contraintes CHECK de la migration 0005", () => {
+    const sql = readFileSync(new URL("../../db/migrations/organisation/0005_circuit.sql", import.meta.url), "utf8");
+    const liste = (re: RegExp) => [...sql.match(re)![1]!.matchAll(/'([a-z_]+)'/g)].map((m) => m[1]);
+    expect(liste(/etat text NOT NULL DEFAULT 'brouillon' CHECK \(etat IN \(([^)]*)\)\)/)).toEqual([...ETATS]);
+    expect(liste(/transition\s+text NOT NULL CHECK \(transition IN \(([^)]*)\)\)/)).toEqual(LISTE_TRANSITIONS);
+    const motifsCopie = liste(/CHECK \(motif IN \(([^)]*)\)\)/);
+    for (const t of LISTE_TRANSITIONS) {
+      const c = TRANSITIONS[t].copie;
+      if (c) expect(motifsCopie, t).toContain(c);
+    }
+  });
+
+  it("chaque transition part d'états connus et mène à un état connu", () => {
+    for (const t of LISTE_TRANSITIONS) {
+      for (const de of TRANSITIONS[t].de) expect(ETATS, t).toContain(de);
+      expect(ETATS, t).toContain(TRANSITIONS[t].vers);
+    }
+    // Un seul chemin vers « publié » (approuver), un seul vers « archivé » (archiver) ; l'archivage est définitif.
+    expect(LISTE_TRANSITIONS.filter((t) => TRANSITIONS[t].vers === "publie")).toEqual(["approuver"]);
+    expect(LISTE_TRANSITIONS.filter((t) => TRANSITIONS[t].vers === "archive")).toEqual(["archiver"]);
+    expect(LISTE_TRANSITIONS.filter((t) => (TRANSITIONS[t].de as readonly string[]).includes("archive"))).toEqual([]);
+  });
+
+  it("estTransition n'accepte que les transitions déclarées (pas les propriétés héritées)", () => {
+    for (const t of LISTE_TRANSITIONS) expect(estTransition(t)).toBe(true);
+    for (const x of ["", "publier", "toString", "__proto__", "constructor", 1, null, undefined]) expect(estTransition(x), String(x)).toBe(false);
+  });
+
+  it("chaque état et chaque décision ont leurs textes, en français et en anglais", () => {
+    const cles = [
+      ...ETATS.flatMap((e) => [`etat.${e}`, `circuit.etape.${e}`]),
+      ...LISTE_TRANSITIONS.flatMap((t) => [`circuit.t.${t}`, `circuit.d.${t}`, `journal.action.${TRANSITIONS[t].action}`]),
+    ];
+    for (const c of cles) {
+      expect(estCle(c), c).toBe(true);
+      expect((en as Record<string, string>)[c], c).toBeTruthy();
+    }
+  });
+});
+
+describe("circuit : refus d'une transition", () => {
+  it("droit du rôle : soumettre/réviser (rédaction), vérifier (vérificateur), approuver et archiver (approbateur)", () => {
+    expect(refusTransition("soumettre", "brouillon", R("REDACTEUR"), "u", aucun, "")).toBeNull();
+    expect(refusTransition("soumettre", "brouillon", R("ADMIN_ORGANISATION"), "u", aucun, "")).toBeNull();
+    for (const r of ["VERIFICATEUR", "APPROBATEUR", "LECTEUR"] as const) expect(refusTransition("soumettre", "brouillon", [r], "u", aucun, ""), r).toBe("erreur.interdit");
+    expect(refusTransition("verifier", "en_verification", R("VERIFICATEUR"), "u", aucun, "")).toBeNull();
+    for (const r of ["ADMIN_ORGANISATION", "REDACTEUR", "APPROBATEUR", "LECTEUR"] as const) {
+      expect(refusTransition("verifier", "en_verification", [r], "u", aucun, ""), r).toBe("erreur.interdit");
+      expect(refusTransition("refuser_verification", "en_verification", [r], "u", aucun, "m"), r).toBe("erreur.interdit");
+    }
+    expect(refusTransition("approuver", "en_approbation", R("APPROBATEUR"), "u", aucun, "")).toBeNull();
+    for (const r of ["ADMIN_ORGANISATION", "REDACTEUR", "VERIFICATEUR", "LECTEUR"] as const) {
+      expect(refusTransition("approuver", "en_approbation", [r], "u", aucun, ""), r).toBe("erreur.interdit");
+      expect(refusTransition("refuser_approbation", "en_approbation", [r], "u", aucun, "m"), r).toBe("erreur.interdit");
+      expect(refusTransition("archiver", "publie", [r], "u", aucun, "m"), r).toBe("erreur.interdit");
+    }
+    expect(refusTransition("reviser", "publie", R("REDACTEUR"), "u", aucun, "")).toBeNull();
+    expect(refusTransition("reviser", "publie", R("APPROBATEUR"), "u", aucun, "")).toBe("erreur.interdit");
+    // Le droit est vérifié avant l'état : un rôle sans droit n'apprend rien de l'état.
+    expect(refusTransition("approuver", "brouillon", R("LECTEUR"), "u", aucun, "")).toBe("erreur.interdit");
+    expect(refusTransition("approuver", "en_verification", [], "u", aucun, "")).toBe("erreur.interdit");
+  });
+
+  it("état : chaque transition n'est possible que depuis ses états de départ", () => {
+    const tous = R("ADMIN_ORGANISATION", "REDACTEUR", "VERIFICATEUR", "APPROBATEUR");
+    for (const t of LISTE_TRANSITIONS) {
+      for (const e of ETATS) {
+        const attendu = (TRANSITIONS[t].de as readonly string[]).includes(e) ? null : "circuit.etat_incompatible";
+        expect(refusTransition(t, e, tous, "u", aucun, "motif"), `${t} depuis ${e}`).toBe(attendu);
+      }
+    }
+  });
+
+  it("motif : obligatoire pour refuser et archiver (les espaces ne comptent pas), limité à MOTIF_MAX caractères", () => {
+    expect(refusTransition("refuser_verification", "en_verification", R("VERIFICATEUR"), "u", aucun, "")).toBe("circuit.motif_requis");
+    expect(refusTransition("refuser_verification", "en_verification", R("VERIFICATEUR"), "u", aucun, "  \n\t ")).toBe("circuit.motif_requis");
+    expect(refusTransition("refuser_approbation", "en_approbation", R("APPROBATEUR"), "u", aucun, "")).toBe("circuit.motif_requis");
+    expect(refusTransition("archiver", "publie", R("APPROBATEUR"), "u", aucun, "")).toBe("circuit.motif_requis");
+    expect(refusTransition("archiver", "publie", R("APPROBATEUR"), "u", aucun, "Remplacé par PR-02")).toBeNull();
+    for (const t of ["soumettre", "verifier", "approuver", "reviser"] as const) expect(TRANSITIONS[t].motifObligatoire, t).toBe(false);
+    expect(refusTransition("verifier", "en_verification", R("VERIFICATEUR"), "u", aucun, "x".repeat(MOTIF_MAX))).toBeNull();
+    expect(refusTransition("verifier", "en_verification", R("VERIFICATEUR"), "u", aucun, "x".repeat(MOTIF_MAX + 1))).toBe("circuit.motif_trop_long");
+  });
+
+  it("séparation des tâches : l'auteur et la personne qui a soumis ne vérifient ni n'approuvent ; le vérificateur n'approuve pas", () => {
+    const tous = R("REDACTEUR", "VERIFICATEUR", "APPROBATEUR");
+    const i: Intervenants = { auteur: "alice", soumisPar: "bob", verifiePar: "carla" };
+    for (const qui of ["alice", "bob"]) {
+      expect(refusTransition("verifier", "en_verification", tous, qui, i, ""), qui).toBe("circuit.separation_auteur");
+      expect(refusTransition("refuser_verification", "en_verification", tous, qui, i, "m"), qui).toBe("circuit.separation_auteur");
+      expect(refusTransition("approuver", "en_approbation", tous, qui, i, ""), qui).toBe("circuit.separation_auteur");
+      expect(refusTransition("refuser_approbation", "en_approbation", tous, qui, i, "m"), qui).toBe("circuit.separation_auteur");
+    }
+    expect(refusTransition("verifier", "en_verification", tous, "carla", i, "")).toBeNull();
+    expect(refusTransition("approuver", "en_approbation", tous, "carla", i, "")).toBe("circuit.separation_verificateur");
+    expect(refusTransition("refuser_approbation", "en_approbation", tous, "carla", i, "m")).toBe("circuit.separation_verificateur");
+    expect(refusTransition("approuver", "en_approbation", tous, "dan", i, "")).toBeNull();
+    // Hors décisions de vérification et d'approbation, la séparation ne s'applique pas.
+    expect(refusTransition("soumettre", "brouillon", tous, "alice", i, "")).toBeNull();
+    expect(refusTransition("reviser", "publie", tous, "alice", i, "")).toBeNull();
+    expect(refusTransition("archiver", "publie", tous, "carla", i, "m")).toBeNull();
+    // Intervenant inconnu (null) : jamais confondu avec la personne.
+    expect(refusTransition("approuver", "en_approbation", tous, "dan", aucun, "")).toBeNull();
+  });
+});
+
+describe("circuit : décisions proposées", () => {
+  const i: Intervenants = { auteur: "alice", soumisPar: "alice", verifiePar: "carla" };
+  it("chacun ne voit que ce qu'il peut décider", () => {
+    expect(transitionsPossibles("brouillon", R("REDACTEUR"), "alice", aucun)).toEqual(["soumettre"]);
+    expect(transitionsPossibles("brouillon", R("LECTEUR"), "lea", aucun)).toEqual([]);
+    expect(transitionsPossibles("en_verification", R("VERIFICATEUR"), "carla", i)).toEqual(["verifier", "refuser_verification"]);
+    expect(transitionsPossibles("en_verification", R("VERIFICATEUR", "REDACTEUR"), "alice", i)).toEqual([]);
+    expect(transitionsPossibles("en_approbation", R("APPROBATEUR"), "paul", i)).toEqual(["approuver", "refuser_approbation"]);
+    expect(transitionsPossibles("en_approbation", R("APPROBATEUR", "VERIFICATEUR"), "carla", i)).toEqual([]);
+    expect(transitionsPossibles("publie", R("APPROBATEUR"), "paul", aucun)).toEqual(["archiver"]);
+    expect(transitionsPossibles("publie", R("REDACTEUR"), "alice", aucun)).toEqual(["reviser"]);
+    expect(transitionsPossibles("publie", R("ADMIN_ORGANISATION", "APPROBATEUR"), "zoe", aucun)).toEqual(["archiver", "reviser"]);
+    for (const r of ["ADMIN_ORGANISATION", "REDACTEUR", "VERIFICATEUR", "APPROBATEUR", "LECTEUR"] as const) expect(transitionsPossibles("archive", [r], "u", aucun), r).toEqual([]);
+  });
+});

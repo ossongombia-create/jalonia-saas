@@ -1,5 +1,6 @@
 // GET /api/editeur/contexte?doc=<id> — ce dont l'éditeur a besoin à l'ouverture : l'organisation, la personne,
 // ses droits, le document demandé (s'il y en a un) et la cartographie de l'organisation.
+// « rediger » tient compte du circuit de validation : seul un brouillon se modifie (le serveur le refuse de toute façon).
 import { aLeDroit } from "@/lib/rbac";
 import { traduireMessage } from "@/lib/i18n";
 import { poolApplication } from "@/server/db/pools";
@@ -21,12 +22,12 @@ export async function GET(requete: Request) {
       organisation: { id: organisation.id, nom: organisation.nom },
       utilisateur: { nom: ctx.utilisateur.nom, langue: ctx.langue },
       droits: {
-        rediger: aLeDroit(organisation.roles, "documents.rediger"),
+        rediger: aLeDroit(organisation.roles, "documents.rediger") && (!document || document.etat === "brouillon"),
         supprimer: aLeDroit(organisation.roles, "documents.supprimer"),
         cartographie: aLeDroit(organisation.roles, "cartographie.modifier"),
       },
       document: document
-        ? { id: document.id, version: document.version, contenu: document.contenu, modifieParNom: document.modifieParNom, modifieLe: document.modifieLe }
+        ? { id: document.id, version: document.version, etat: document.etat, contenu: document.contenu, modifieParNom: document.modifieParNom, modifieLe: document.modifieLe }
         : null,
       cartographie,
     });

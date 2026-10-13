@@ -1,7 +1,8 @@
 "use server";
-// Documents de l'organisation ouverte : création d'un document vierge, suppression.
+// Documents de l'organisation ouverte : création d'un document vierge, suppression, historique, circuit de validation.
 // L'identifiant d'organisation envoyé par le formulaire doit être celui de l'organisation ACTUELLEMENT ouverte,
 // et la personne doit y avoir le droit demandé — sinon refus (le superadmin n'a aucun droit implicite ici).
+import { redirect } from "next/navigation";
 import type { Droit } from "@/lib/rbac";
 import { aLeDroit } from "@/lib/rbac";
 import { identifiant } from "@/lib/validation";
@@ -9,6 +10,7 @@ import type { EtatAction } from "@/lib/etat-action";
 import { poolApplication } from "@/server/db/pools";
 import { contenuInitial, creerDocument, supprimerDocument } from "@/server/documents/service";
 import { restaurerVersion, retablirDocument } from "@/server/documents/versions";
+import { appliquerTransition, estTransition, TRANSITIONS } from "@/server/documents/circuit";
 import type { OrganisationCible } from "@/server/membres/service";
 import { ErreurMetier } from "@/server/erreurs";
 import { exigerContexte, type Contexte } from "@/server/web/contexte";
@@ -74,5 +76,27 @@ export async function actionRetablirDocument(_etat: EtatAction, formulaire: Form
     const documentId = valider(identifiant, champ(formulaire, "documentId"));
     await retablirDocument(poolApplication(), org, documentId, ctx.acteur);
     return { cle: "corbeille.retabli" };
+  });
+}
+
+/**
+ * Décision du circuit de validation (circuit.ts) : soumettre, vérifier, refuser, approuver, archiver, réviser.
+ * Le droit demandé dépend de la décision ; la séparation des tâches, l'état et le motif sont vérifiés par le service.
+ * `versionVue` : la version que la personne avait sous les yeux (refus si le document a changé depuis).
+ * Après la décision, la page de validation est rechargée avec l'état obtenu (?etat=…), qu'elle confirme.
+ */
+export async function actionTransitionDocument(_etat: EtatAction, formulaire: FormData): Promise<EtatAction> {
+  const ctx = await exigerContexte();
+  return executer(ctx.langue, async () => {
+    const transition = champ(formulaire, "transition");
+    const org = autoriser(ctx, formulaire, estTransition(transition) ? TRANSITIONS[transition].droit : "documents.lire");
+    if (!estTransition(transition)) throw new ErreurMetier("erreur.saisie_invalide");
+    const documentId = valider(identifiant, champ(formulaire, "documentId"));
+    const versionVue = entier(champ(formulaire, "versionVue"));
+    if (!Number.isSafeInteger(versionVue)) throw new ErreurMetier("erreur.saisie_invalide");
+    const r = await appliquerTransition(
+      poolApplication(), org, documentId, transition, { motif: champ(formulaire, "motif"), versionVue, roles: ctx.organisation?.roles ?? [] }, ctx.acteur,
+    );
+    redirect(`/app/documents/${documentId}/validation?etat=${r.etat}`);
   });
 }

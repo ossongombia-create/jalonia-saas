@@ -7,7 +7,7 @@
 //   - le serveur tient un numéro de VERSION : on lui dit sur quelle version on a travaillé. Si quelqu'un a enregistré entre-temps,
 //     il refuse (conflit) : l'enregistrement s'arrête et la page demande à la personne ce qu'elle veut (recharger ou garder sa version) ;
 //   - coupure réseau ou serveur indisponible : nouvel essai automatique, de plus en plus espacé (2 s, 4 s, 8 s… 30 s au plus) ;
-//   - les autres refus (session expirée, droits retirés, document supprimé, trop volumineux…) arrêtent l'enregistrement et sont
+//   - les autres refus (session expirée, droits retirés, document soumis au circuit de validation, supprimé, trop volumineux…) arrêtent l'enregistrement et sont
 //     expliqués à la personne ; son travail reste dans la page (et peut être téléchargé en .json).
 // On compare des EMPREINTES du contenu : revenir (par « annuler ») à ce qui est déjà enregistré n'envoie rien.
 
@@ -21,6 +21,7 @@ export function raisonDuRefus(statut, corps) {
   if (statut === 409 && erreur === "organisation_changee") return "organisation_changee";
   if (statut === 403 && erreur === "organisation") return "organisation_changee";
   if (statut === 401 || (statut === 403 && erreur === "mot_de_passe")) return "session";
+  if (statut === 403 && erreur === "circuit") return "circuit"; // document soumis au circuit de validation entre-temps
   if (statut === 403) return "interdit";
   if (statut === 404) return "introuvable";
   if (statut === 413) return "trop_volumineux";

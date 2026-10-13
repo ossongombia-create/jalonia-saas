@@ -77,7 +77,7 @@ const fs = require("node:fs");
   assert.equal((await api(lea, "GET", `/api/editeur/contexte?doc=${docId}`)).corps.document.version, versionAvant, "aucun enregistrement n'est parti");
   assert.deepEqual(lea.erreurs, []);
 
-  etape("vérificateur + approbateur : lecture seule aussi (pas encore de cycle de validation)");
+  etape("vérificateur + approbateur : lecture seule aussi (ses décisions se prennent sur la page « Validation » : partie 11)");
   const victor = await connecter("verif@demo.test");
   const ctxV = (await api(victor, "GET", `/api/editeur/contexte?doc=${docId}`)).corps;
   assert.deepEqual(ctxV.droits, { rediger: false, supprimer: false, cartographie: false });

@@ -146,6 +146,8 @@ export function dependancesDe(documents: LiensDocument[], id: string): Dependanc
 // contrôlé qu'en forme : chaque valeur est filtrée sur son type (une valeur inattendue est ignorée, jamais une erreur).
 // Les types sont testés AVANT d'accéder aux valeurs : en mode « lax », jsonpath déballerait un tableau (["PR-X"] → "PR-X"),
 // alors que la méthode type() ne le fait pas. Même lecture que l'éditeur : « actif » vaut exactement true, le code est un texte.
+// Les documents ARCHIVÉS (circuit.ts) ne sont plus en application : ils sortent des contrôles et des liens (un document
+// qui remplace un document archivé peut reprendre son code).
 const filtre = (champ: string) => `@.${champ}.actif.type() == "boolean" && @.${champ}.actif == true && @.${champ}.code.type() == "string"`;
 const REQUETE_LIENS = `
   SELECT id, type, titre, reference,
@@ -153,7 +155,7 @@ const REQUETE_LIENS = `
          jsonb_path_query_array(contenu, '$.etapes[*] ? (${filtre("niveau3")}).niveau3.code') AS n3,
          jsonb_path_query_array(contenu, '$.etapes[*] ? (${filtre("sousProcedure")}).sousProcedure.code') AS sp
     FROM documents
-   WHERE supprime_le IS NULL`;
+   WHERE supprime_le IS NULL AND etat <> 'archive'`;
 
 const MAX_CODE = 60;
 const codes = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string").map((x) => x.slice(0, MAX_CODE)) : []);

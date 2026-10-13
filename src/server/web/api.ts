@@ -40,6 +40,10 @@ export function reponseErreur(erreur: unknown, langue: Langue): Response {
   if (erreur instanceof ConflitVersion) {
     return reponseJson({ erreur: "conflit", ...erreur.actuel }, 409);
   }
+  // Document soumis au circuit de validation (ou publié) : il ne se modifie plus. L'éditeur l'explique (refus « circuit »).
+  if (erreur instanceof ErreurMetier && erreur.cle === "circuit.non_modifiable") {
+    return reponseJson({ erreur: "circuit", message: traduireMessage(langue, erreur.cle) }, 403);
+  }
   if (erreur instanceof ErreurMetier) {
     const statut = erreur.cle === "erreur.introuvable" ? 404 : erreur.cle === "docs.erreur.trop_volumineux" ? 413 : 400;
     return reponseJson({ erreur: erreur.cle, message: traduireMessage(langue, erreur.cle) }, statut);

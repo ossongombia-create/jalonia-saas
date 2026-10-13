@@ -447,7 +447,8 @@ a:hover {
 input[type="text"],
 input[type="email"],
 input[type="password"],
-select {
+select,
+textarea {
   font: inherit;
   padding: 0.55rem 0.7rem;
   border: 1px solid var(--trait);
@@ -457,7 +458,8 @@ select {
   width: 100%;
 }
 input:focus,
-select:focus {
+select:focus,
+textarea:focus {
   border-color: var(--sarcelle);
   outline: 2px solid var(--sarcelle-pale);
 }
@@ -691,6 +693,40 @@ input[readonly] {
   overflow-wrap: anywhere;
   white-space: pre-wrap;
   max-width: 28rem;
+}
+
+/* ----- Circuit de validation ----- */
+.etiquette-etat-en_verification,
+.etiquette-etat-en_approbation {
+  background: var(--alerte-fond);
+  color: var(--alerte-texte);
+}
+.etiquette-etat-publie {
+  background: var(--ok-fond);
+  color: var(--ok);
+}
+.etiquette-etat-archive {
+  background: var(--trait-doux);
+  color: var(--encre);
+}
+.decisions-possibles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 1rem;
+}
+.decision-possible {
+  border: 1px solid var(--trait-doux);
+  border-radius: var(--rayon);
+  padding: 0.8rem 1rem;
+}
+.decision-possible textarea {
+  resize: vertical;
+  min-height: 4.5rem;
+}
+.empreinte {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.75rem;
+  overflow-wrap: anywhere;
 }
 
 /* ----- Cohérence entre documents ----- */

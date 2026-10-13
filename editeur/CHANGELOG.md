@@ -4,6 +4,12 @@ Règle : la version la plus récente est toujours à la racine du dossier. Avant
 l'état précédent est copié dans `versions/` (un dossier par version). Pour revenir en arrière ou
 comparer, ouvre le dossier de la version voulue. (Au Module 6, Git prendra le relais.)
 
+## v1.6 — Circuit de validation : lecture seule selon l'état du document (13/10/2026)
+Plan de l'audit technique (W1) : dans l'application web, un document passe par vérification, approbation, publication et archivage ; seul un brouillon se modifie.
+- **Ouverture** (`js/en-ligne-ui.js`) : un document en vérification, en approbation, publié ou archivé s'ouvre **en lecture seule** pour tout le monde, avec un bandeau qui dit pourquoi (l'état du document, et où se prennent les décisions : page « Validation ») ; l'en-tête indique « Lecture seule » même quand la cartographie, enregistrée à part, reste modifiable. Comme pour un rôle en lecture : aperçus, synthèse, Word et PDF restent disponibles.
+- **Enregistrement** (`js/synchro.js`) : si le document est soumis au circuit pendant qu'il est ouvert, le serveur refuse l'enregistrement (`403`, `circuit`) ; l'enregistrement s'arrête et une fenêtre l'explique (nouvelle raison `circuit`), le travail reste dans la page et peut être téléchargé en .json.
+- **Vérifié** : voir l'entrée « W1/W3 » de `docs/DECISIONS.md` de l'application web (tests Node, parcours navigateur partie 11).
+
 ## v1.5 — Échange BPMN 2.0 d'une procédure (13/10/2026)
 Plan de l'audit technique (D3) : exporter un sous-ensemble défini du BPMN 2.0, l'importer avec un rapport de ce qui n'est pas repris, sans revendiquer une compatibilité BPMN générale.
 - **Sous-ensemble en BPMN standard** (`js/bpmn.js`) : procédure → processus dans un participant ; rôles → couloirs ; instructions → tâches (sous-procédure → activité d'appel) ; fait déclencheur et fin → événements de début et de fin ; enchaînement → flux nommés par l'information transmise ; décision (OU) → passerelle exclusive, suite normale = flux par défaut ; tâches simultanées (ET) → passerelle parallèle ; opérateur d'entrée → passerelle de jonction quand plusieurs flux arrivent ; dessin (BPMN DI) avec des flèches qui ne traversent aucune forme.

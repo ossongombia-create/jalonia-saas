@@ -5,7 +5,7 @@ import type { PoolClient } from "pg";
 
 export const PERIODE_COPIES_MINUTES = 15;
 
-export type MotifCopie = "creation" | "enregistrement" | "validation" | "avant_remplacement" | "remplacement" | "restauration" | "suppression" | "reprise";
+export type MotifCopie = "creation" | "enregistrement" | "validation" | "avant_remplacement" | "remplacement" | "restauration" | "suppression" | "reprise" | "soumission";
 
 export interface Copie {
   version: number;

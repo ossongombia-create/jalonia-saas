@@ -7,6 +7,7 @@
 //   - avant et après un remplacement explicite (conflit tranché par « garder ma version », restauration) ;
 //   - à la validation de la synthèse (version « validée ») ;
 //   - à la mise en corbeille ;
+//   - à la soumission au circuit de validation (circuit.ts : la version soumise est celle qui sera publiée) ;
 //   - et, pendant l'enregistrement automatique (toutes les 1,5 s), au plus une fois par période (PERIODE_COPIES_MINUTES).
 // LIMITE (assumée) : entre deux copies d'une même personne, les états intermédiaires ne sont pas gardés.
 import type { Pool } from "pg";
@@ -15,7 +16,7 @@ import type { OrganisationCible } from "../membres/service";
 import { journaliserOrganisation, journaliserPlateforme, type EntreeJournal } from "../audit/journal";
 import { ErreurMetier } from "../erreurs";
 import { nomActeur, traceActeur, type Acteur } from "../acteur";
-import { estIdentifiant, metaDepuisContenu, type Contenu, type TypeDocument } from "./service";
+import { estIdentifiant, metaDepuisContenu, type Contenu, type EtatDocument, type TypeDocument } from "./service";
 import { copier, type MotifCopie } from "./copies";
 
 // ---------------------------------------------------------------------------------------------------
@@ -32,15 +33,15 @@ export interface LigneVersion {
 }
 
 export interface Historique {
-  document: { id: string; type: TypeDocument; titre: string; reference: string; version: number; supprimeLe: Date | null };
+  document: { id: string; type: TypeDocument; titre: string; reference: string; version: number; etat: EtatDocument; versionPubliee: number | null; supprimeLe: Date | null };
   versions: LigneVersion[];
 }
 
 export async function listerVersions(pool: Pool, org: OrganisationCible, id: string): Promise<Historique | null> {
   if (!estIdentifiant(id)) return null;
   return avecOrganisation(pool, org, async (client) => {
-    const d = await client.query<{ id: string; type: TypeDocument; titre: string; reference: string; version: number; supprime_le: Date | null }>(
-      "SELECT id, type, titre, reference, version, supprime_le FROM documents WHERE id = $1",
+    const d = await client.query<{ id: string; type: TypeDocument; titre: string; reference: string; version: number; etat: EtatDocument; version_publiee: number | null; supprime_le: Date | null }>(
+      "SELECT id, type, titre, reference, version, etat, version_publiee, supprime_le FROM documents WHERE id = $1",
       [id],
     );
     const doc = d.rows[0];
@@ -50,7 +51,7 @@ export async function listerVersions(pool: Pool, org: OrganisationCible, id: str
       [id],
     );
     return {
-      document: { id: doc.id, type: doc.type, titre: doc.titre, reference: doc.reference, version: doc.version, supprimeLe: doc.supprime_le },
+      document: { id: doc.id, type: doc.type, titre: doc.titre, reference: doc.reference, version: doc.version, etat: doc.etat, versionPubliee: doc.version_publiee, supprimeLe: doc.supprime_le },
       versions: v.rows.map((l) => ({ version: l.version, titre: l.titre, reference: l.reference, auteurNom: l.auteur_nom, enregistreLe: l.enregistre_le, motif: l.motif })),
     };
   });
@@ -86,12 +87,13 @@ export async function restaurerVersion(pool: Pool, org: OrganisationCible, id: s
   const nom = nomActeur(acteur);
   return enTransaction(pool, async (client) => {
     const r = await dansOrganisation(client, org, async () => {
-      const lu = await client.query<{ version: number }>(
-        "SELECT version FROM documents WHERE id = $1 AND supprime_le IS NULL FOR UPDATE",
+      const lu = await client.query<{ version: number; etat: string }>(
+        "SELECT version, etat FROM documents WHERE id = $1 AND supprime_le IS NULL FOR UPDATE",
         [id],
       );
       const doc = lu.rows[0];
       if (!doc) throw new ErreurMetier("erreur.introuvable");
+      if (doc.etat !== "brouillon") throw new ErreurMetier("circuit.non_modifiable");
       if (doc.version !== versionActuelle) throw new ErreurMetier("versions.document_modifie");
       if (version >= doc.version) throw new ErreurMetier("versions.deja_actuelle");
       const v = await client.query<{ contenu: Contenu }>("SELECT contenu FROM versions_document WHERE document_id = $1 AND version = $2", [id, version]);
