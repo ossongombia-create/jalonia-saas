@@ -5,7 +5,7 @@
 //    migrations, superadministrateur créé par le VRAI script (scripts/creer-superadmin.ts), données de départ
 //    (tests/e2e/preparer.ts) ;
 // 2. serveur de production construit (.next/standalone), démarré sur un port libre, secrets tirés au sort ;
-// 3. parties p1 à p8, sondes CSP, matrice des autorisations — l'une après l'autre, arrêt à la première erreur ;
+// 3. parties p1 à p9, sondes CSP, matrice des autorisations — l'une après l'autre, arrêt à la première erreur ;
 // 4. journal du serveur relu après chaque partie : aucune erreur ;
 // 5. tout est supprimé (base, rôles des organisations), même en cas d'échec.
 //
@@ -31,7 +31,7 @@ const RACINE = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..
 const ICI = path.join(RACINE, "tests/e2e");
 const ETAT = path.join(ICI, ".etat");
 const TSX = path.join(RACINE, "node_modules/.bin/tsx");
-const PARTIES = ["p1", "p2", "p3", "p4", "p5", "p6", "p7", "p8", "sonde-csp", "sonde-csp-blocage", "autorisations"];
+const PARTIES = ["p1", "p2", "p3", "p4", "p5", "p6", "p7", "p8", "p9", "sonde-csp", "sonde-csp-blocage", "autorisations"];
 const SUPERADMIN = { email: "superadmin@e2e.test", nom: "Superadmin E2E", mdp: "superadmin-e2e-motdepasse" }; // (outils.cjs)
 const MINUTES_PAR_PARTIE = 10;
 

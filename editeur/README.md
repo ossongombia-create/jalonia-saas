@@ -32,6 +32,7 @@ Application web de rédaction graphique de procédures selon le langage Qualigra
 | `js/sorties.js` | Ce qui demande le navigateur : image du logigramme, téléchargement, impression | Comment sortir le document ? |
 | `js/embarque.js` | La procédure cachée dans le Word généré (aller-retour sans perte) | Comment rouvrir un Word sans rien perdre ? |
 | `js/importWord.js` | Lecture d'un Word : procédure embarquée, sinon tableaux du modèle (11 ou 13 sections) | Comment reprendre une procédure existante ? |
+| `js/bpmn.js` | Échange BPMN 2.0 d'une procédure : sous-ensemble défini en éléments standard (couloirs, tâches, décisions…), le reste en extensions ; import avec rapport de ce qui n'est pas repris | Comment passer une procédure à un outil BPMN, et inversement ? |
 | `js/rules.js` | Le moteur de règles Qualigramme | Cette procédure respecte-t-elle le langage ? |
 | `js/rules-it.js` | Le moteur de règles du **niveau 3** (chapitre 7 du livre) : un rôle, 5 à 10 opérations, libellés, contrôles = questions, correctives, opération à risque = contrôle | Cette instruction de travail respecte-t-elle le livre ? |
 | `js/deroule-it.js` | L'étape 2 d'une **instruction de travail** : tableau à trois colonnes (opérations / plan d'auto-contrôle / actions correctrices), un seul rôle en haut | Comment saisir une instruction de travail ? |

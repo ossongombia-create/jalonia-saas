@@ -66,10 +66,12 @@ jobs:
       - name: Tests d'intégration (PostgreSQL)
         run: npm run test:integration
 
-      - name: Chromium (Playwright) et décodage des codes QR (OpenCV)
+      - name: Chromium (Playwright), décodage des codes QR (OpenCV), validation XML (lxml)
         run: |
           npx playwright install --with-deps chromium
-          python -m pip install opencv-python-headless==4.13.0.92
+          python -m pip install opencv-python-headless==4.13.0.92 lxml==6.1.0
+      - name: BPMN 2.0 — schéma XSD officiel et ouverture dans bpmn-js
+        run: npm run test:bpmn
       - name: Parcours navigateur et matrice des autorisations
         run: npm run test:e2e
       - name: Captures et journal du serveur de test (en cas d'échec)

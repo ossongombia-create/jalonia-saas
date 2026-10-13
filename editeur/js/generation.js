@@ -5,7 +5,7 @@ import { h } from "./dom.js";
 import { t } from "./i18n.js";
 import * as store from "./store.js";
 import { construireDocument, estimerPages, listeNiveau3 } from "./document.js";
-import { telechargerWord, imprimerPdf, telechargerPngIT } from "./sorties.js";
+import { telechargerWord, imprimerPdf, telechargerPngIT, telechargerBpmn } from "./sorties.js";
 import { estInstruction } from "./parcours.js";
 import { taillePointsNiveau3 } from "./render3.js";
 import { nombre } from "./i18n.js";
@@ -70,6 +70,15 @@ export function rendreGeneration(zone) {
   });
   const boutonPdf = h("button", { type: "button", class: "primaire" }, icone("dl", 18), t("gen.pdf"));
   boutonPdf.addEventListener("click", () => imprimerPdf());
+  const boutonBpmn = h("button", { type: "button", class: "primaire" }, icone("dl", 18), t("bpmn.export.bouton"));
+  boutonBpmn.addEventListener("click", () => {
+    try {
+      telechargerBpmn();
+      etat.textContent = "";
+    } catch (e) {
+      etat.textContent = t(e && e.cle ? e.cle : "gen.erreur");
+    }
+  });
 
   // h() ignore les enfants nuls ; replaceChildren() du navigateur écrirait le mot « null » : on passe par un conteneur.
   zone.replaceChildren(h("div", { class: "generation" },
@@ -80,6 +89,7 @@ export function rendreGeneration(zone) {
       n3 > 0 ? h("p", { class: "aide alerte-texte" }, t("gen.n3", { n: n3 })) : null),
     h("div", { class: "colonnes-cartes" },
       carte("word", t("gen.word.titre"), h("p", { class: "aide" }, t("gen.word.aide")), h("div", { class: "carte-bouton" }, boutonWord)),
-      carte("doc", t("gen.pdf.titre"), h("p", { class: "aide" }, t("gen.pdf.aide")), h("div", { class: "carte-bouton" }, boutonPdf))),
+      carte("doc", t("gen.pdf.titre"), h("p", { class: "aide" }, t("gen.pdf.aide")), h("div", { class: "carte-bouton" }, boutonPdf)),
+      carte("doc", t("bpmn.export.titre"), h("p", { class: "aide" }, t("bpmn.export.aide")), h("div", { class: "carte-bouton" }, boutonBpmn))),
     etat));
 }

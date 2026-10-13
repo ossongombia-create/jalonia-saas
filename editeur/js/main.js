@@ -6,6 +6,7 @@ import * as parcours from "./parcours-ui.js";
 import { enregistrerJSON } from "./sorties.js"; // importé aussi pour enregistrer l'impression du document (PDF)
 import { actualiserApercu } from "./apercus.js";
 import { importerWord } from "./importWord.js";
+import { depuisBpmn, ErreurBpmn, TAILLE_MAX_IMPORT } from "./bpmn.js";
 import { t, definirLangue, langueCourante } from "./i18n.js";
 import { icone, garnirIcones } from "./icones.js";
 import * as cartographie from "./cartographie-store.js";
@@ -217,14 +218,21 @@ $("fichier-entree").addEventListener("change", (evenement) => {
   lecteur.readAsText(fichier);
 });
 
-// ----- Import Word (.docx) -----
-function afficherRapport(rapport) {
+// ----- Import Word (.docx) et BPMN 2.0 : même fenêtre de rapport, titre selon l'import -----
+function afficherRapport(rapport, cleTitre = "import.titre") {
+  const titre = $("rapport-import").querySelector("h3");
+  titre.dataset.i18n = cleTitre;
+  titre.textContent = t(cleTitre);
   const liste = $("rapport-liste");
   liste.replaceChildren();
   rapport.forEach((c) => {
     const li = document.createElement("li");
     li.className = c.gravite;
-    li.textContent = t(c.cle, c.params);
+    // Liste d'éléments non repris (import BPMN) : « événement de bordure (1), objet de données (2) ».
+    const params = c.params && Array.isArray(c.params.liste)
+      ? { ...c.params, liste: c.params.liste.map((x) => t("bpmn.el.liste", { element: t(x.cle), n: x.n })).join(", ") }
+      : c.params;
+    li.textContent = t(c.cle, params);
     liste.appendChild(li);
   });
   $("rapport-import").hidden = rapport.length === 0;
@@ -251,6 +259,26 @@ $("fichier-word").addEventListener("change", async (evenement) => {
     afficherRapport(rapport);
   } catch (e) {
     afficherRapport([{ gravite: "erreur", cle: "import.illisible" }]);
+  }
+});
+
+$("btn-importer-bpmn").addEventListener("click", () => $("fichier-bpmn").click());
+$("fichier-bpmn").addEventListener("change", async (evenement) => {
+  const fichier = evenement.target.files[0];
+  evenement.target.value = "";
+  if (!fichier) return;
+  if (fichier.size > TAILLE_MAX_IMPORT || !/\.(bpmn|xml)$/i.test(fichier.name)) {
+    afficherRapport([{ gravite: "erreur", cle: "bpmn.import.fichier_refuse" }], "bpmn.import.titre");
+    return;
+  }
+  if (!confirmerRemplacement()) return;
+  try {
+    const { procedure, rapport } = depuisBpmn(await fichier.text());
+    store.importerProcedure(procedure);
+    parcours.apresChargement();
+    afficherRapport(rapport, "bpmn.import.titre");
+  } catch (e) {
+    afficherRapport([{ gravite: "erreur", cle: e instanceof ErreurBpmn ? e.cle : "bpmn.import.illisible" }], "bpmn.import.titre");
   }
 });
 

@@ -29,3 +29,7 @@ next-env.d.ts
 
 # parcours navigateur : base, captures, journal du serveur de test (tests/e2e/lancer.mjs)
 /tests/e2e/.etat/
+
+# échange BPMN : exports d'essai et copie locale du schéma XSD (tests/bpmn)
+/tests/bpmn/.sortie/
+/tests/bpmn/.xsd/

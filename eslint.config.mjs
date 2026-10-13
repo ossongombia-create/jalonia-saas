@@ -5,8 +5,8 @@ import nextTs from "eslint-config-next/typescript";
 const eslintConfig = defineConfig([
   ...nextVitals,
   ...nextTs,
-  // Parcours navigateur (tests/e2e) : scripts Node en CommonJS, où require() est la forme normale d'import.
-  { files: ["tests/e2e/**/*.cjs"], rules: { "@typescript-eslint/no-require-imports": "off" } },
+  // Scripts de test Node en CommonJS (parcours navigateur, BPMN) : require() y est la forme normale d'import.
+  { files: ["tests/**/*.cjs"], rules: { "@typescript-eslint/no-require-imports": "off" } },
   // Override default ignores of eslint-config-next.
   globalIgnores([
     // Default ignores of eslint-config-next:

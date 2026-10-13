@@ -10,6 +10,8 @@ import { construireFeuille } from "./apercu.js";
 import { construireFeuilleIT } from "./apercu-it.js";
 import { dessinerNiveau3, mesurerNiveau3, disposerNiveau3 } from "./render3.js";
 import { estInstruction } from "./parcours.js";
+import { versBpmn } from "./bpmn.js";
+import { VERSION } from "./version.js";
 
 const TYPE_DOCX = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 const PIXELS_MAX = { largeur: 3200, hauteur: 5200 }; // au-delà, le navigateur risque de refuser le canevas
@@ -91,6 +93,12 @@ export function enregistrerJSON() {
   const nom = String(p.meta.reference || p.meta.titre || "document").replace(/[^\w-]+/g, "-").replace(/^-+|-+$/g, "") || "document";
   telecharger(store.exporterJSON(), `${nom}.json`, "application/json");
   store.marquerEnregistre(); // v0.22 : le document est maintenant dans un fichier (l'alerte avant de quitter et le repère « non enregistré » s'éteignent)
+}
+
+// Le logigramme au format BPMN 2.0 (procédures seulement : voir bpmn.js).
+export function telechargerBpmn() {
+  const p = store.lire();
+  telecharger(versBpmn(p, { versionApplication: VERSION }), nomDeFichier(p, "bpmn"), "application/xml");
 }
 
 export async function telechargerWord() {

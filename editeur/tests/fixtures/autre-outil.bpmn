@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Fichier BPMN 2.0 fictif, écrit comme le ferait un autre outil de modélisation (préfixes, types de tâches, éléments
+     que Jalonia ne reprend pas). Sert aux tests de l'import (tests/bpmn.test.mjs). -->
+<bpmn2:definitions xmlns:bpmn2="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" id="Definitions_rec" targetNamespace="http://example.org/bpmn" exporter="Autre outil" exporterVersion="5.0">
+  <bpmn2:collaboration id="Collab">
+    <bpmn2:participant id="P_client" name="Client" processRef="Process_client" />
+    <bpmn2:participant id="P_rec" name="Traiter une réclamation" processRef="Process_rec" />
+    <bpmn2:messageFlow id="MF_1" sourceRef="T_client" targetRef="Start" />
+  </bpmn2:collaboration>
+  <bpmn2:process id="Process_client" isExecutable="false">
+    <bpmn2:startEvent id="S_client" />
+    <bpmn2:task id="T_client" name="Envoyer une réclamation" />
+    <bpmn2:sequenceFlow id="F_client" sourceRef="S_client" targetRef="T_client" />
+  </bpmn2:process>
+  <bpmn2:process id="Process_rec" isExecutable="true">
+    <bpmn2:laneSet id="LS">
+      <bpmn2:lane id="L_sc" name="Service client">
+        <bpmn2:flowNodeRef>Start</bpmn2:flowNodeRef>
+        <bpmn2:flowNodeRef>T1</bpmn2:flowNodeRef>
+        <bpmn2:flowNodeRef>ICE</bpmn2:flowNodeRef>
+        <bpmn2:flowNodeRef>T3</bpmn2:flowNodeRef>
+        <bpmn2:flowNodeRef>End</bpmn2:flowNodeRef>
+      </bpmn2:lane>
+      <bpmn2:lane id="L_q" name="Qualité">
+        <bpmn2:flowNodeRef>T2</bpmn2:flowNodeRef>
+        <bpmn2:flowNodeRef>G1</bpmn2:flowNodeRef>
+        <bpmn2:flowNodeRef>GP</bpmn2:flowNodeRef>
+        <bpmn2:flowNodeRef>T4</bpmn2:flowNodeRef>
+        <bpmn2:flowNodeRef>B_delai</bpmn2:flowNodeRef>
+      </bpmn2:lane>
+    </bpmn2:laneSet>
+    <bpmn2:startEvent id="Start" name="Réclamation reçue">
+      <bpmn2:outgoing>F0</bpmn2:outgoing>
+    </bpmn2:startEvent>
+    <bpmn2:userTask id="T1" name="Enregistrer la réclamation">
+      <bpmn2:documentation>Saisir la réclamation dans le registre.</bpmn2:documentation>
+      <bpmn2:incoming>F0</bpmn2:incoming>
+      <bpmn2:outgoing>F1</bpmn2:outgoing>
+    </bpmn2:userTask>
+    <bpmn2:intermediateThrowEvent id="ICE" name="Accusé de réception envoyé">
+      <bpmn2:messageEventDefinition id="MED" />
+    </bpmn2:intermediateThrowEvent>
+    <bpmn2:serviceTask id="T2" name="Analyser la réclamation" />
+    <bpmn2:boundaryEvent id="B_delai" name="10 jours" attachedToRef="T2">
+      <bpmn2:timerEventDefinition id="TED" />
+    </bpmn2:boundaryEvent>
+    <bpmn2:exclusiveGateway id="G1" name="Fondée ?" default="F_fondee" />
+    <bpmn2:sendTask id="T3" name="Répondre au client" />
+    <bpmn2:parallelGateway id="GP" />
+    <bpmn2:task id="T4" name="Ouvrir une action corrective" />
+    <bpmn2:endEvent id="End" name="Réclamation close" />
+    <bpmn2:sequenceFlow id="F0" sourceRef="Start" targetRef="T1" />
+    <bpmn2:sequenceFlow id="F1" name="Fiche de réclamation" sourceRef="T1" targetRef="ICE" />
+    <bpmn2:sequenceFlow id="F2" sourceRef="ICE" targetRef="T2" />
+    <bpmn2:sequenceFlow id="F3" name="Avis" sourceRef="T2" targetRef="G1" />
+    <bpmn2:sequenceFlow id="F_non" name="Non fondée" sourceRef="G1" targetRef="End">
+      <bpmn2:conditionExpression>${!fondee}</bpmn2:conditionExpression>
+    </bpmn2:sequenceFlow>
+    <bpmn2:sequenceFlow id="F_fondee" name="Fondée" sourceRef="G1" targetRef="T3" />
+    <bpmn2:sequenceFlow id="F_delai" sourceRef="B_delai" targetRef="T3" />
+    <bpmn2:sequenceFlow id="F4" name="Réponse" sourceRef="T3" targetRef="GP" />
+    <bpmn2:sequenceFlow id="F5" sourceRef="GP" targetRef="T4" />
+    <bpmn2:sequenceFlow id="F6" sourceRef="GP" targetRef="End" />
+    <bpmn2:sequenceFlow id="F7" sourceRef="T4" targetRef="End" />
+    <bpmn2:dataObject id="DO_1" />
+    <bpmn2:dataObjectReference id="DOR_1" name="Registre des réclamations" dataObjectRef="DO_1" />
+    <bpmn2:textAnnotation id="TA_1">
+      <bpmn2:text>Délai de réponse : 10 jours ouvrés</bpmn2:text>
+    </bpmn2:textAnnotation>
+    <bpmn2:association id="A_1" sourceRef="T3" targetRef="TA_1" />
+  </bpmn2:process>
+  <bpmndi:BPMNDiagram id="Diagramme">
+    <bpmndi:BPMNPlane id="Plan" bpmnElement="Collab" />
+  </bpmndi:BPMNDiagram>
+</bpmn2:definitions>
