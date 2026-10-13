@@ -39,7 +39,9 @@ const REGLES = {
   actionChoisirOrganisation: { regle: "une organisation dont on est membre", simple: true },
   actionChangerMotDePasse: { regle: "son propre compte, mot de passe actuel exigé" },
   actionCreerDocument: { regle: "documents.rediger dans l'organisation OUVERTE" },
-  actionSupprimerDocument: { regle: "documents.supprimer dans l'organisation OUVERTE" },
+  actionSupprimerDocument: { regle: "documents.supprimer dans l'organisation OUVERTE (mise à la corbeille)" },
+  actionRetablirDocument: { regle: "documents.supprimer dans l'organisation OUVERTE ; document de CETTE organisation" },
+  actionRestaurerVersion: { regle: "documents.rediger dans l'organisation OUVERTE ; document de CETTE organisation" },
   actionInviterMembre: { regle: "superadmin, ou organisation.membres.gerer dans l'organisation OUVERTE" },
   actionAnnulerInvitation: { regle: "idem ; invitation de CETTE organisation" },
   actionModifierRoles: { regle: "idem ; membre de CETTE organisation" },
@@ -96,7 +98,8 @@ const EMPREINTE = `SELECT md5(concat_ws('#',
   (SELECT string_agg(row(id, utilisateur_id, fin, motif_fin, en_attente_mfa, echecs_mfa)::text, ',' ORDER BY id) FROM platform.sessions),
   (SELECT count(*)::text FROM platform.journal),
   (SELECT string_agg(query_to_xml(format(
-     'SELECT (SELECT string_agg(row(id, titre, version, modifie_le)::text, '','' ORDER BY id) FROM %1$I.documents) AS d,
+     'SELECT (SELECT string_agg(row(id, titre, version, modifie_le, supprime_le)::text, '','' ORDER BY id) FROM %1$I.documents) AS d,
+             (SELECT count(*) FROM %1$I.versions_document) AS v,
              (SELECT string_agg(row(version, modifie_le)::text, '','') FROM %1$I.cartographie) AS c,
              (SELECT count(*) FROM %1$I.journal) AS j', schema_name), false, false, '')::text, '#' ORDER BY schema_name)
      FROM platform.organisations)))`;
@@ -266,9 +269,15 @@ let ACTIONS;
   }
   const PLATEFORME = ["/plateforme", "/plateforme/organisations", "/plateforme/organisations/nouvelle", `/plateforme/organisations/${ORG_A}`,
     "/plateforme/utilisateurs", `/plateforme/utilisateurs/${LECT_A}`, "/plateforme/sessions", "/plateforme/journal", "/plateforme/droits"];
+  // Un document de A, pour sa page d'historique : B ne la trouve pas (404), même avec l'identifiant.
+  const docPages = await api("redacA", "POST", "/api/documents", { organisationId: ORG_A, contenu: { meta: { typeDocument: "procedure", titre: "Pour les pages" }, roles: [], etapes: [] } });
+  assert.equal(docPages.statut, 201);
+  const pageDeA = (q) => (q === "superadmin" ? "→/choisir-organisation" : q === "adminB" ? "404" : "200");
   const PAGES = [
     attendus("/app", (q) => (q === "superadmin" ? "→/choisir-organisation" : "200")),
     attendus("/app/documents", (q) => (q === "superadmin" ? "→/choisir-organisation" : "200")),
+    attendus("/app/documents/corbeille", (q) => (q === "superadmin" ? "→/choisir-organisation" : "200")),
+    attendus(`/app/documents/${docPages.json.id}/historique`, pageDeA),
     attendus("/app/membres", (q) => (q === "superadmin" ? "→/choisir-organisation" : ADMINS.includes(q) ? "200" : "404")),
     attendus("/app/journal", (q) => (q === "superadmin" ? "→/choisir-organisation" : ADMINS.includes(q) ? "200" : "404")),
     attendus("/choisir-organisation", () => "200"),
@@ -287,9 +296,9 @@ let ACTIONS;
       assert.equal(obtenu, a[qui], `page ${chemin} / ${qui}`);
       cellules.push(obtenu.replace("→/connexion/second-facteur", "→code").replace("→/choisir-organisation", "→choix").padEnd(12));
     }
-    lignes.push(`  ${chemin.replace(/[0-9a-f-]{36}/, "<id>").padEnd(32)} ${cellules.join("")}`);
+    lignes.push(`  ${chemin.replace(/[0-9a-f-]{36}/, "<id>").padEnd(36)} ${cellules.join("")}`);
   }
-  console.log(`  ${"".padEnd(32)} ${PROFILS.map((p) => p.padEnd(12)).join("")}`);
+  console.log(`  ${"".padEnd(36)} ${PROFILS.map((p) => p.padEnd(12)).join("")}`);
   for (const l of lignes) console.log(l);
   console.log(`  ✔ ${PAGES.length} pages × ${PROFILS.length} profils`);
   // (Sans aucun cookie, le filtre « proxy » renvoie vers la connexion avant même la page : c'est un confort ; ce
@@ -367,17 +376,40 @@ let ACTIONS;
   for (const qui of ["faux", "attente"]) await cas(qui, "actionSupprimerDocument", suppression, "session");
   for (const qui of ["lecteurA", "verifA", "adminB", "superadmin"]) await cas(qui, "actionSupprimerDocument", suppression, "erreur.interdit");
   await cas("adminB", "actionSupprimerDocument", { organisationId: ORG_B, documentId: DOC }, "erreur.introuvable", { note: "document de A depuis B" });
-  await cas("redacA", "actionSupprimerDocument", suppression, "succes", { effet: () => sql(`SELECT count(*) FROM "${SCHEMA_A}".documents WHERE id = '${DOC}'`) === "0" });
+  const aLaCorbeille = (id) => sql(`SELECT supprime_le IS NOT NULL FROM "${SCHEMA_A}".documents WHERE id = '${id}'`) === "t";
+  await cas("redacA", "actionSupprimerDocument", suppression, "succes", { effet: () => aLaCorbeille(DOC) });
   // Procédure liée à une instruction de travail (D2) : sans confirmation, refus sans écriture ; confirmée, seule la
   // procédure est supprimée.
   const liee = await api("redacA", "POST", "/api/documents", { organisationId: ORG_A, contenu: { ...procedure("Procédure liée"), etapes: [{ id: "e1", niveau3: { actif: true, code: "IT-LIEN-01" } }] } });
   const itLiee = await api("redacA", "POST", "/api/documents", { organisationId: ORG_A, contenu: { meta: { typeDocument: "instruction", titre: "Instruction liée", reference: "IT-LIEN-01" }, roles: [], etapes: [] } });
   assert.deepEqual([liee.statut, itLiee.statut], [201, 201]);
-  const existe = (id) => sql(`SELECT count(*) FROM "${SCHEMA_A}".documents WHERE id = '${id}'`) === "1";
+  const existe = (id) => !aLaCorbeille(id);
   await cas("redacA", "actionSupprimerDocument", { organisationId: ORG_A, documentId: liee.json.id }, "docs.suppression_liee", { note: "liée, sans confirmation" });
   await cas("redacA", "actionSupprimerDocument", { organisationId: ORG_A, documentId: itLiee.json.id }, "docs.suppression_liee", { note: "instruction citée, sans confirmation" });
   await cas("adminA", "actionSupprimerDocument", { organisationId: ORG_A, documentId: liee.json.id, confirmerLiens: "1" }, "succes",
     { note: "liée, confirmée", effet: () => !existe(liee.json.id) && existe(itLiee.json.id) });
+
+  // Corbeille (D1) : rétablir = droit de suppression, dans SON organisation.
+  const retablir = { organisationId: ORG_A, documentId: DOC };
+  for (const qui of ["faux", "attente"]) await cas(qui, "actionRetablirDocument", retablir, "session");
+  for (const qui of ["lecteurA", "verifA", "adminB", "superadmin"]) await cas(qui, "actionRetablirDocument", retablir, "erreur.interdit");
+  await cas("adminB", "actionRetablirDocument", { organisationId: ORG_B, documentId: DOC }, "erreur.introuvable", { note: "document de A depuis B" });
+  await cas("redacA", "actionRetablirDocument", retablir, "succes", { effet: () => !aLaCorbeille(DOC) });
+
+  // Restauration d'une version (D1) : droit de rédaction, dans SON organisation, sur la version actuelle vue.
+  const versionDe = (id) => Number(sql(`SELECT version FROM "${SCHEMA_A}".documents WHERE id = '${id}'`));
+  const enregistre = await api("redacA", "PUT", `/api/documents/${DOC}`, { organisationId: ORG_A, version: versionDe(DOC), forcer: true, contenu: procedure("Version 2") });
+  assert.equal(enregistre.statut, 200);
+  const restaurer = { organisationId: ORG_A, documentId: DOC, version: "1", versionActuelle: String(versionDe(DOC)) };
+  for (const qui of ["faux", "attente"]) await cas(qui, "actionRestaurerVersion", restaurer, "session");
+  for (const qui of ["lecteurA", "verifA", "adminB", "superadmin"]) await cas(qui, "actionRestaurerVersion", restaurer, "erreur.interdit");
+  await cas("adminB", "actionRestaurerVersion", { ...restaurer, organisationId: ORG_B }, "erreur.introuvable", { note: "document de A depuis B" });
+  await cas("redacA", "actionRestaurerVersion", { ...restaurer, versionActuelle: "1" }, "versions.document_modifie", { note: "page périmée" });
+  const avantRestauration = versionDe(DOC);
+  await cas("adminA", "actionRestaurerVersion", restaurer, "succes", {
+    effet: () => versionDe(DOC) === avantRestauration + 1
+      && sql(`SELECT d.contenu = v.contenu FROM "${SCHEMA_A}".documents d JOIN "${SCHEMA_A}".versions_document v ON v.document_id = d.id AND v.version = 1 WHERE d.id = '${DOC}'`) === "t",
+  });
 
   // ======================================================================================== actions : membres
   etape("actions « membres » (organisation A)");

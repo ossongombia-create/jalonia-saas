@@ -152,7 +152,8 @@ const REQUETE_LIENS = `
          CASE WHEN jsonb_typeof(contenu #> '{meta,processus}') = 'string' THEN left(contenu #>> '{meta,processus}', 500) ELSE '' END AS processus,
          jsonb_path_query_array(contenu, '$.etapes[*] ? (${filtre("niveau3")}).niveau3.code') AS n3,
          jsonb_path_query_array(contenu, '$.etapes[*] ? (${filtre("sousProcedure")}).sousProcedure.code') AS sp
-    FROM documents`;
+    FROM documents
+   WHERE supprime_le IS NULL`;
 
 const MAX_CODE = 60;
 const codes = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string").map((x) => x.slice(0, MAX_CODE)) : []);

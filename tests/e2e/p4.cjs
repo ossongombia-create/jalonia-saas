@@ -114,7 +114,7 @@ const fs = require("node:fs");
 
   etape("suppression par la rédactrice (avec confirmation), tracée au journal ; l'administrateur la voit");
   await rita.goto(`${BASE}/app/documents`);
-  rita.once("dialog", (d) => { assert.match(d.message(), /Supprimer définitivement « Placer le client »/); d.accept(); });
+  rita.once("dialog", (d) => { assert.match(d.message(), /^Mettre « Placer le client » à la corbeille \?/); d.accept(); });
   await rita.click('tr:has-text("IT-CUI-01") button:has-text("Supprimer")');
   await rita.waitForFunction(() => document.querySelectorAll("table.tableau tbody tr").length === 2);
   assert.equal(await rita.locator('tr:has-text("IT-CUI-01")').count(), 0, "la ligne a disparu");
@@ -127,7 +127,7 @@ const fs = require("node:fs");
   const admin = await connecter("admin@demo.test");
   await admin.goto(`${BASE}/app/journal`);
   const journal = await admin.textContent("table.tableau");
-  for (const action of ["Document supprimé", "Document créé", "Document modifié", "Cartographie modifiée"]) assert.ok(journal.includes(action), action);
+  for (const action of ["Document mis à la corbeille", "Document créé", "Document modifié", "Cartographie modifiée"]) assert.ok(journal.includes(action), action);
   await capture(admin, "journal-organisation");
 
   for (const p of [lea, victor, autre, rita, admin]) assert.deepEqual(p.erreurs, [], "erreurs console");

@@ -10,7 +10,9 @@ import { FormulaireAction } from "@/components/FormulaireAction";
 import { formaterDate } from "@/lib/format";
 import { aLeDroit } from "@/lib/rbac";
 import { poolApplication } from "@/server/db/pools";
+import Link from "next/link";
 import { lireCartographie, lireCoherence, listerDocuments } from "@/server/documents/service";
+import { listerCorbeille } from "@/server/documents/versions";
 import type { DocumentCite } from "@/server/documents/coherence";
 import { exigerOrganisation } from "@/server/web/contexte";
 import { titrePage } from "@/server/web/metadonnees";
@@ -23,7 +25,9 @@ export default async function PageDocuments() {
   const ctx = await exigerOrganisation("documents.lire");
   const { t, organisation, langue, fuseau } = ctx;
   const pool = poolApplication();
-  const [documents, cartographie, coherence] = await Promise.all([listerDocuments(pool, organisation), lireCartographie(pool, organisation), lireCoherence(pool, organisation)]);
+  const [documents, cartographie, coherence, corbeille] = await Promise.all([
+    listerDocuments(pool, organisation), lireCartographie(pool, organisation), lireCoherence(pool, organisation), listerCorbeille(pool, organisation),
+  ]);
   const aVerifier = new Set(coherence.constats.filter((c) => c.gravite === "alerte").flatMap((c) => c.documents.map((d) => d.id)));
   const nomDe = (d: DocumentCite) => (d.reference && d.titre ? `${d.reference} — ${d.titre}` : d.reference || d.titre || t("docs.sans_titre"));
   const peutRediger = aLeDroit(organisation.roles, "documents.rediger");
@@ -60,7 +64,10 @@ export default async function PageDocuments() {
       </section>
 
       <section className="carte">
-        <h2>{t("docs.liste")}</h2>
+        <div className="titre-ligne">
+          <h2>{t("docs.liste")}</h2>
+          <Link className="bouton bouton-discret" href="/app/documents/corbeille" id="lien-corbeille">{t("docs.corbeille_lien", { n: corbeille.length })}</Link>
+        </div>
         {documents.length === 0 ? (
           <p className="vide">{t("docs.aucun")}</p>
         ) : (
@@ -103,6 +110,7 @@ export default async function PageDocuments() {
                         <a className="bouton bouton-second" href={`${EDITEUR}?doc=${encodeURIComponent(d.id)}`}>
                           {t("docs.ouvrir")}
                         </a>
+                        <Link className="bouton bouton-discret" href={`/app/documents/${d.id}/historique`}>{t("docs.historique")}</Link>
                         {peutSupprimer ? (
                           <FormulaireAction
                             action={actionSupprimerDocument}

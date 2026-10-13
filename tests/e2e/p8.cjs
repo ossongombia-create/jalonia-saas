@@ -80,7 +80,7 @@ const { BASE, lancer, connecter, api, capture, etape, assert } = require("./outi
     const fin = p.waitForResponse((r) => r.request().method() === "POST" && r.url().startsWith(`${BASE}/app/documents`));
     await l.locator('button:has-text("Supprimer")').click();
     await fin;
-    assert.ok(vu.startsWith("Supprimer définitivement") && !vu.includes("ATTENTION"), `confirmation simple : ${vu}`);
+    assert.ok(vu.startsWith("Mettre « ") && !vu.includes("ATTENTION"), `confirmation simple : ${vu}`);
   }
   await p.waitForFunction(() => !document.body.innerText.includes("IT-COH-0"));
   assert.equal((await api(p, "GET", `/api/editeur/contexte?doc=${idPr}`)).statut, 404);

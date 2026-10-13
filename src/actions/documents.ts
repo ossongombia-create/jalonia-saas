@@ -8,6 +8,7 @@ import { identifiant } from "@/lib/validation";
 import type { EtatAction } from "@/lib/etat-action";
 import { poolApplication } from "@/server/db/pools";
 import { contenuInitial, creerDocument, supprimerDocument } from "@/server/documents/service";
+import { restaurerVersion, retablirDocument } from "@/server/documents/versions";
 import type { OrganisationCible } from "@/server/membres/service";
 import { ErreurMetier } from "@/server/erreurs";
 import { exigerContexte, type Contexte } from "@/server/web/contexte";
@@ -46,5 +47,32 @@ export async function actionSupprimerDocument(_etat: EtatAction, formulaire: For
     // « confirmerLiens » : la personne a vu l'avertissement des documents liés (ils ne sont pas supprimés avec celui-ci).
     await supprimerDocument(poolApplication(), org, documentId, ctx.acteur, { confirmerLiens: champ(formulaire, "confirmerLiens") === "1" });
     return { cle: "docs.supprime" };
+  });
+}
+
+const entier = (v: string): number => (/^\d{1,9}$/.test(v) ? Number(v) : NaN);
+
+/** Remet une version de l'historique dans le document (nouvelle version ; l'état remplacé reste dans l'historique). */
+export async function actionRestaurerVersion(_etat: EtatAction, formulaire: FormData): Promise<EtatAction> {
+  const ctx = await exigerContexte();
+  return executer(ctx.langue, async () => {
+    const org = autoriser(ctx, formulaire, "documents.rediger");
+    const documentId = valider(identifiant, champ(formulaire, "documentId"));
+    const version = entier(champ(formulaire, "version"));
+    const versionActuelle = entier(champ(formulaire, "versionActuelle"));
+    if (!Number.isSafeInteger(version) || !Number.isSafeInteger(versionActuelle)) throw new ErreurMetier("erreur.saisie_invalide");
+    const r = await restaurerVersion(poolApplication(), org, documentId, version, versionActuelle, ctx.acteur);
+    return { cle: "versions.restauree", variables: { v: version, n: r.version } };
+  });
+}
+
+/** Sort un document de la corbeille (même droit que la mise à la corbeille). */
+export async function actionRetablirDocument(_etat: EtatAction, formulaire: FormData): Promise<EtatAction> {
+  const ctx = await exigerContexte();
+  return executer(ctx.langue, async () => {
+    const org = autoriser(ctx, formulaire, "documents.supprimer");
+    const documentId = valider(identifiant, champ(formulaire, "documentId"));
+    await retablirDocument(poolApplication(), org, documentId, ctx.acteur);
+    return { cle: "corbeille.retabli" };
   });
 }

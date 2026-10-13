@@ -18,6 +18,7 @@ import { journaliserOrganisation, journaliserPlateforme, type EntreeJournal } fr
 import { ErreurMetier } from "../erreurs";
 import { nomActeur, traceActeur, type Acteur } from "../acteur";
 import { analyserCoherence, dependancesDe, lireLiens, lireProcessusCartographie, type Constat, type Dependance } from "./coherence";
+import { copier, copiesAPrendre, derniereCopie } from "./copies";
 
 /** Taille maximale d'un contenu (JSON compact, en octets) : la limite des fichiers .json de l'éditeur. */
 export const TAILLE_MAX_CONTENU = 2_000_000;
@@ -203,7 +204,7 @@ function versResume(l: LigneDocument): ResumeDocument {
 
 export async function listerDocuments(pool: Pool, org: OrganisationCible): Promise<ResumeDocument[]> {
   return avecOrganisation(pool, org, async (client) => {
-    const r = await client.query<LigneDocument>(`SELECT ${COLONNES_RESUME} FROM documents ORDER BY modifie_le DESC, id`);
+    const r = await client.query<LigneDocument>(`SELECT ${COLONNES_RESUME} FROM documents WHERE supprime_le IS NULL ORDER BY modifie_le DESC, id`);
     return r.rows.map(versResume);
   });
 }
@@ -211,7 +212,8 @@ export async function listerDocuments(pool: Pool, org: OrganisationCible): Promi
 export async function lireDocument(pool: Pool, org: OrganisationCible, id: string): Promise<DocumentComplet | null> {
   if (!estIdentifiant(id)) return null;
   return avecOrganisation(pool, org, async (client) => {
-    const r = await client.query<LigneDocument & { contenu: Contenu }>(`SELECT ${COLONNES_RESUME}, contenu FROM documents WHERE id = $1`, [id]);
+    // Un document à la corbeille ne s'ouvre plus (l'éditeur l'annonce comme supprimé) : il se rétablit d'abord.
+    const r = await client.query<LigneDocument & { contenu: Contenu }>(`SELECT ${COLONNES_RESUME}, contenu FROM documents WHERE id = $1 AND supprime_le IS NULL`, [id]);
     const l = r.rows[0];
     return l ? { ...versResume(l), contenu: l.contenu } : null;
   });
@@ -230,6 +232,7 @@ export async function creerDocument(pool: Pool, org: OrganisationCible, brut: un
         [meta.type, meta.titre, meta.reference, json, acteur.id, nom],
       );
       const doc = ins.rows[0]!;
+      await copier(client, doc.id, "creation");
       const entree: EntreeJournal = { action: "DOCUMENT_CREE", ...traceActeur(acteur), cibleType: "document", cibleId: doc.id, details: meta };
       await journaliserOrganisation(client, entree);
       return { doc, entree };
@@ -247,14 +250,29 @@ export async function enregistrerDocument(pool: Pool, org: OrganisationCible, id
   const nom = nomActeur(acteur);
   return enTransaction(pool, async (client) => {
     const r = await dansOrganisation(client, org, async () => {
-      const lu = await client.query<{ version: number; modifie_par_nom: string; modifie_le: Date }>(
-        "SELECT version, modifie_par_nom, modifie_le FROM documents WHERE id = $1 FOR UPDATE",
+      const lu = await client.query<{ version: number; modifie_par: string | null; modifie_par_nom: string; modifie_le: Date; validation: string | null }>(
+        `SELECT version, modifie_par, modifie_par_nom, modifie_le,
+                CASE WHEN jsonb_typeof(contenu -> 'validation') = 'string' THEN contenu ->> 'validation' END AS validation
+           FROM documents WHERE id = $1 AND supprime_le IS NULL FOR UPDATE`,
         [id],
       );
       const avant = lu.rows[0];
       if (!avant) throw new ErreurMetier("erreur.introuvable");
       const ecrase = avant.version !== e.version;
       if (ecrase && !e.forcer) throw new ConflitVersion({ version: avant.version, modifieParNom: avant.modifie_par_nom, modifieLe: avant.modifie_le });
+      // Historique (copies.ts) : l'état d'un collègue ou l'état remplacé est copié AVANT d'écrire ; le nouvel état ensuite
+      // s'il marque une étape (remplacement, validation) ou si la période est écoulée.
+      const copies = copiesAPrendre({
+        derniere: await derniereCopie(client, id),
+        versionAvant: avant.version,
+        auteurAvant: avant.modifie_par,
+        auteur: acteur.id,
+        force: ecrase,
+        validationAvant: avant.validation ?? "",
+        validationApres: typeof contenu.validation === "string" ? contenu.validation : "",
+        maintenant: new Date(),
+      });
+      if (copies.avant) await copier(client, id, copies.avant);
       const maj = await client.query<{ version: number; modifie_le: Date }>(
         `UPDATE documents
             SET contenu = $2::jsonb, type = $3, titre = $4, reference = $5, version = version + 1,
@@ -264,6 +282,7 @@ export async function enregistrerDocument(pool: Pool, org: OrganisationCible, id
         [id, json, meta.type, meta.titre, meta.reference, acteur.id, nom],
       );
       const apres = maj.rows[0]!;
+      if (copies.apres) await copier(client, id, copies.apres);
       // Un remplacement de la version d'un collègue est toujours tracé ; un enregistrement ordinaire, une fois par période.
       let entree: EntreeJournal | null = null;
       if (ecrase || !(await dejaTrace(client, "DOCUMENT_MODIFIE", acteur.id, id))) {
@@ -281,9 +300,10 @@ export async function enregistrerDocument(pool: Pool, org: OrganisationCible, id
 }
 
 /**
- * Supprime un document. S'il est lié à d'autres (instructions de travail d'une procédure, procédure qui cite une
- * instruction ou appelle une sous-procédure : voir coherence.ts), la suppression exige `confirmerLiens` — la personne a
- * vu l'avertissement — et les documents liés ne sont jamais supprimés avec lui. Les liens confirmés sont tracés.
+ * Met un document à la corbeille (il se rétablit : versions.ts). S'il est lié à d'autres (instructions de travail d'une
+ * procédure, procédure qui cite une instruction ou appelle une sous-procédure : voir coherence.ts), la suppression exige
+ * `confirmerLiens` — la personne a vu l'avertissement — et les documents liés ne sont jamais supprimés avec lui. Les
+ * liens confirmés sont tracés.
  */
 export async function supprimerDocument(pool: Pool, org: OrganisationCible, id: string, acteur: Acteur, options: { confirmerLiens?: boolean } = {}): Promise<void> {
   if (!estIdentifiant(id)) throw new ErreurMetier("erreur.introuvable");
@@ -291,12 +311,15 @@ export async function supprimerDocument(pool: Pool, org: OrganisationCible, id: 
     const r = await dansOrganisation(client, org, async () => {
       const liees = dependancesDe(await lireLiens(client), id);
       if (liees.length > 0 && !options.confirmerLiens) throw new ErreurMetier("docs.suppression_liee");
+      // Corbeille (migration 0004) : le document est marqué, jamais effacé ; son état est copié dans l'historique.
       const sup = await client.query<{ type: TypeDocument; titre: string; reference: string; version: number }>(
-        "DELETE FROM documents WHERE id = $1 RETURNING type, titre, reference, version",
-        [id],
+        `UPDATE documents SET supprime_le = now(), supprime_par = $2, supprime_par_nom = $3
+          WHERE id = $1 AND supprime_le IS NULL RETURNING type, titre, reference, version`,
+        [id, acteur.id, nomActeur(acteur)],
       );
       const d = sup.rows[0];
       if (!d) throw new ErreurMetier("erreur.introuvable");
+      await copier(client, id, "suppression");
       const details = liees.length > 0 ? { ...d, liensConfirmes: liees.map((l) => ({ id: l.id, lien: l.lien, reference: l.reference, titre: l.titre })) } : d;
       const entree: EntreeJournal = { action: "DOCUMENT_SUPPRIME", ...traceActeur(acteur), cibleType: "document", cibleId: id, details };
       await journaliserOrganisation(client, entree);
