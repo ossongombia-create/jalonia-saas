@@ -12,13 +12,15 @@ import { ErreurMetier } from "../erreurs";
 export interface Reussite {
   cle: string;
   variables?: Variables;
+  /** Chemin d'un lien à transmettre (voir EtatAction.lien). */
+  lien?: string;
 }
 
 export async function executer(langue: Langue, travail: () => Promise<Reussite>): Promise<EtatAction> {
   try {
     const r = await travail();
     refresh();
-    return { ok: true, message: traduireMessage(langue, r.cle, r.variables), jeton: Date.now() };
+    return { ok: true, message: traduireMessage(langue, r.cle, r.variables), jeton: Date.now(), ...(r.lien ? { lien: r.lien } : {}) };
   } catch (erreur) {
     unstable_rethrow(erreur); // redirect(), notFound()… doivent remonter à Next.js
     if (erreur instanceof ErreurMetier) return { ok: false, message: traduireMessage(langue, erreur.cle), jeton: Date.now() };

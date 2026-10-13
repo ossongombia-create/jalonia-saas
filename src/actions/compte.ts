@@ -12,11 +12,16 @@ import type { EtatAction } from "@/lib/etat-action";
 import { poolApplication } from "@/server/db/pools";
 import { terminerSession, noterOrganisationDeSession } from "@/server/auth/sessions";
 import { changerLangue, changerMotDePasse } from "@/server/utilisateurs/service";
-import { COOKIE_LANGUE, COOKIE_ORGANISATION, accueilDe, exigerContexte, lireContexte, lireLangue } from "@/server/web/contexte";
+import { COOKIE_ORGANISATION, accueilDe, exigerContexte, lireContexte, lireLangue } from "@/server/web/contexte";
+import { poserCookieLangue, poserCookieOrganisation } from "@/server/web/cookies";
 import { champ, executer, valider } from "@/server/web/actions";
 
-const EN_PRODUCTION = process.env.NODE_ENV === "production";
-const COOKIE_UN_AN = { httpOnly: true, secure: EN_PRODUCTION, sameSite: "lax" as const, path: "/", maxAge: 365 * 24 * 3600 };
+/** Après connexion : retour vers une invitation (seul chemin accepté), sinon l'accueil. */
+const SUITE_PERMISE = /^\/invitation\/[A-Za-z0-9_-]{43}$/;
+
+function cheminApresConnexion(suite: string): string {
+  return SUITE_PERMISE.test(suite) ? suite : "/";
+}
 
 export async function actionConnexion(_etat: EtatAction, formulaire: FormData): Promise<EtatAction> {
   const langue = await lireLangue();
@@ -28,7 +33,9 @@ export async function actionConnexion(_etat: EtatAction, formulaire: FormData): 
     if (erreur instanceof AuthError) return { ok: false, message: traduireMessage(langue, "connexion.echec"), jeton: Date.now() };
     throw erreur;
   }
-  redirect("/"); // la page d'accueil oriente selon le profil (changement de mot de passe, plateforme, organisation)
+  // La page d'accueil oriente selon le profil (changement de mot de passe, plateforme, organisation) ; une
+  // invitation ouverte avant la connexion est reprise.
+  redirect(cheminApresConnexion(champ(formulaire, "suite")));
 }
 
 export async function actionDeconnexion(): Promise<void> {
@@ -56,7 +63,7 @@ export async function actionChangerMotDePasse(_etat: EtatAction, formulaire: For
 export async function actionChangerLangue(formulaire: FormData): Promise<void> {
   const langue = champ(formulaire, "langue");
   if (!estLangue(langue)) return;
-  (await cookies()).set(COOKIE_LANGUE, langue, COOKIE_UN_AN);
+  await poserCookieLangue(langue);
   const ctx = await lireContexte();
   if (ctx) await changerLangue(poolApplication(), ctx.utilisateur.id, langue);
   redirect(cheminInterne(champ(formulaire, "retour")));
@@ -67,7 +74,7 @@ export async function actionChoisirOrganisation(formulaire: FormData): Promise<v
   const lu = identifiant.safeParse(champ(formulaire, "organisationId"));
   const choisie = lu.success ? ctx.adhesions.find((a) => a.id === lu.data && a.statut === "active") : undefined;
   if (!choisie) redirect("/choisir-organisation");
-  (await cookies()).set(COOKIE_ORGANISATION, choisie.id, { ...COOKIE_UN_AN, maxAge: 30 * 24 * 3600 });
+  await poserCookieOrganisation(choisie.id);
   await noterOrganisationDeSession(poolApplication(), ctx.sessionId, choisie.id);
   redirect("/app");
 }

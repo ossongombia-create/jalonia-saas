@@ -7,7 +7,7 @@ import { creerOrganisation } from "../../src/server/organisations/provisionnemen
 import { changerStatutOrganisation, listerOrganisations } from "../../src/server/organisations/service";
 import { enTransaction } from "../../src/server/db/transactions";
 import type { Acteur } from "../../src/server/acteur";
-import { cleErreur, codeErreur, creerOrgDeTest, creerSuperadmin, MDP_TEST, ouvrirPools, suffixe } from "./outils";
+import { cleErreur, codeErreur, creerOrgDeTest, creerSuperadmin, ouvrirPools, suffixe } from "./outils";
 import { avecOrganisation } from "../../src/server/db/transactions";
 
 let app: Pool;
@@ -24,21 +24,28 @@ afterAll(async () => {
   await proprietaire.end();
 });
 
-async function compter(): Promise<{ schemas: number; roles: number; organisations: number }> {
+interface Comptes {
+  schemas: number;
+  roles: number;
+  organisations: number;
+  invitations: number;
+}
+
+async function compter(): Promise<Comptes> {
   return enTransaction(proprietaire, async (c) => {
-    const r = await c.query<{ schemas: number; roles: number; organisations: number }>(
+    const r = await c.query<Comptes>(
       `SELECT (SELECT count(*)::int FROM pg_namespace WHERE nspname ~ '^org_[0-9a-f]{12}$') AS schemas,
               (SELECT count(*)::int FROM pg_roles WHERE rolname ~ '^org_[0-9a-f]{12}_rw$') AS roles,
-              (SELECT count(*)::int FROM platform.organisations) AS organisations`,
+              (SELECT count(*)::int FROM platform.organisations) AS organisations,
+              (SELECT count(*)::int FROM platform.invitations) AS invitations`,
     );
     return r.rows[0]!;
   });
 }
 
 describe("création d'une organisation", () => {
-  it("crée la ligne, le schéma, le rôle dédié, l'administrateur et les journaux", async () => {
+  it("crée la ligne, le schéma, le rôle dédié, l'invitation de l'administrateur et les journaux", async () => {
     const org = await creerOrgDeTest(app, proprietaire, superadmin);
-    expect(org.compteAdminCree).toBe(true);
 
     const verif = await enTransaction(proprietaire, async (c) => {
       const schema = await c.query("SELECT 1 FROM pg_namespace WHERE nspname = $1", [org.schemaName]);
@@ -63,8 +70,9 @@ describe("création d'une organisation", () => {
     expect(verif.schema).toBe(1);
     expect(verif.adhesion).toEqual({ inherit_option: false, set_option: true, admin_option: false });
     expect(verif.role).toEqual({ rolcanlogin: false });
-    expect(verif.admin).toEqual([{ roles: ["ADMIN_ORGANISATION"], doit_changer_mdp: true }]);
-    expect(verif.journal).toEqual(["ORGANISATION_CREEE", "MEMBRE_AJOUTE"]);
+    // L'administrateur a accepté l'invitation en créant son compte : il a choisi son mot de passe.
+    expect(verif.admin).toEqual([{ roles: ["ADMIN_ORGANISATION"], doit_changer_mdp: false }]);
+    expect(verif.journal).toEqual(["ORGANISATION_CREEE", "INVITATION_CREEE", "MEMBRE_AJOUTE"]);
   });
 
   it("identifiant court déjà pris : refus clair et RIEN n'est créé", async () => {
@@ -72,40 +80,19 @@ describe("création d'une organisation", () => {
     const slug = (await listerOrganisations(app)).find((o) => o.id === org.organisationId)!.slug;
     const avant = await compter();
     const cle = await cleErreur(
-      creerOrganisation(app, { nom: "Doublon", slug, admin: { email: `x-${suffixe()}@test.local`, nom: "X", motDePasseProvisoire: MDP_TEST } }, superadmin),
+      creerOrganisation(app, { nom: "Doublon", slug, admin: { email: `x-${suffixe()}@test.local`, nom: "X" } }, superadmin),
     );
     expect(cle).toBe("erreur.slug_pris");
     expect(await compter()).toEqual(avant);
   });
 
-  it("échec en cours de route (administrateur sans mot de passe) : RIEN n'est créé, ni schéma ni rôle", async () => {
+  it("échec en cours de route (invitation refusée par la base) : RIEN n'est créé, ni schéma, ni rôle, ni invitation", async () => {
     const avant = await compter();
-    const cle = await cleErreur(
-      creerOrganisation(app, { nom: "Incomplète", slug: `inc-${suffixe()}`, admin: { email: `nouveau-${suffixe()}@test.local`, nom: "N", motDePasseProvisoire: "" } }, superadmin),
-    );
-    expect(cle).toBe("erreur.mdp_provisoire_requis");
+    // Adresse invalide pour la base (la validation des formulaires l'aurait refusée plus tôt) : l'invitation, créée
+    // en dernier, échoue ; tout ce qui précède est annulé.
+    const code = await codeErreur(creerOrganisation(app, { nom: "Incomplète", slug: `inc-${suffixe()}`, admin: { email: "PAS-UNE-ADRESSE", nom: "N" } }, superadmin));
+    expect(code).toBe("23514");
     expect(await compter()).toEqual(avant);
-  });
-
-  it("mot de passe provisoire trop court : refusé avant toute écriture", async () => {
-    const cle = await cleErreur(
-      creerOrganisation(app, { nom: "Courte", slug: `court-${suffixe()}`, admin: { email: `c-${suffixe()}@test.local`, nom: "C", motDePasseProvisoire: "court" } }, superadmin),
-    );
-    expect(cle).toBe("erreur.mdp_trop_court");
-  });
-
-  it("un compte existant devient administrateur sans que son mot de passe change", async () => {
-    const premiere = await creerOrgDeTest(app, proprietaire, superadmin);
-    const avant = await enTransaction(proprietaire, (c) => c.query<{ h: string }>("SELECT mot_de_passe_hash AS h FROM platform.utilisateurs WHERE email = $1", [premiere.adminEmail]));
-    const seconde = await creerOrganisation(
-      app,
-      { nom: "Seconde", slug: `sec-${suffixe()}`, admin: { email: premiere.adminEmail, nom: "Ignoré", motDePasseProvisoire: "" } },
-      superadmin,
-    );
-    expect(seconde.compteAdminCree).toBe(false);
-    expect(seconde.adminId).toBe(premiere.adminId);
-    const apres = await enTransaction(proprietaire, (c) => c.query<{ h: string }>("SELECT mot_de_passe_hash AS h FROM platform.utilisateurs WHERE email = $1", [premiere.adminEmail]));
-    expect(apres.rows[0]!.h).toBe(avant.rows[0]!.h);
   });
 });
 

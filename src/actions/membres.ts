@@ -1,15 +1,16 @@
 "use server";
-// Gestion des membres d'une organisation. Deux personnes peuvent le faire :
+// Gestion des membres d'une organisation (invitations, rôles, retrait). Deux personnes peuvent le faire :
 //   - le superadmin, pour n'importe quelle organisation ;
 //   - l'administrateur d'une organisation, pour l'organisation ACTUELLEMENT OUVERTE uniquement
 //     (l'identifiant envoyé par le formulaire doit être celui de son organisation, sinon refus).
 import { z } from "zod";
 import { aLeDroit } from "@/lib/rbac";
-import { identifiant, schemaNouveauMembre, roles as schemaRoles } from "@/lib/validation";
+import { identifiant, schemaInvitation, roles as schemaRoles } from "@/lib/validation";
 import type { EtatAction } from "@/lib/etat-action";
 import { poolApplication } from "@/server/db/pools";
 import { lireOrganisation } from "@/server/organisations/service";
-import { ajouterMembre, modifierRoles, retirerMembre, type OrganisationCible } from "@/server/membres/service";
+import { modifierRoles, retirerMembre, type OrganisationCible } from "@/server/membres/service";
+import { annulerInvitation, cheminInvitation, DUREE_INVITATION_HEURES, inviter } from "@/server/invitations/service";
 import { ErreurMetier } from "@/server/erreurs";
 import { exigerContexte, type Contexte } from "@/server/web/contexte";
 import { champ, executer, valider } from "@/server/web/actions";
@@ -32,18 +33,24 @@ function rolesCoches(formulaire: FormData): unknown[] {
   return formulaire.getAll("roles").filter((v) => typeof v === "string");
 }
 
-export async function actionAjouterMembre(_etat: EtatAction, formulaire: FormData): Promise<EtatAction> {
+/** Invite une adresse. La réponse est la MÊME que l'adresse ait déjà un compte Jalonia ou non (audit S10). */
+export async function actionInviterMembre(_etat: EtatAction, formulaire: FormData): Promise<EtatAction> {
   const ctx = await exigerContexte();
   return executer(ctx.langue, async () => {
     const org = await autoriser(ctx, formulaire);
-    const saisie = valider(schemaNouveauMembre, {
-      email: champ(formulaire, "email"),
-      nom: champ(formulaire, "nom"),
-      roles: rolesCoches(formulaire),
-      motDePasseProvisoire: champ(formulaire, "motDePasseProvisoire"),
-    });
-    const r = await ajouterMembre(poolApplication(), org, saisie, ctx.acteur);
-    return { cle: r.compteCree ? "membres.ajoute_compte_cree" : "membres.ajoute_compte_existant" };
+    const saisie = valider(schemaInvitation, { email: champ(formulaire, "email"), nom: champ(formulaire, "nom"), roles: rolesCoches(formulaire) });
+    const invitation = await inviter(poolApplication(), org, saisie, ctx.acteur);
+    return { cle: "invitation.creee", variables: { heures: DUREE_INVITATION_HEURES }, lien: cheminInvitation(invitation.jeton) };
+  });
+}
+
+export async function actionAnnulerInvitation(_etat: EtatAction, formulaire: FormData): Promise<EtatAction> {
+  const ctx = await exigerContexte();
+  return executer(ctx.langue, async () => {
+    const org = await autoriser(ctx, formulaire);
+    const invitationId = valider(identifiant, champ(formulaire, "invitationId"));
+    await annulerInvitation(poolApplication(), org, invitationId, ctx.acteur);
+    return { cle: "invitation.annulee" };
   });
 }
 

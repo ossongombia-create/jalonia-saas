@@ -21,7 +21,12 @@ export default async function PageNouvelleOrganisation() {
         </div>
       </header>
       <section className="carte">
-        <FormulaireAction action={actionCreerOrganisation} libelle={t("orgs.creer")} libelleEnCours={t("commun.en_cours")} vider={false}>
+        <FormulaireAction
+          action={actionCreerOrganisation}
+          libelle={t("orgs.creer")}
+          libelleEnCours={t("commun.en_cours")}
+          libellesLien={{ lien: t("invitation.lien"), copier: t("commun.copier"), copie: t("commun.copie") }}
+        >
           <div className="grille-champs">
             <label className="champ">
               <span>{t("orgs.nom")}</span>
@@ -45,13 +50,6 @@ export default async function PageNouvelleOrganisation() {
               <input type="text" name="adminNom" required maxLength={200} autoComplete="off" />
             </label>
           </div>
-          <label className="champ">
-            <span>{t("orgs.mdp_provisoire")}</span>
-            <input type="text" name="adminMotDePasse" maxLength={200} autoComplete="new-password" spellCheck={false} />
-            <small>
-              {t("orgs.mdp_provisoire_aide")} {t("mdp.regle")}
-            </small>
-          </label>
         </FormulaireAction>
       </section>
     </>

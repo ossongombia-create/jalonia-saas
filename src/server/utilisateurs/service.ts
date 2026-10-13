@@ -4,8 +4,8 @@
 import type { Pool, PoolClient } from "pg";
 import type { Langue } from "@/lib/i18n";
 import type { RoleOrganisation } from "@/lib/rbac";
-import { enTransaction } from "../db/transactions";
-import { journaliserPlateforme } from "../audit/journal";
+import { dansOrganisation, enTransaction } from "../db/transactions";
+import { journaliserOrganisation, journaliserPlateforme } from "../audit/journal";
 import { controlerMotDePasse, hacherMotDePasse, verifierMotDePasse } from "../auth/motdepasse";
 import { ECHECS_AVANT_VERROU, MINUTES_DE_VERROU } from "../auth/connexion";
 import { revoquerSessionsDe, type ReglesSession } from "../auth/sessions";
@@ -144,7 +144,11 @@ export async function revoquerSessionsUtilisateur(pool: Pool, cibleId: string, a
   });
 }
 
-/** Le superadmin attribue un mot de passe PROVISOIRE (à changer à la prochaine connexion) et ferme les sessions. */
+/**
+ * Le superadmin attribue un mot de passe PROVISOIRE (à changer à la prochaine connexion) et ferme les sessions.
+ * Il pourrait ensuite se connecter sous le nom de la personne : la réinitialisation est donc tracée AUSSI dans le
+ * journal de chaque organisation dont la personne est membre (audit S9) — l'organisation le voit.
+ */
 export async function reinitialiserMotDePasse(pool: Pool, cibleId: string, motDePasseProvisoire: string, acteur: Acteur): Promise<void> {
   const { email } = await cibleGerable(pool, cibleId, acteur);
   const refus = controlerMotDePasse(motDePasseProvisoire, email);
@@ -160,6 +164,18 @@ export async function reinitialiserMotDePasse(pool: Pool, cibleId: string, motDe
     if (!r.rowCount) throw new ErreurMetier("erreur.introuvable");
     const fermees = await revoquerSessionsDe(client, cibleId);
     await journaliserPlateforme(client, { action: "MOT_DE_PASSE_REINITIALISE", ...traceActeur(acteur), cibleType: "utilisateur", cibleId, details: { sessionsFermees: fermees } });
+    const orgs = await client.query<{ schema_name: string; role_name: string }>(
+      `SELECT o.schema_name, o.role_name FROM platform.adhesions a JOIN platform.organisations o ON o.id = a.organisation_id
+        WHERE a.utilisateur_id = $1 ORDER BY o.id`,
+      [cibleId],
+    );
+    for (const o of orgs.rows) {
+      await dansOrganisation(client, { schemaName: o.schema_name, roleName: o.role_name }, () =>
+        journaliserOrganisation(client, {
+          action: "MOT_DE_PASSE_REINITIALISE", ...traceActeur(acteur), cibleType: "utilisateur", cibleId, details: { email, parSuperadmin: true, sessionsFermees: fermees },
+        }),
+      );
+    }
   });
 }
 

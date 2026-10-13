@@ -5,6 +5,8 @@ import { inject } from "vitest";
 import { creerOrganisation, type OrganisationCreee } from "../../src/server/organisations/provisionnement";
 import { lireOrganisation } from "../../src/server/organisations/service";
 import type { OrganisationCible } from "../../src/server/membres/service";
+import { accepterAvecNouveauCompte, inviter } from "../../src/server/invitations/service";
+import type { RoleOrganisation } from "../../src/lib/rbac";
 import type { Acteur } from "../../src/server/acteur";
 import { hacherMotDePasse } from "../../src/server/auth/motdepasse";
 import { enTransaction } from "../../src/server/db/transactions";
@@ -35,23 +37,40 @@ export async function creerSuperadmin(proprietaire: Pool): Promise<Acteur> {
   return { id: r.rows[0]!.id, email, ip: "127.0.0.1", agent: "vitest" };
 }
 
+export const RESEAU_TEST = { ip: "127.0.0.1", agent: "vitest" };
+
 export interface OrgDeTest extends OrganisationCreee {
   cible: OrganisationCible;
   adminEmail: string;
+  adminId: string;
 }
 
-/** Une organisation de test, créée comme en production : par l'application (fonction de création en base). */
+async function idDe(app: Pool, email: string): Promise<string> {
+  const r = await enTransaction(app, (c) => c.query<{ id: string }>("SELECT id FROM platform.utilisateurs WHERE email = $1", [email]));
+  if (!r.rows[0]) throw new Error(`compte introuvable : ${email}`);
+  return r.rows[0].id;
+}
+
+/**
+ * Une organisation de test, créée comme en production : par l'application (fonction de création en base) ; son
+ * premier administrateur accepte l'invitation en créant son compte (mot de passe MDP_TEST).
+ */
 export async function creerOrgDeTest(app: Pool, _proprietaire: Pool, acteur: Acteur, nom = "Organisation"): Promise<OrgDeTest> {
   const s = suffixe();
   const adminEmail = `admin-${s}@test.local`;
-  const creee = await creerOrganisation(
-    app,
-    { nom: `${nom} ${s}`, slug: `org-${s}`, admin: { email: adminEmail, nom: `Admin ${s}`, motDePasseProvisoire: MDP_TEST } },
-    acteur,
-  );
+  const creee = await creerOrganisation(app, { nom: `${nom} ${s}`, slug: `org-${s}`, admin: { email: adminEmail, nom: `Admin ${s}` } }, acteur);
+  await accepterAvecNouveauCompte(app, creee.invitation.jeton, { nom: `Admin ${s}`, motDePasse: MDP_TEST, langue: "fr" }, RESEAU_TEST);
   const org = await lireOrganisation(app, creee.organisationId);
   if (!org) throw new Error("organisation introuvable après création");
-  return { ...creee, adminEmail, cible: { id: org.id, schemaName: org.schemaName, roleName: org.roleName } };
+  return { ...creee, adminEmail, adminId: await idDe(app, adminEmail), cible: { id: org.id, schemaName: org.schemaName, roleName: org.roleName } };
+}
+
+/** Un nouveau membre : invité par `acteur`, il crée son compte (mot de passe MDP_TEST). Renvoie son identifiant. */
+export async function membreDeTest(app: Pool, org: OrganisationCible, entree: { email: string; nom?: string; roles: RoleOrganisation[] }, acteur: Acteur): Promise<string> {
+  const nom = entree.nom ?? "Membre";
+  const invitation = await inviter(app, org, { email: entree.email, nom, roles: entree.roles }, acteur);
+  await accepterAvecNouveauCompte(app, invitation.jeton, { nom, motDePasse: MDP_TEST, langue: "fr" }, RESEAU_TEST);
+  return idDe(app, entree.email);
 }
 
 /** Code d'erreur PostgreSQL d'une promesse rejetée (ex. « 42501 » = droits insuffisants). */

@@ -5,42 +5,32 @@
 // TOUT se fait dans UNE transaction : si une seule étape échoue, rien n'est créé (ni ligne, ni schéma, ni rôle
 // PostgreSQL — PostgreSQL annule aussi les créations de schéma et de rôle) :
 //   1. la fonction : ligne platform.organisations, rôle, schéma et tables, adhésion SANS héritage de l'application ;
-//   2. l'administrateur de l'organisation (compte existant, ou nouveau compte au mot de passe provisoire) ;
-//   3. le journal de la plateforme et celui de l'organisation.
+//   2. les journaux de la plateforme et de l'organisation ;
+//   3. l'INVITATION du premier administrateur (lien à usage unique) : personne ne choisit son mot de passe à sa
+//      place, et un compte existant n'est rattaché que s'il accepte (audit S8, S10).
 import type { Pool } from "pg";
-import { enTransaction, dansOrganisation } from "../db/transactions";
+import { enTransaction } from "../db/transactions";
 import { nouveauxIdentifiants } from "../db/identifiants";
-import { journaliserOrganisation, journaliserPlateforme } from "../audit/journal";
-import { controlerMotDePasse, hacherMotDePasse } from "../auth/motdepasse";
+import { journaliserLesDeux } from "../audit/journal";
 import { contrainteEnCause, ErreurMetier, estErreurPg, PG_UNICITE } from "../erreurs";
 import { traceActeur, type Acteur } from "../acteur";
+import { creerInvitation, type InvitationCreee } from "../invitations/service";
 
 export interface NouvelleOrganisation {
   nom: string;
   slug: string;
-  admin: { email: string; nom: string; motDePasseProvisoire: string };
+  admin: { email: string; nom: string };
 }
 
 export interface OrganisationCreee {
   organisationId: string;
   schemaName: string;
-  adminId: string;
-  compteAdminCree: boolean;
+  /** Invitation du premier administrateur : le lien est à lui transmettre. */
+  invitation: InvitationCreee;
 }
 
 export async function creerOrganisation(poolApplication: Pool, entree: NouvelleOrganisation, acteur: Acteur): Promise<OrganisationCreee> {
-  // Le hachage (lent, volontairement) se fait AVANT d'ouvrir la transaction.
-  // On ne sait pas encore si le compte existe : on ne hache que si un mot de passe est fourni.
-  const mdp = entree.admin.motDePasseProvisoire;
-  if (mdp) {
-    const refus = controlerMotDePasse(mdp, entree.admin.email);
-    if (refus) throw new ErreurMetier(refus);
-  }
-  const empreinte = mdp ? await hacherMotDePasse(mdp) : null;
-
   const ids = nouveauxIdentifiants();
-  const trace = traceActeur(acteur);
-
   try {
     return await enTransaction(poolApplication, async (client) => {
       const org = await client.query<{ id: string }>("SELECT platform.provisionner_organisation($1, $2, $3, $4) AS id", [
@@ -49,39 +39,11 @@ export async function creerOrganisation(poolApplication: Pool, entree: NouvelleO
         ids.schemaName,
         acteur.id,
       ]);
-      const organisationId = org.rows[0]!.id;
-
-      // Administrateur : compte existant (on n'y touche pas) ou nouveau compte.
-      const existant = await client.query<{ id: string }>("SELECT id FROM platform.utilisateurs WHERE email = $1", [entree.admin.email]);
-      let adminId = existant.rows[0]?.id;
-      const compteAdminCree = !adminId;
-      if (!adminId) {
-        if (!empreinte) throw new ErreurMetier("erreur.mdp_provisoire_requis");
-        const cree = await client.query<{ id: string }>(
-          `INSERT INTO platform.utilisateurs (email, nom, mot_de_passe_hash, doit_changer_mdp)
-           VALUES ($1, $2, $3, true) RETURNING id`,
-          [entree.admin.email, entree.admin.nom, empreinte],
-        );
-        adminId = cree.rows[0]!.id;
-        await journaliserPlateforme(client, { action: "UTILISATEUR_CREE", ...trace, cibleType: "utilisateur", cibleId: adminId, organisationId, details: { email: entree.admin.email } });
-      }
-      await client.query("INSERT INTO platform.adhesions (utilisateur_id, organisation_id, roles) VALUES ($1, $2, $3)", [adminId, organisationId, ["ADMIN_ORGANISATION"]]);
-
+      const cible = { id: org.rows[0]!.id, schemaName: ids.schemaName, roleName: ids.roleName };
       const details = { nom: entree.nom, slug: entree.slug, admin: entree.admin.email };
-      await journaliserPlateforme(client, { action: "ORGANISATION_CREEE", ...trace, cibleType: "organisation", cibleId: organisationId, organisationId, details });
-      await journaliserPlateforme(client, {
-        action: "MEMBRE_AJOUTE", ...trace, cibleType: "utilisateur", cibleId: adminId, organisationId, details: { roles: ["ADMIN_ORGANISATION"] },
-      });
-      // Le journal de l'organisation s'écrit avec SON rôle (l'adhésion vient d'être accordée, dans cette transaction).
-      const membreAdmin = adminId;
-      await dansOrganisation(client, ids, async () => {
-        await journaliserOrganisation(client, { action: "ORGANISATION_CREEE", ...trace, cibleType: "organisation", cibleId: organisationId, details });
-        await journaliserOrganisation(client, {
-          action: "MEMBRE_AJOUTE", ...trace, cibleType: "utilisateur", cibleId: membreAdmin, details: { email: entree.admin.email, roles: ["ADMIN_ORGANISATION"] },
-        });
-      });
-
-      return { organisationId, schemaName: ids.schemaName, adminId, compteAdminCree };
+      await journaliserLesDeux(client, cible, { action: "ORGANISATION_CREEE", ...traceActeur(acteur), cibleType: "organisation", cibleId: cible.id, details });
+      const invitation = await creerInvitation(client, cible, { email: entree.admin.email, nom: entree.admin.nom, roles: ["ADMIN_ORGANISATION"] }, acteur);
+      return { organisationId: cible.id, schemaName: ids.schemaName, invitation };
     });
   } catch (erreur) {
     if (estErreurPg(erreur, PG_UNICITE)) {

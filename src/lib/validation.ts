@@ -22,15 +22,21 @@ export const schemaNouvelleOrganisation = z.object({
   slug: z.string().trim().toLowerCase().regex(MOTIF_SLUG, "erreur.slug_invalide"),
   adminEmail: email,
   adminNom: nomPersonne,
-  adminMotDePasse: z.string().max(200, "erreur.mdp_trop_long"),
 });
 
-export const schemaNouveauMembre = z.object({
-  email,
-  nom: nomPersonne,
-  roles,
-  motDePasseProvisoire: z.string().max(200, "erreur.mdp_trop_long"),
-});
+export const schemaInvitation = z.object({ email, nom: nomPersonne, roles });
+
+/** Lien d'invitation : 32 octets aléatoires en base64url. */
+export const jetonInvitation = z.string().regex(/^[A-Za-z0-9_-]{43}$/, "invitation.invalide");
+
+export const schemaCompteInvitation = z
+  .object({
+    jeton: jetonInvitation,
+    nom: nomPersonne,
+    nouveau: z.string().max(200, "erreur.mdp_trop_long"),
+    confirmation: z.string(),
+  })
+  .refine((d) => d.nouveau === d.confirmation, { message: "erreur.mdp_confirmation", path: ["confirmation"] });
 
 export const schemaChangementMotDePasse = z
   .object({

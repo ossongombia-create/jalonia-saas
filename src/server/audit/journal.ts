@@ -7,6 +7,7 @@ import { isIP } from "node:net";
 import type { PoolClient } from "pg";
 import type { Action } from "@/lib/actions-journal";
 import { citer, type OrganisationTechnique } from "../db/identifiants";
+import { dansOrganisation } from "../db/transactions";
 
 export { ACTIONS, type Action } from "@/lib/actions-journal";
 
@@ -61,4 +62,13 @@ export async function journaliserOrganisation(client: PoolClient, e: EntreeJourn
      VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::inet, $8)`,
     valeurs(e),
   );
+}
+
+/**
+ * Écrit la même entrée dans le journal de la plateforme ET dans celui de l'organisation, dans la transaction en
+ * cours (tout ou rien). L'écriture dans le journal de l'organisation se fait avec SON rôle.
+ */
+export async function journaliserLesDeux(client: PoolClient, org: OrganisationTechnique & { id: string }, e: EntreeJournal): Promise<void> {
+  await journaliserPlateforme(client, { ...e, organisationId: org.id });
+  await dansOrganisation(client, org, () => journaliserOrganisation(client, e));
 }

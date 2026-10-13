@@ -1,20 +1,24 @@
 // Liste et gestion des membres d'une organisation (utilisée par l'administrateur de l'organisation et
-// par le superadmin). Les droits sont revérifiés côté serveur par chaque action.
-import { actionAjouterMembre, actionModifierRoles, actionRetirerMembre } from "@/actions/membres";
+// par le superadmin) : membres, invitations en attente, nouvelle invitation. Les droits sont revérifiés côté
+// serveur par chaque action.
+import { actionAnnulerInvitation, actionInviterMembre, actionModifierRoles, actionRetirerMembre } from "@/actions/membres";
 import { formaterDate } from "@/lib/format";
 import { ROLES_ORGANISATION } from "@/lib/rbac";
 import type { Contexte } from "@/server/web/contexte";
 import type { Membre } from "@/server/membres/service";
+import type { InvitationEnAttente } from "@/server/invitations/service";
 import { FormulaireAction } from "./FormulaireAction";
 
 interface Props {
   ctx: Contexte;
   organisationId: string;
   membres: Membre[];
+  invitations: InvitationEnAttente[];
 }
 
-export function GestionMembres({ ctx, organisationId, membres }: Props) {
+export function GestionMembres({ ctx, organisationId, membres, invitations }: Props) {
   const { t, langue, fuseau } = ctx;
+  const libellesLien = { lien: t("invitation.lien"), copier: t("commun.copier"), copie: t("commun.copie") };
   return (
     <>
       <section className="carte">
@@ -28,7 +32,7 @@ export function GestionMembres({ ctx, organisationId, membres }: Props) {
                 <tr>
                   <th>{t("commun.nom")}</th>
                   <th>{t("membres.roles")}</th>
-                  <th>{t("membres.derniere_connexion")}</th>
+                  <th>{t("membres.derniere_action")}</th>
                   <th>{t("commun.actions")}</th>
                 </tr>
               </thead>
@@ -68,7 +72,7 @@ export function GestionMembres({ ctx, organisationId, membres }: Props) {
                         </fieldset>
                       </FormulaireAction>
                     </td>
-                    <td className="nowrap">{m.derniereConnexion ? formaterDate(langue, m.derniereConnexion, fuseau) : t("commun.jamais")}</td>
+                    <td className="nowrap">{m.derniereAction ? formaterDate(langue, m.derniereAction, fuseau) : t("commun.jamais")}</td>
                     <td>
                       <FormulaireAction action={actionRetirerMembre} libelle={t("membres.retirer")} libelleEnCours={t("commun.en_cours")} variante="danger">
                         <input type="hidden" name="organisationId" value={organisationId} />
@@ -83,9 +87,50 @@ export function GestionMembres({ ctx, organisationId, membres }: Props) {
         )}
       </section>
 
+      {invitations.length > 0 ? (
+        <section className="carte">
+          <h2>{t("invitation.en_attente")}</h2>
+          <p className="discret">{t("invitation.en_attente_aide")}</p>
+          <div className="tableau-defilant">
+            <table className="tableau">
+              <thead>
+                <tr>
+                  <th>{t("commun.nom")}</th>
+                  <th>{t("membres.roles")}</th>
+                  <th>{t("invitation.valable_jusqua")}</th>
+                  <th>{t("commun.actions")}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {invitations.map((i) => (
+                  <tr key={i.id}>
+                    <td>
+                      <strong>{i.nom}</strong>
+                      <br />
+                      <span className="discret">{i.email}</span>
+                    </td>
+                    <td>{i.roles.map((r) => t(`role.${r}`)).join(", ")}</td>
+                    <td className="nowrap">
+                      {i.expiree ? <span className="etiquette etiquette-erreur">{t("invitation.expiree")}</span> : formaterDate(langue, i.expireLe, fuseau)}
+                    </td>
+                    <td>
+                      <FormulaireAction action={actionAnnulerInvitation} libelle={t("invitation.annuler")} libelleEnCours={t("commun.en_cours")} variante="danger">
+                        <input type="hidden" name="organisationId" value={organisationId} />
+                        <input type="hidden" name="invitationId" value={i.id} />
+                      </FormulaireAction>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      ) : null}
+
       <section className="carte">
-        <h2>{t("membres.ajouter")}</h2>
-        <FormulaireAction action={actionAjouterMembre} libelle={t("membres.ajouter")} libelleEnCours={t("commun.en_cours")}>
+        <h2>{t("invitation.inviter_titre")}</h2>
+        <p className="discret">{t("invitation.inviter_aide")}</p>
+        <FormulaireAction action={actionInviterMembre} libelle={t("invitation.inviter")} libelleEnCours={t("commun.en_cours")} libellesLien={libellesLien}>
           <input type="hidden" name="organisationId" value={organisationId} />
           <div className="grille-champs">
             <label className="champ">
@@ -106,11 +151,6 @@ export function GestionMembres({ ctx, organisationId, membres }: Props) {
               </label>
             ))}
           </fieldset>
-          <label className="champ">
-            <span>{t("orgs.mdp_provisoire")}</span>
-            <input type="text" name="motDePasseProvisoire" maxLength={200} autoComplete="new-password" spellCheck={false} />
-            <small>{t("membres.mdp_aide")} {t("mdp.regle")}</small>
-          </label>
         </FormulaireAction>
       </section>
     </>

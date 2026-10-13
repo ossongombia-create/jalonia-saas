@@ -4,7 +4,6 @@ import type { Pool } from "pg";
 import { authentifier, ECHECS_AVANT_VERROU } from "../../src/server/auth/connexion";
 import { terminerSession, validerSession } from "../../src/server/auth/sessions";
 import { enTransaction } from "../../src/server/db/transactions";
-import { ajouterMembre } from "../../src/server/membres/service";
 import {
   changerMotDePasse,
   desactiverUtilisateur,
@@ -13,7 +12,7 @@ import {
   revoquerSessionsUtilisateur,
 } from "../../src/server/utilisateurs/service";
 import type { Acteur } from "../../src/server/acteur";
-import { cleErreur, creerOrgDeTest, creerSuperadmin, MDP_TEST, ouvrirPools, suffixe, type OrgDeTest } from "./outils";
+import { cleErreur, creerOrgDeTest, creerSuperadmin, MDP_TEST, membreDeTest, ouvrirPools, suffixe, type OrgDeTest } from "./outils";
 
 const REGLES = { inactiviteMinutes: 120, dureeMaxHeures: 8 };
 
@@ -35,8 +34,8 @@ afterAll(async () => {
 
 async function nouvelUtilisateur(): Promise<{ id: string; email: string }> {
   const email = `u-${suffixe()}@test.local`;
-  const r = await ajouterMembre(app, org.cible, { email, nom: "Utilisateur", roles: ["LECTEUR"], motDePasseProvisoire: MDP_TEST }, superadmin);
-  return { id: r.utilisateurId, email };
+  const id = await membreDeTest(app, org.cible, { email, nom: "Utilisateur", roles: ["LECTEUR"] }, superadmin);
+  return { id, email };
 }
 
 function connexion(email: string, motDePasse: string) {
@@ -51,14 +50,14 @@ async function derniereAction(email: string): Promise<{ action: string; details:
 }
 
 describe("connexion", () => {
-  it("bon mot de passe : session ouverte, valide, mot de passe provisoire signalé, connexion journalisée", async () => {
+  it("bon mot de passe : session ouverte, valide, connexion journalisée (compte créé par invitation : mot de passe choisi, rien à changer)", async () => {
     const u = await nouvelUtilisateur();
     const r = await connexion(u.email, MDP_TEST);
     expect(r.ok).toBe(true);
     if (!r.ok) return;
     const s = await validerSession(app, { utilisateurId: u.id, sessionId: r.sessionId }, REGLES);
     expect(s?.utilisateur.email).toBe(u.email);
-    expect(s?.utilisateur.doitChangerMdp).toBe(true);
+    expect(s?.utilisateur.doitChangerMdp).toBe(false);
     expect((await derniereAction(u.email))?.action).toBe("CONNEXION");
   });
 

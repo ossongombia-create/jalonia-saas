@@ -1,7 +1,7 @@
 "use client";
 // Formulaire relié à une action serveur : bouton désactivé pendant l'envoi, message de retour sous le
 // formulaire. La saisie est CONSERVÉE en cas d'erreur, et vidée après un succès (si demandé).
-import { startTransition, useActionState, useEffect, useRef, type ReactNode } from "react";
+import { startTransition, useActionState, useEffect, useRef, useState, type ReactNode } from "react";
 import { ETAT_INITIAL, type EtatAction } from "@/lib/etat-action";
 
 interface Props {
@@ -16,9 +16,17 @@ interface Props {
   className?: string;
   /** Question posée avant l'envoi (action sensible : suppression…). Réponse « Annuler » : rien n'est envoyé. */
   confirmation?: string;
+  /** Libellés du lien renvoyé par l'action (ex. lien d'invitation), affiché avec un bouton « Copier ». */
+  libellesLien?: LibellesLien;
 }
 
-export function FormulaireAction({ action, libelle, libelleEnCours, children, vider = true, variante = "normal", className, confirmation }: Props) {
+export interface LibellesLien {
+  lien: string;
+  copier: string;
+  copie: string;
+}
+
+export function FormulaireAction({ action, libelle, libelleEnCours, children, vider = true, variante = "normal", className, confirmation, libellesLien }: Props) {
   const [etat, envoyer, enCours] = useActionState(action, ETAT_INITIAL);
   const formulaire = useRef<HTMLFormElement>(null);
 
@@ -50,6 +58,34 @@ export function FormulaireAction({ action, libelle, libelleEnCours, children, vi
           </p>
         ) : null}
       </div>
+      {etat.ok && etat.lien && libellesLien ? <LienACopier key={etat.jeton} chemin={etat.lien} libelles={libellesLien} /> : null}
     </form>
+  );
+}
+
+/** Lien complet (adresse de CE site + chemin), sélectionnable, avec un bouton « Copier ». */
+function LienACopier({ chemin, libelles }: { chemin: string; libelles: LibellesLien }) {
+  const champ = useRef<HTMLInputElement>(null);
+  const [copie, setCopie] = useState(false);
+  const adresse = `${window.location.origin}${chemin}`;
+  async function copier() {
+    champ.current?.select();
+    try {
+      await navigator.clipboard.writeText(adresse);
+      setCopie(true);
+    } catch {
+      // Presse-papiers refusé par le navigateur : le lien reste sélectionné, la personne le copie elle-même.
+    }
+  }
+  return (
+    <div className="lien-a-copier">
+      <label className="champ">
+        <span>{libelles.lien}</span>
+        <input ref={champ} type="text" readOnly value={adresse} onFocus={(e) => e.currentTarget.select()} spellCheck={false} />
+      </label>
+      <button type="button" className="bouton bouton-second" onClick={copier}>
+        {copie ? libelles.copie : libelles.copier}
+      </button>
+    </div>
   );
 }

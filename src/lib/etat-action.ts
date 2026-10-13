@@ -5,6 +5,8 @@ export interface EtatAction {
   message: string | null;
   /** Change à chaque réponse : permet de vider un formulaire après un succès. */
   jeton: number;
+  /** Lien à transmettre (chemin du site, ex. invitation), affiché avec un bouton « Copier ». */
+  lien?: string;
 }
 
 export const ETAT_INITIAL: EtatAction = { ok: false, message: null, jeton: 0 };

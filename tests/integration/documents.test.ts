@@ -14,7 +14,7 @@ import { creerOrganisation } from "../../src/server/organisations/provisionnemen
 import { lireOrganisation } from "../../src/server/organisations/service";
 import { avecOrganisation, enTransaction } from "../../src/server/db/transactions";
 import type { Acteur } from "../../src/server/acteur";
-import { cleErreur, codeErreur, creerOrgDeTest, creerSuperadmin, MDP_TEST, ouvrirPools, suffixe, type OrgDeTest } from "./outils";
+import { cleErreur, codeErreur, creerOrgDeTest, creerSuperadmin, ouvrirPools, suffixe, type OrgDeTest } from "./outils";
 
 let app: Pool;
 let proprietaire: Pool;
@@ -283,7 +283,7 @@ describe("mise à niveau d'une organisation existante", () => {
     try {
       creee = await creerOrganisation(
         app,
-        { nom: `Ancienne ${s}`, slug: `ancienne-${s}`, admin: { email: `adm-${s}@test.local`, nom: "Adm", motDePasseProvisoire: MDP_TEST } },
+        { nom: `Ancienne ${s}`, slug: `ancienne-${s}`, admin: { email: `adm-${s}@test.local`, nom: "Adm" } },
         superadmin,
       );
     } finally {

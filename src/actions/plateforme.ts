@@ -1,12 +1,12 @@
 "use server";
 // Actions de l'espace superadministrateur. CHAQUE action revérifie le rôle (exigerSuperadmin) :
 // une action serveur est appelable directement, sans passer par la page qui l'affiche.
-import { redirect } from "next/navigation";
 import { z } from "zod";
 import { identifiant, schemaNouvelleOrganisation } from "@/lib/validation";
 import type { EtatAction } from "@/lib/etat-action";
 import { poolApplication } from "@/server/db/pools";
 import { creerOrganisation } from "@/server/organisations/provisionnement";
+import { cheminInvitation, DUREE_INVITATION_HEURES } from "@/server/invitations/service";
 import { changerStatutOrganisation } from "@/server/organisations/service";
 import {
   desactiverUtilisateur,
@@ -18,27 +18,23 @@ import { revoquerSession } from "@/server/consultation/service";
 import { exigerSuperadmin } from "@/server/web/contexte";
 import { champ, executer, valider } from "@/server/web/actions";
 
+/**
+ * Crée une organisation et invite son premier administrateur. Le lien d'invitation est affiché UNE fois (seule son
+ * empreinte est rangée) : la page reste ouverte pour le copier. Pour un nouveau lien : inviter à nouveau depuis la
+ * page de l'organisation.
+ */
 export async function actionCreerOrganisation(_etat: EtatAction, formulaire: FormData): Promise<EtatAction> {
   const ctx = await exigerSuperadmin();
-  const creation: { organisationId?: string } = {};
-  const etat = await executer(ctx.langue, async () => {
+  return executer(ctx.langue, async () => {
     const saisie = valider(schemaNouvelleOrganisation, {
       nom: champ(formulaire, "nom"),
       slug: champ(formulaire, "slug"),
       adminEmail: champ(formulaire, "adminEmail"),
       adminNom: champ(formulaire, "adminNom"),
-      adminMotDePasse: champ(formulaire, "adminMotDePasse"),
     });
-    const creee = await creerOrganisation(
-      poolApplication(),
-      { nom: saisie.nom, slug: saisie.slug, admin: { email: saisie.adminEmail, nom: saisie.adminNom, motDePasseProvisoire: saisie.adminMotDePasse } },
-      ctx.acteur,
-    );
-    creation.organisationId = creee.organisationId;
-    return { cle: "orgs.creee" };
+    const creee = await creerOrganisation(poolApplication(), { nom: saisie.nom, slug: saisie.slug, admin: { email: saisie.adminEmail, nom: saisie.adminNom } }, ctx.acteur);
+    return { cle: "orgs.creee_invitation", variables: { heures: DUREE_INVITATION_HEURES }, lien: cheminInvitation(creee.invitation.jeton) };
   });
-  if (etat.ok && creation.organisationId) redirect(`/plateforme/organisations/${creation.organisationId}`);
-  return etat;
 }
 
 const schemaStatut = z.object({ organisationId: identifiant, statut: z.enum(["active", "suspendue"], "erreur.saisie_invalide") });

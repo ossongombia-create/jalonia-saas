@@ -7,6 +7,7 @@ import { formaterDate } from "@/lib/format";
 import { identifiant } from "@/lib/validation";
 import { poolApplication } from "@/server/db/pools";
 import { listerMembres } from "@/server/membres/service";
+import { listerInvitations } from "@/server/invitations/service";
 import { lireOrganisation } from "@/server/organisations/service";
 import { exigerSuperadmin } from "@/server/web/contexte";
 import { titrePage } from "@/server/web/metadonnees";
@@ -21,7 +22,7 @@ export default async function PageOrganisation({ params }: { params: Promise<{ i
   const pool = poolApplication();
   const org = await lireOrganisation(pool, lu.data);
   if (!org) notFound();
-  const membres = await listerMembres(pool, org.id);
+  const [membres, invitations] = await Promise.all([listerMembres(pool, org.id), listerInvitations(pool, org.id)]);
   const suspendue = org.statut === "suspendue";
 
   return (
@@ -50,7 +51,7 @@ export default async function PageOrganisation({ params }: { params: Promise<{ i
         </FormulaireAction>
       </header>
       {suspendue ? <p className="bandeau bandeau-alerte">{t("orgs.suspendue_info")}</p> : null}
-      <GestionMembres ctx={ctx} organisationId={org.id} membres={membres} />
+      <GestionMembres ctx={ctx} organisationId={org.id} membres={membres} invitations={invitations} />
     </>
   );
 }

@@ -576,6 +576,26 @@ legend {
   align-items: center;
 }
 
+input[readonly] {
+  background: var(--fond);
+  color: var(--encre-douce);
+}
+.lien-a-copier {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.6rem;
+  margin-top: 0.8rem;
+}
+.lien-a-copier .champ {
+  flex: 1 1 22rem;
+  margin: 0;
+}
+.lien-a-copier input {
+  font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
+  font-size: 0.85rem;
+}
+
 /* ----- Messages ----- */
 .message {
   margin: 0;

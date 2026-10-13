@@ -1,11 +1,12 @@
 // Membres d'une organisation : rôles, règle du dernier administrateur, traçabilité dans les deux journaux.
+// (Devenir membre — invitations — : invitations.test.ts.)
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { Pool } from "pg";
-import { ajouterMembre, listerMembres, modifierRoles, retirerMembre } from "../../src/server/membres/service";
+import { listerMembres, modifierRoles, retirerMembre } from "../../src/server/membres/service";
 import { lireJournalOrganisation, lireJournalPlateforme } from "../../src/server/consultation/service";
 import { desactiverUtilisateur } from "../../src/server/utilisateurs/service";
 import type { Acteur } from "../../src/server/acteur";
-import { cleErreur, creerOrgDeTest, creerSuperadmin, MDP_TEST, ouvrirPools, suffixe, type OrgDeTest } from "./outils";
+import { cleErreur, creerOrgDeTest, creerSuperadmin, membreDeTest, ouvrirPools, suffixe, type OrgDeTest } from "./outils";
 
 let app: Pool;
 let proprietaire: Pool;
@@ -23,8 +24,7 @@ afterAll(async () => {
 
 async function membre(org: OrgDeTest, roles: ("ADMIN_ORGANISATION" | "REDACTEUR" | "LECTEUR")[]) {
   const email = `m-${suffixe()}@test.local`;
-  const r = await ajouterMembre(app, org.cible, { email, nom: "Membre", roles, motDePasseProvisoire: MDP_TEST }, superadmin);
-  return { id: r.utilisateurId, email };
+  return { id: await membreDeTest(app, org.cible, { email, roles }, superadmin), email };
 }
 
 describe("règle du dernier administrateur", () => {
@@ -50,19 +50,7 @@ describe("règle du dernier administrateur", () => {
   });
 });
 
-describe("ajout et retrait", () => {
-  it("compte existant ajouté sans mot de passe ; doublon refusé ; nouveau compte sans mot de passe refusé", async () => {
-    const org1 = await creerOrgDeTest(app, proprietaire, superadmin);
-    const org2 = await creerOrgDeTest(app, proprietaire, superadmin);
-    const m = await membre(org1, ["REDACTEUR"]);
-    const r = await ajouterMembre(app, org2.cible, { email: m.email, nom: "Ignoré", roles: ["LECTEUR"], motDePasseProvisoire: "" }, superadmin);
-    expect(r).toEqual({ utilisateurId: m.id, compteCree: false });
-    expect(await cleErreur(ajouterMembre(app, org2.cible, { email: m.email, nom: "X", roles: ["LECTEUR"], motDePasseProvisoire: "" }, superadmin))).toBe("erreur.deja_membre");
-    expect(
-      await cleErreur(ajouterMembre(app, org2.cible, { email: `neuf-${suffixe()}@test.local`, nom: "X", roles: ["LECTEUR"], motDePasseProvisoire: "" }, superadmin)),
-    ).toBe("erreur.mdp_provisoire_requis");
-  });
-
+describe("retrait", () => {
   it("retrait d'un membre", async () => {
     const org = await creerOrgDeTest(app, proprietaire, superadmin);
     const m = await membre(org, ["LECTEUR"]);
@@ -83,7 +71,7 @@ describe("traçabilité", () => {
 
     const journalA = await lireJournalOrganisation(app, a.cible, { page: 1 });
     const actionsA = journalA.lignes.map((l) => l.action).reverse();
-    expect(actionsA).toEqual(["ORGANISATION_CREEE", "MEMBRE_AJOUTE", "MEMBRE_AJOUTE", "DROITS_MODIFIES", "MEMBRE_RETIRE"]);
+    expect(actionsA).toEqual(["ORGANISATION_CREEE", "INVITATION_CREEE", "MEMBRE_AJOUTE", "INVITATION_CREEE", "MEMBRE_AJOUTE", "DROITS_MODIFIES", "MEMBRE_RETIRE"]);
     const droits = journalA.lignes.find((l) => l.action === "DROITS_MODIFIES");
     expect(droits?.details).toEqual({ avant: ["LECTEUR"], apres: ["REDACTEUR", "VERIFICATEUR"] });
     // Rien de l'organisation B dans le journal de A.

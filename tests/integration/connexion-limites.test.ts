@@ -4,9 +4,8 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { Pool } from "pg";
 import { authentifier, ECHECS_AVANT_VERROU, ECHECS_COMPTE_MAX, ECHECS_PAR_ADRESSE } from "../../src/server/auth/connexion";
 import { enTransaction } from "../../src/server/db/transactions";
-import { ajouterMembre } from "../../src/server/membres/service";
 import type { Acteur } from "../../src/server/acteur";
-import { creerOrgDeTest, creerSuperadmin, MDP_TEST, ouvrirPools, suffixe, type OrgDeTest } from "./outils";
+import { creerOrgDeTest, creerSuperadmin, MDP_TEST, membreDeTest, ouvrirPools, suffixe, type OrgDeTest } from "./outils";
 
 let app: Pool;
 let proprietaire: Pool;
@@ -29,7 +28,7 @@ const adresse = () => `198.51.100.${prochaineAdresse++}`;
 
 async function compte(): Promise<string> {
   const email = `lim-${suffixe()}@test.local`;
-  await ajouterMembre(app, org.cible, { email, nom: "Personne", roles: ["LECTEUR"], motDePasseProvisoire: MDP_TEST }, superadmin);
+  await membreDeTest(app, org.cible, { email, nom: "Personne", roles: ["LECTEUR"] }, superadmin);
   return email;
 }
 
