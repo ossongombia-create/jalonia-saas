@@ -104,6 +104,17 @@ describe("notifications du circuit", () => {
     expect(await naturesDe(org, appro)).toEqual(["a_approuver", "a_approuver"]);
   });
 
+  it("ordre : les plus récentes d'abord, au-delà de 9 lignes (notifications et journal de l'organisation)", async () => {
+    const org = await creerOrgDeTest(app, proprietaire, superadmin);
+    const a = await membre(org, "A", "REDACTEUR");
+    await avecOrganisation(app, org.cible, (c) => notifier(c, Array.from({ length: 12 }, (_, i) => ({ destinataire: a.id, nature: "revue_proche" as const, cle: `ordre:${i}`, details: { titre: `N${i}` } }))));
+    expect((await listerNotifications(app, org.cible, a.id)).map((n) => n.details.titre)).toEqual(Array.from({ length: 12 }, (_, i) => `N${11 - i}`));
+    for (let i = 0; i < 12; i++) await creerDocument(app, org.cible, procedure(`D${i}`), a);
+    const ids = (await lireJournalOrganisation(app, org.cible, { page: 1 })).lignes.map((l) => Number(l.id));
+    expect(ids.length).toBeGreaterThanOrEqual(12);
+    expect(ids).toEqual([...ids].sort((x, y) => y - x));
+  });
+
   it("lire et marquer : chacun les siennes seulement ; une notification n'est jamais créée deux fois ; étanchéité", async () => {
     const org = await creerOrgDeTest(app, proprietaire, superadmin);
     const autre = await creerOrgDeTest(app, proprietaire, superadmin);

@@ -46,6 +46,12 @@ export const DROITS = {
   "documents.approuver": { roles: ["APPROBATEUR"], etat: "actif" },
   "documents.publier": { roles: ["APPROBATEUR"], etat: "actif" },
   "documents.archiver": { roles: ["APPROBATEUR"], etat: "actif" },
+  // ----- QSE (src/server/qse) : plan d'actions, objectifs et mesures des indicateurs -----
+  // Valeurs par défaut (à confirmer par Brice) : tout rôle sauf lecteur fait avancer les actions et saisit les mesures ;
+  // les objectifs chiffrés sont fixés par l'administrateur et l'approbateur (direction).
+  "actions.gerer": { roles: ["ADMIN_ORGANISATION", "REDACTEUR", "VERIFICATEUR", "APPROBATEUR"], etat: "actif" },
+  "indicateurs.mesurer": { roles: ["ADMIN_ORGANISATION", "REDACTEUR", "VERIFICATEUR", "APPROBATEUR"], etat: "actif" },
+  "indicateurs.objectifs": { roles: ["ADMIN_ORGANISATION", "APPROBATEUR"], etat: "actif" },
 } as const satisfies Record<string, DefinitionDroit>;
 
 export type Droit = keyof typeof DROITS;

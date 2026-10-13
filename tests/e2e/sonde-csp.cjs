@@ -35,8 +35,23 @@ const { BASE, SUPERADMIN, lancer, connecter, etape, assert } = require("./outils
   const util = await sa.getAttribute('a[href^="/plateforme/utilisateurs/"]', "href");
   await sa.context().close();
   await visiter(SUPERADMIN.email, ["/plateforme", "/plateforme/organisations", org, "/plateforme/organisations/nouvelle", "/plateforme/utilisateurs", util, "/plateforme/sessions", "/plateforme/journal", "/plateforme/droits", "/compte/mot-de-passe", "/compte/second-facteur"]);
-  etape("administrateur d'organisation : accueil, membres, journal, documents, éditeur, compte");
-  await visiter("admin@demo.test", ["/app", "/app/membres", "/app/journal", "/app/documents", "/editeur/index.html", "/compte/mot-de-passe", "/compte/second-facteur"]);
+  etape("administrateur d'organisation : accueil, membres, journal, documents, éditeur, compte, circuit, QSE, paramètres");
+  // Pages qui portent un identifiant : le premier lien trouvé (elles existent après les parties 11 à 13).
+  const explo = await connecter("admin@demo.test");
+  const premierLien = async (chemin, selecteur) => {
+    await explo.goto(`${BASE}${chemin}`);
+    const l = explo.locator(selecteur).first();
+    return (await l.count()) ? l.getAttribute("href") : null;
+  };
+  const avecIdentifiant = [
+    await premierLien("/app/documents", 'a[href$="/validation"]'),
+    await premierLien("/app/documents", 'a[href$="/historique"]'),
+    await premierLien("/app/actions?statut=toutes", '#actions a[href^="/app/actions/"]'),
+    await premierLien("/app/indicateurs?portee=tous", '#registre-indicateurs a[href^="/app/indicateurs/detail"]'),
+  ].filter(Boolean);
+  await explo.context().close();
+  await visiter("admin@demo.test", ["/app", "/app/membres", "/app/journal", "/app/documents", "/editeur/index.html", "/compte/mot-de-passe", "/compte/second-facteur",
+    "/app/notifications", "/app/parametres", "/app/risques", "/app/actions", "/app/actions/nouvelle", "/app/indicateurs", "/app/documents/corbeille", ...avecIdentifiant]);
   etape("rédactrice et lectrice : documents et éditeur");
   await visiter("redac@demo.test", ["/app", "/app/documents", "/editeur/index.html"]);
   await visiter("lecteur@demo.test", ["/app", "/app/documents"]);

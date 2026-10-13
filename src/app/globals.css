@@ -731,6 +731,96 @@ input[readonly] {
   overflow-wrap: anywhere;
 }
 
+/* ----- Tableau de bord ----- */
+.grille-deux {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 0 1.2rem;
+}
+.grille-tableau {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 1rem;
+}
+.tuile {
+  border: 1px solid var(--trait-doux);
+  border-radius: var(--rayon);
+  padding: 0.8rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.tuile h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+.tuile ul,
+.liste-simple {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 0.25rem;
+}
+.tuile strong {
+  display: inline-block;
+  min-width: 2ch;
+  font-size: 1.15rem;
+}
+.tuile-alerte {
+  color: var(--alerte-texte);
+}
+.tuile > a {
+  margin-top: auto;
+}
+.etiquette-niveau-critique {
+  background: var(--erreur-fond);
+  color: var(--erreur-texte);
+}
+.etiquette-niveau-significatif {
+  background: var(--alerte-fond);
+  color: var(--alerte-texte);
+}
+.etiquette-niveau-acceptable,
+.etiquette-situation-atteint {
+  background: var(--ok-fond);
+  color: var(--ok);
+}
+.etiquette-situation-non_atteint {
+  background: var(--erreur-fond);
+  color: var(--erreur-texte);
+}
+.filtres {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 0.6rem 1rem;
+  margin-bottom: 1rem;
+}
+.filtres .champ {
+  min-width: 14rem;
+}
+.fiche {
+  display: grid;
+  grid-template-columns: minmax(8rem, max-content) 1fr;
+  gap: 0.35rem 1rem;
+  margin: 0 0 0.8rem;
+}
+.fiche dt {
+  font-weight: 500;
+  color: var(--encre-legere);
+}
+.fiche dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.graphique-mesures {
+  width: 100%;
+  max-width: 44rem;
+  height: auto;
+  display: block;
+}
+
 /* ----- Notifications ----- */
 .liste-notifications {
   list-style: none;

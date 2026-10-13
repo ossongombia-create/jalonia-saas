@@ -1,4 +1,5 @@
-// Tâches quotidiennes (audit W2) : rappels et escalades des revues périodiques, ménage des notifications lues.
+// Tâches quotidiennes (audit W2, Q1) : rappels et escalades des revues périodiques et des actions, ménage des
+// notifications lues.
 // Lancées chaque jour par un minuteur systemd (deploy/jalonia-taches.timer → taches/quotidiennes.mjs, construit à
 // partir de scripts/taches-quotidiennes.ts), avec le rôle de l'APPLICATION (aucun droit de plus que le service web).
 //
@@ -7,13 +8,15 @@
 //   - revue en retard → approbateurs ; en retard depuis `escaladeJours` jours ou plus → administrateurs aussi.
 //   (Sans approbateur actif dans l'organisation, ce sont les administrateurs qui sont prévenus.)
 // Chaque notification n'est créée qu'une fois (clé : document, échéance, stade) : relancer la tâche le même jour, ou
-// le lendemain, ne crée aucun doublon. Les échéances des actions (module QSE) s'ajoutent ici.
+// le lendemain, ne crée aucun doublon.
+// Actions ouvertes (qse/actions.ts) : rappel au responsable avant l'échéance, retard, escalade aux administrateurs.
 import type { Pool } from "pg";
 import { ecartJours, jourLocal } from "@/lib/dates";
 import { dansOrganisation, enTransaction } from "../db/transactions";
 import { verifierOrganisationTechnique } from "../db/identifiants";
 import { lireParametres, revueDe } from "../documents/revues";
 import { ayantRole, membresDestinataires, notifier, purgerNotificationsLues, type NouvelleNotification } from "../notifications/service";
+import { echeancesActions } from "../qse/actions";
 
 export const CONSERVATION_NOTIFICATIONS_LUES_JOURS = 180;
 
@@ -61,6 +64,7 @@ export async function executerTachesQuotidiennes(pool: Pool, options: { fuseau: 
             }
           }
 
+          liste.push(...(await echeancesActions(client, membres, p, aujourdhui)));
           const creees = await notifier(client, liste);
           const purgees = await purgerNotificationsLues(client, CONSERVATION_NOTIFICATIONS_LUES_JOURS);
           return { creees, purgees };

@@ -119,7 +119,7 @@ export interface EtatCircuit {
 }
 
 // La version en cours de circuit : depuis la dernière soumission (les décisions d'un cycle précédent ne comptent pas).
-async function lireIntervenants(client: PoolClient, id: string, auteur: string | null, etat: EtatDocument): Promise<Intervenants> {
+export async function lireIntervenants(client: PoolClient, id: string, auteur: string | null, etat: EtatDocument): Promise<Intervenants> {
   if (etat !== "en_verification" && etat !== "en_approbation") return { auteur, soumisPar: null, verifiePar: null };
   const r = await client.query<{ transition: Transition; acteur: string | null }>(
     `SELECT transition, acteur FROM decisions_document

@@ -100,7 +100,7 @@ export async function listerNotifications(pool: Pool, org: OrganisationCible, ut
   return avecOrganisation(pool, org, async (client) => {
     const r = await client.query<{ id: string; nature: NatureNotification; document_id: string | null; action_id: string | null; details: DetailsNotification; creee_le: Date; lue_le: Date | null }>(
       `SELECT id::text AS id, nature, document_id, action_id, details, creee_le, lue_le FROM notifications
-        WHERE destinataire = $1 ORDER BY id DESC LIMIT $2`,
+        WHERE destinataire = $1 ORDER BY notifications.id DESC LIMIT $2`, // la colonne, pas l'alias texte « id »
       [utilisateurId, limite],
     );
     return r.rows.map((l) => ({ id: l.id, nature: l.nature, documentId: l.document_id, actionId: l.action_id, details: l.details, creeeLe: l.creee_le, lueLe: l.lue_le }));

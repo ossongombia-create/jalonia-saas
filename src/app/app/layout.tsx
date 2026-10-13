@@ -11,6 +11,9 @@ export default async function MiseEnPageOrganisation({ children }: { children: R
   const liens: LienCoque[] = [{ href: "/app", libelle: t("nav.accueil"), exact: true }];
   if (aLeDroit(organisation.roles, "documents.lire")) {
     liens.push({ href: "/app/documents", libelle: t("nav.documents") });
+    liens.push({ href: "/app/risques", libelle: t("nav.risques") });
+    liens.push({ href: "/app/actions", libelle: t("nav.actions") });
+    liens.push({ href: "/app/indicateurs", libelle: t("nav.indicateurs") });
     const nonLues = await compterNonLues(poolApplication(), organisation, ctx.acteur.id);
     liens.push({ href: "/app/notifications", libelle: nonLues > 0 ? `${t("nav.notifications")} (${nonLues})` : t("nav.notifications") });
   }

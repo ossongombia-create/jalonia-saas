@@ -22,6 +22,7 @@ function texte(t: Traducteur, langue: Langue, n: Notification): string {
 }
 
 function cible(n: Notification): string | null {
+  if (n.actionId) return `/app/actions/${n.actionId}`;
   if (n.documentId) return `/app/documents/${n.documentId}/validation`;
   return null;
 }

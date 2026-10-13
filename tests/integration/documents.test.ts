@@ -296,7 +296,7 @@ describe("mise à niveau d'une organisation existante", () => {
     expect(await codeErreur(listerDocuments(app, cible))).toBe("42P01"); // table absente
 
     const appliquees = await enTransaction(proprietaire, (c) => appliquerMigrationsOrganisation(c, cible, toutes));
-    expect(appliquees).toEqual(["0002_documents.sql", "0003_chaine_journal.sql", "0004_versions.sql", "0005_circuit.sql", "0006_revues_notifications.sql"]);
+    expect(appliquees).toEqual(["0002_documents.sql", "0003_chaine_journal.sql", "0004_versions.sql", "0005_circuit.sql", "0006_revues_notifications.sql", "0007_qse.sql"]);
     const d = await creerDocument(app, cible, procedure("Après mise à niveau"), acteur("A"));
     expect((await listerDocuments(app, cible)).map((x) => x.id)).toEqual([d.id]);
     expect((await lireCartographie(app, cible)).version).toBe(0);

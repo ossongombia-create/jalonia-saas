@@ -193,7 +193,7 @@ export async function lireJournalOrganisation(pool: Pool, org: OrganisationTechn
       `SELECT id::text AS id, horodatage, acteur_id, acteur_email, action, cible_type, cible_id, details, host(ip) AS ip
          FROM journal
         WHERE ($1::text IS NULL OR action = $1::text)
-        ORDER BY id DESC
+        ORDER BY journal.id DESC -- (la colonne, pas l'alias « id » de type texte : « 9 » passerait avant « 10 »)
         LIMIT $2 OFFSET $3`,
       [filtre.action ?? null, LIGNES_PAR_PAGE + 1, (page - 1) * LIGNES_PAR_PAGE],
     );

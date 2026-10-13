@@ -42,6 +42,12 @@ const REGLES = {
   actionSupprimerDocument: { regle: "documents.supprimer dans l'organisation OUVERTE (mise à la corbeille)" },
   actionRetablirDocument: { regle: "documents.supprimer dans l'organisation OUVERTE ; document de CETTE organisation" },
   actionRestaurerVersion: { regle: "documents.rediger dans l'organisation OUVERTE ; document de CETTE organisation" },
+  actionCreerAction: { regle: "actions.gerer dans l'organisation OUVERTE ; responsable membre actif, document visé de CETTE organisation" },
+  actionModifierAction: { regle: "actions.gerer dans l'organisation OUVERTE ; action de CETTE organisation ; version vue" },
+  actionDefinirObjectif: { regle: "indicateurs.objectifs dans l'organisation OUVERTE ; indicateur d'un document de CETTE organisation" },
+  actionRetirerObjectif: { regle: "indicateurs.objectifs dans l'organisation OUVERTE ; indicateur d'un document de CETTE organisation" },
+  actionEnregistrerMesure: { regle: "indicateurs.mesurer dans l'organisation OUVERTE ; indicateur d'un document de CETTE organisation" },
+  actionSupprimerMesure: { regle: "indicateurs.mesurer dans l'organisation OUVERTE ; mesure de CETTE organisation" },
   actionModifierParametres: { regle: "organisation.parametres dans l'organisation OUVERTE" },
   actionToutMarquerLu: { regle: "membre de l'organisation OUVERTE ; seulement SES notifications" },
   actionTransitionDocument: { regle: "droit de la décision dans l'organisation OUVERTE (soumettre, réviser : rédaction ; vérifier : vérificateur ; approuver, archiver : approbateur) ; document de CETTE organisation ; séparation des tâches" },
@@ -104,6 +110,9 @@ const EMPREINTE = `SELECT md5(concat_ws('#',
      'SELECT (SELECT string_agg(row(id, titre, version, modifie_le, supprime_le, etat, version_publiee, revue_le)::text, '','' ORDER BY id) FROM %1$I.documents) AS d,
              (SELECT string_agg(row(periode_revue_mois, rappel_jours, escalade_jours, modifie_le)::text, '','') FROM %1$I.parametres) AS pa,
              (SELECT string_agg(row(id, destinataire, lue_le)::text, '','' ORDER BY id) FROM %1$I.notifications) AS n,
+             (SELECT string_agg(row(id, version, statut, responsable, echeance)::text, '','' ORDER BY id) FROM %1$I.actions) AS ac,
+             (SELECT string_agg(row(document_id, element_id, sens, seuil, unite, modifie_le)::text, '','' ORDER BY document_id, element_id) FROM %1$I.objectifs_indicateur) AS ob,
+             (SELECT string_agg(row(id, valeur, commentaire, saisi_le)::text, '','' ORDER BY id) FROM %1$I.mesures_indicateur) AS me,
              (SELECT count(*) FROM %1$I.versions_document) AS v,
              (SELECT count(*) FROM %1$I.decisions_document) AS dd,
              (SELECT string_agg(row(version, modifie_le)::text, '','') FROM %1$I.cartographie) AS c,
@@ -183,6 +192,8 @@ function controler(r, attendu, libelle) {
   } else if (attendu === "origine") {
     assert.equal(r.statut, 500, `${libelle} : refus de l'origine attendu (statut ${r.statut})`);
     assert.match(r.corps, /^\d+:E\{"digest":/m, `${libelle} : erreur Next.js attendue`);
+  } else if (attendu.startsWith("redirection^")) {
+    assert.ok(r.redirection && r.redirection.startsWith(attendu.slice("redirection^".length)), `${libelle} : redirection vers ${attendu.slice(12)}… (obtenu ${r.redirection}, statut ${r.statut}, message ${r.message})`);
   } else if (attendu.startsWith("redirection:")) {
     assert.equal(r.redirection, attendu.slice("redirection:".length), `${libelle} : redirection (statut ${r.statut}, message ${r.message})`);
   } else {
@@ -205,7 +216,7 @@ async function cas(qui, action, champs, attendu, { effet, origine, sansEmpreinte
   const libelle = `${action} / ${qui}${note ? ` (${note})` : ""}`;
   // Refus : renvoi vers la connexion, « introuvable », origine refusée, message d'erreur, ou renvoi vers le choix
   // d'organisation. Le reste (« succes », autres redirections) est un succès.
-  const refus = !(attendu === "succes" || (attendu.startsWith("redirection:") && attendu !== "redirection:/choisir-organisation"));
+  const refus = !(attendu === "succes" || attendu.startsWith("redirection^") || (attendu.startsWith("redirection:") && attendu !== "redirection:/choisir-organisation"));
   const avant = refus && !sansEmpreinte ? empreinte() : null;
   const r = await forger(qui, action, champs, { origine, page });
   if (origine && origine !== BASE) origineEssayee++;
@@ -280,6 +291,16 @@ let ACTIONS;
   const docPages = await api("redacA", "POST", "/api/documents", { organisationId: ORG_A, contenu: { meta: { typeDocument: "procedure", titre: "Pour les pages" }, roles: [], etapes: [] } });
   assert.equal(docPages.statut, 201);
   const pageDeA = (q) => (q === "superadmin" ? "→/choisir-organisation" : q === "adminB" ? "404" : "200");
+  // QSE : un document de A portant un risque (k1) et un indicateur (instruction e1), et une action de A.
+  const contenuQse = { meta: { typeDocument: "procedure", titre: "Pour le QSE", reference: "PR-DROITS-QSE" }, roles: [],
+    etapes: [{ id: "e1", libelle: "Mesurer", risques: [{ id: "k1", risque: "Risque d'essai", gravite: "2", probabilite: "2" }], indicateur: { actif: true, nom: "Indicateur d'essai" } }] };
+  const docQse = await api("redacA", "POST", "/api/documents", { organisationId: ORG_A, contenu: contenuQse });
+  assert.equal(docQse.statut, 201);
+  const DOCQ = docQse.json.id;
+  const SCHEMA_A_PAGES = sql("SELECT schema_name FROM platform.organisations WHERE slug = 'droits-a'");
+  sql(`INSERT INTO "${SCHEMA_A_PAGES}".actions (titre, origine) VALUES ('Action des pages', 'autre')`);
+  const ACTION_PAGES = sql(`SELECT id FROM "${SCHEMA_A_PAGES}".actions WHERE titre = 'Action des pages'`);
+  const GERENT = ["redacA", "verifA", "approA", "adminA", "adminB"];
   const PAGES = [
     attendus("/app", (q) => (q === "superadmin" ? "→/choisir-organisation" : "200")),
     attendus("/app/documents", (q) => (q === "superadmin" ? "→/choisir-organisation" : "200")),
@@ -287,6 +308,12 @@ let ACTIONS;
     attendus(`/app/documents/${docPages.json.id}/historique`, pageDeA),
     attendus(`/app/documents/${docPages.json.id}/validation`, pageDeA),
     attendus("/app/notifications", (q) => (q === "superadmin" ? "→/choisir-organisation" : "200")),
+    attendus("/app/risques", (q) => (q === "superadmin" ? "→/choisir-organisation" : "200")),
+    attendus("/app/actions", (q) => (q === "superadmin" ? "→/choisir-organisation" : "200")),
+    attendus("/app/actions/nouvelle", (q) => (q === "superadmin" ? "→/choisir-organisation" : GERENT.includes(q) ? "200" : "404")),
+    attendus(`/app/actions/${ACTION_PAGES}`, pageDeA),
+    attendus("/app/indicateurs", (q) => (q === "superadmin" ? "→/choisir-organisation" : "200")),
+    attendus(`/app/indicateurs/detail?document=${DOCQ}&element=e1`, pageDeA),
     attendus("/app/parametres", (q) => (q === "superadmin" ? "→/choisir-organisation" : ADMINS.includes(q) ? "200" : "404")),
     attendus("/app/membres", (q) => (q === "superadmin" ? "→/choisir-organisation" : ADMINS.includes(q) ? "200" : "404")),
     attendus("/app/journal", (q) => (q === "superadmin" ? "→/choisir-organisation" : ADMINS.includes(q) ? "200" : "404")),
@@ -302,7 +329,7 @@ let ACTIONS;
     const cellules = [];
     for (const qui of PROFILS) {
       const r = await page(qui, chemin);
-      const obtenu = r.statut === 404 ? "404" : r.statut === 200 ? (r.arrivee === chemin ? "200" : `→${r.arrivee}`) : `HTTP ${r.statut}`;
+      const obtenu = r.statut === 404 ? "404" : r.statut === 200 ? (r.arrivee === chemin.split("?")[0] ? "200" : `→${r.arrivee}`) : `HTTP ${r.statut}`;
       assert.equal(obtenu, a[qui], `page ${chemin} / ${qui}`);
       cellules.push(obtenu.replace("→/connexion/second-facteur", "→code").replace("→/choisir-organisation", "→choix").padEnd(12));
     }
@@ -489,6 +516,59 @@ let ACTIONS;
   await casC("redacA", decision("reviser"), "circuit.etat_incompatible", { note: "l'archivage est définitif" });
   assert.equal(sql(`SELECT string_agg(transition, ',' ORDER BY id) FROM "${SCHEMA_A}".decisions_document WHERE document_id = '${DOCC}'`),
     "soumettre,verifier,approuver,reviser,soumettre,refuser_verification,soumettre,verifier,approuver,archiver");
+
+  // ======================================================================================== actions : QSE
+  // Plan d'actions : actions.gerer. Objectifs : indicateurs.objectifs (administrateur, approbateur). Mesures :
+  // indicateurs.mesurer. Toujours dans l'organisation OUVERTE, sur les données de CETTE organisation.
+  etape("actions « QSE » (plan d'actions, objectifs, mesures)");
+  const nbActionsA = () => Number(sql(`SELECT count(*) FROM "${SCHEMA_A}".actions`));
+  const ID_ADMIN_B = idDe("admin-b@droits.test");
+  const ID_REDAC_A = idDe("redac-a@droits.test");
+  const nouvelle = { organisationId: ORG_A, titre: "Action d'essai", description: "", origine: "risque", responsableId: ID_REDAC_A, echeance: "2026-12-31", documentId: DOCQ, elementId: "k1" };
+  for (const qui of ["faux", "attente"]) await cas(qui, "actionCreerAction", nouvelle, "session");
+  for (const qui of ["lecteurA", "adminB", "superadmin"]) await cas(qui, "actionCreerAction", nouvelle, "erreur.interdit");
+  await cas("adminB", "actionCreerAction", { ...nouvelle, organisationId: ORG_B, responsableId: "" }, "actions.erreur.document", { note: "document de A depuis B" });
+  await cas("redacA", "actionCreerAction", { ...nouvelle, responsableId: ID_ADMIN_B }, "actions.erreur.responsable", { note: "responsable d'une autre organisation" });
+  await cas("redacA", "actionCreerAction", { ...nouvelle, elementId: "k-inconnu" }, "actions.erreur.document", { note: "élément absent du document" });
+  let nA = nbActionsA();
+  await cas("redacA", "actionCreerAction", nouvelle, "redirection^/app/actions/", { effet: () => nbActionsA() === nA + 1 });
+  const ACTION_A = sql(`SELECT id FROM "${SCHEMA_A}".actions WHERE titre = 'Action d''essai'`);
+  assert.equal(sql(`SELECT element_libelle FROM "${SCHEMA_A}".actions WHERE id = '${ACTION_A}'`), "Risque d'essai", "texte de l'élément lu dans le document");
+  const modification = { organisationId: ORG_A, actionId: ACTION_A, version: "1", titre: "Action d'essai", description: "", origine: "risque", responsableId: ID_REDAC_A, echeance: "2026-12-31", statut: "en_cours", resultat: "", efficace: "" };
+  const PAGE_ACTION = `/app/actions/${ACTION_A}`;
+  for (const qui of ["faux", "attente"]) await cas(qui, "actionModifierAction", modification, "session", { page: PAGE_ACTION });
+  for (const qui of ["lecteurA", "adminB", "superadmin"]) await cas(qui, "actionModifierAction", modification, "erreur.interdit", { page: PAGE_ACTION });
+  await cas("adminB", "actionModifierAction", { ...modification, organisationId: ORG_B }, "erreur.introuvable", { page: PAGE_ACTION, note: "action de A depuis B" });
+  await cas("verifA", "actionModifierAction", { ...modification, version: "7" }, "actions.modifiee", { page: PAGE_ACTION, note: "page périmée" });
+  await cas("verifA", "actionModifierAction", { ...modification, statut: "cloturee", efficace: "oui" }, "actions.statut_impossible", { page: PAGE_ACTION, note: "à faire → close" });
+  const etatAction = () => sql(`SELECT statut || '/' || version FROM "${SCHEMA_A}".actions WHERE id = '${ACTION_A}'`);
+  await cas("verifA", "actionModifierAction", modification, "succes", { page: PAGE_ACTION, effet: () => etatAction() === "en_cours/2" });
+
+  const objectif = { organisationId: ORG_A, documentId: DOCQ, elementId: "e1", sens: "max", seuil: "5", unite: "j" };
+  const objectifA = () => sql(`SELECT sens || '/' || seuil::float8 || '/' || unite FROM "${SCHEMA_A}".objectifs_indicateur WHERE document_id = '${DOCQ}'`);
+  for (const qui of ["faux", "attente"]) await cas(qui, "actionDefinirObjectif", objectif, "session");
+  for (const qui of ["lecteurA", "redacA", "adminB", "superadmin"]) await cas(qui, "actionDefinirObjectif", objectif, "erreur.interdit");
+  await cas("adminB", "actionDefinirObjectif", { ...objectif, organisationId: ORG_B }, "indicateurs.introuvable", { note: "indicateur de A depuis B" });
+  await cas("approA", "actionDefinirObjectif", { ...objectif, seuil: "cinq" }, "indicateurs.erreur.nombre", { note: "seuil illisible" });
+  await cas("approA", "actionDefinirObjectif", { ...objectif, elementId: "e9" }, "indicateurs.introuvable", { note: "indicateur absent" });
+  await cas("approA", "actionDefinirObjectif", objectif, "succes", { effet: () => objectifA() === "max/5/j" });
+  const retraitObjectif = { organisationId: ORG_A, documentId: DOCQ, elementId: "e1" };
+  for (const qui of ["faux", "attente"]) await cas(qui, "actionRetirerObjectif", retraitObjectif, "session");
+  for (const qui of ["lecteurA", "redacA", "adminB", "superadmin"]) await cas(qui, "actionRetirerObjectif", retraitObjectif, "erreur.interdit");
+  await cas("adminA", "actionRetirerObjectif", retraitObjectif, "succes", { effet: () => objectifA() === "" });
+
+  const mesure = { organisationId: ORG_A, documentId: DOCQ, elementId: "e1", date: "2026-01-15", valeur: "4,5", commentaire: "Essai" };
+  const nbMesuresA = () => Number(sql(`SELECT count(*) FROM "${SCHEMA_A}".mesures_indicateur`));
+  for (const qui of ["faux", "attente"]) await cas(qui, "actionEnregistrerMesure", mesure, "session");
+  for (const qui of ["lecteurA", "adminB", "superadmin"]) await cas(qui, "actionEnregistrerMesure", mesure, "erreur.interdit");
+  await cas("redacA", "actionEnregistrerMesure", { ...mesure, date: "2999-01-01" }, "indicateurs.erreur.date", { note: "date future" });
+  await cas("redacA", "actionEnregistrerMesure", mesure, "succes", { effet: () => nbMesuresA() === 1 });
+  const MESURE_A = sql(`SELECT id FROM "${SCHEMA_A}".mesures_indicateur`);
+  const suppressionMesure = { organisationId: ORG_A, mesureId: MESURE_A };
+  for (const qui of ["faux", "attente"]) await cas(qui, "actionSupprimerMesure", suppressionMesure, "session");
+  for (const qui of ["lecteurA", "adminB", "superadmin"]) await cas(qui, "actionSupprimerMesure", suppressionMesure, "erreur.interdit");
+  await cas("adminB", "actionSupprimerMesure", { ...suppressionMesure, organisationId: ORG_B }, "erreur.introuvable", { note: "mesure de A depuis B" });
+  await cas("verifA", "actionSupprimerMesure", suppressionMesure, "succes", { effet: () => nbMesuresA() === 0 });
 
   // ======================================================================================== actions : organisation
   // Paramètres (W2) : administrateur de l'organisation OUVERTE. Notifications : chacun les SIENNES.
