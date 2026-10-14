@@ -10,7 +10,7 @@ import * as cs from "../js/cartographie-store.js";
 import { empreinteDocument } from "../js/model.js";
 import { exempleProcedure } from "../js/exemple-procedure.js";
 
-const source = (chemin) => fs.readFileSync(new URL("../" + chemin, import.meta.url), "utf8");
+const source = (chemin) => fs.readFileSync(new URL("../" + chemin, import.meta.url), "utf8").replace(/\r\n/g, "\n");
 
 test("hors navigateur, l'éditeur est en local", () => {
   assert.equal(EN_LIGNE, false);

@@ -7,6 +7,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { POINTS, questionnement, constatsQuestionnement, sansDoublons } from "../js/questionnement.js";
 import { constatsDiagnostic } from "../js/diagnostic.js";
 import { bloquantsSynthese, manquants } from "../js/parcours.js";
@@ -20,7 +21,7 @@ import fr from "../js/locales/fr.js";
 import en from "../js/locales/en.js";
 import { PROPRE, SIGLE, CODES_PROCESSUS_PROPRES } from "./neutralite.mjs";
 
-const source = (chemin) => fs.readFileSync(new URL("../" + chemin, import.meta.url), "utf8");
+const source = (chemin) => fs.readFileSync(new URL("../" + chemin, import.meta.url), "utf8").replace(/\r\n/g, "\n");
 const sansCasse = [PROPRE, SIGLE, CODES_PROCESSUS_PROPRES].map((re) => new RegExp(re.source, "i"));
 const carto = { nomenclature: { controle: false, procedure: "PR" }, processus: [], flux: [], documents: [] };
 definirLangue("fr");
@@ -346,7 +347,7 @@ test("le questionnement ne change ni le document écrit ni la signature de valid
 
 // ---------- Neutralité de tout l'arbre publié ----------
 test("aucun nom d'entreprise, de lieu ou de code propre n'apparaît dans les fichiers de l'application (balayage de tout l'arbre)", () => {
-  const racine = new URL("../", import.meta.url).pathname;
+  const racine = fileURLToPath(new URL("../", import.meta.url));
   // Hors de l'application : archives des versions, copies de publication anciennes, notes de livraison anciennes (présentes seulement sur le poste de travail).
   const exclus = new Set(["versions", "vendor", "docs", "exercices", "node_modules", ".git", "tests", "fonts", "publication-github"]);
   const trouves = [];

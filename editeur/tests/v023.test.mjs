@@ -12,7 +12,7 @@ import { exempleInstruction } from "../js/exemple-it.js";
 import { construireDocx } from "../js/exportDocx.js";
 import { importerWord } from "../js/importWord.js";
 
-const source = (chemin) => fs.readFileSync(new URL("../" + chemin, import.meta.url), "utf8");
+const source = (chemin) => fs.readFileSync(new URL("../" + chemin, import.meta.url), "utf8").replace(/\r\n/g, "\n");
 const enBase64 = (texte) => Buffer.from(texte, "utf8").toString("base64");
 definirLangue("fr");
 
