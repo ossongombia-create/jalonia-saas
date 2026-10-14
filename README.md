@@ -11,9 +11,10 @@ des autres par PostgreSQL lui-même.
 |---|---|---|
 | 1 — Socle | Connexion, sessions suivies et révocables, superadmin (organisations, utilisateurs, sessions, journal d'audit, matrice des droits), espace organisation (membres, rôles, journal), isolation par schéma et rôle PostgreSQL, français / anglais | ✔ |
 | 2 — Documents Qualigramme | L'éditeur d'origine (cartographie N1 et fiches, procédures N2, instructions N3, logigramme, export et import Word, PDF, questionnement avec « sans objet », synthèse, modèles) en ligne : documents et cartographie enregistrés automatiquement dans l'espace de l'organisation, versions et conflits gérés, lecture seule selon le rôle, suppression tracée | ✔ |
-| 3 — Cycle de vie | Versions, vérification, approbation, publication, archivage, traçabilité | à venir |
-| 4 — Pilotage | Risques / opportunités / actions, objectifs et indicateurs | à venir |
-| 5 — Exploitation | Mode maintenance (planification, alertes par e-mail et fenêtre), e-mails (SMTP) | à venir |
+| 3 — Cycle de vie | Versions, vérification, approbation, publication, archivage, revues périodiques, notifications dans l'application et traçabilité | ✔ |
+| 4 — Pilotage | Risques / opportunités issus des documents, plan d'actions, objectifs et mesures d'indicateurs, tableaux de bord | ✔ |
+| 5 — Exploitation | Tâches quotidiennes (revues et rappels) | ✔ |
+| 5 — Exploitation (à compléter) | Mode maintenance, envoi d'e-mails (SMTP), sauvegardes hors serveur et restauration vérifiée, observabilité | à faire |
 
 ## Technique
 
@@ -77,7 +78,7 @@ superutilisateur PostgreSQL **de test** (variable `PG_TEST_ADMIN_URL`, par défa
 développement uniquement : ils refusent de s'exécuter sur le serveur de production.
 
 `npm run test:e2e` construit l'application, crée sa propre base de test (même `PG_TEST_ADMIN_URL`), démarre le
-serveur de production construit sur un port libre, joue les parcours navigateur (`tests/e2e/p1.cjs` à `p7.cjs`), les
+serveur de production construit sur un port libre, joue les parcours navigateur (`tests/e2e/p1.cjs` à `p13.cjs`), les
 sondes de la politique de sécurité du contenu et la matrice des autorisations (`tests/e2e/autorisations.cjs` : toutes
 les actions serveur appelées directement par huit profils), puis supprime tout. Prérequis : `psql`, Chromium de
 Playwright (`npx playwright install chromium`), et pour le décodage du code QR de la partie 7, `python3` avec
