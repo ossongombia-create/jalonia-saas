@@ -5,8 +5,8 @@
 # Écrit aussi les ANCRES des journaux (dernière empreinte de chaque chaîne, audit S6) : une copie gardée hors du
 # serveur permet de prouver plus tard qu'aucune ligne antérieure n'a été retouchée
 # (scripts/verifier-journal.ts --ancres fichier).
-# CONSEIL : copier régulièrement /var/backups/jalonia HORS du VPS (une sauvegarde sur la même machine
-# ne protège pas contre la perte de la machine).
+# Si /etc/jalonia/sauvegardes.env existe, chiffre et envoie aussi les sauvegardes vers un dépôt Restic S3
+# (Cloudflare R2, Vultr Object Storage ou tout fournisseur compatible). Sans configuration, garde le mode local.
 set -eu
 
 DOSSIER=${JALONIA_SAUVEGARDES:-/var/backups/jalonia}
@@ -14,6 +14,13 @@ BASE=${JALONIA_BASE:-jalonia}
 JOUR=$(date +%F)
 umask 077
 mkdir -p "$DOSSIER"
+
+if [ -r /etc/jalonia/sauvegardes.env ]; then
+  set -a
+  # Fichier root-only, créé manuellement depuis les instructions d'installation.
+  . /etc/jalonia/sauvegardes.env
+  set +a
+fi
 
 # (Les fichiers sont écrits par root, lisibles par lui seul : c'est voulu — shellcheck SC2024.)
 # shellcheck disable=SC2024
@@ -33,3 +40,15 @@ requete() { sudo -u postgres psql -d "$BASE" -v ON_ERROR_STOP=1 -Atc "$1"; }
     requete "SELECT '$s|' || chaine_rang || '|' || chaine_empreinte FROM \"$s\".journal ORDER BY chaine_rang DESC LIMIT 1"
   done
 } > "$DOSSIER/ancres-$JOUR.txt"
+
+# Une erreur d'envoi fait échouer la tâche cron : la copie locale existe toujours, mais l'incident est visible.
+if [ -n "${RESTIC_REPOSITORY:-}" ]; then
+  : "${RESTIC_PASSWORD:?RESTIC_PASSWORD absent de /etc/jalonia/sauvegardes.env}"
+  : "${AWS_ACCESS_KEY_ID:?AWS_ACCESS_KEY_ID absent de /etc/jalonia/sauvegardes.env}"
+  : "${AWS_SECRET_ACCESS_KEY:?AWS_SECRET_ACCESS_KEY absent de /etc/jalonia/sauvegardes.env}"
+  restic backup "$DOSSIER" --tag jalonia --host "$(hostname -f)"
+  restic forget --tag jalonia --keep-daily 14 --keep-weekly 8 --keep-monthly 12 --prune
+  restic check
+else
+  echo "AVERTISSEMENT : stockage hors VPS non configuré; sauvegarde locale uniquement." >&2
+fi

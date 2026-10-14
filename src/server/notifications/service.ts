@@ -51,6 +51,8 @@ export interface MembreDestinataire {
   id: string;
   nom: string;
   roles: RoleOrganisation[];
+  email?: string;
+  langue?: "fr" | "en";
 }
 
 const MOTIF_MAX = 300;
@@ -62,12 +64,38 @@ const court = (v: string | undefined, max: number) => (v === undefined ? undefin
  * l'organisation, dans la même transaction).
  */
 export async function membresDestinataires(client: PoolClient, organisationId: string): Promise<MembreDestinataire[]> {
-  const r = await client.query<{ id: string; nom: string; roles: RoleOrganisation[] }>(
-    `SELECT u.id, u.nom, a.roles FROM platform.adhesions a JOIN platform.utilisateurs u ON u.id = a.utilisateur_id
+  const r = await client.query<{ id: string; nom: string; email: string; langue: "fr" | "en"; roles: RoleOrganisation[] }>(
+    `SELECT u.id, u.nom, u.email, u.langue, a.roles FROM platform.adhesions a JOIN platform.utilisateurs u ON u.id = a.utilisateur_id
       WHERE a.organisation_id = $1 AND u.statut = 'actif' ORDER BY u.id`,
     [organisationId],
   );
+  return r.rows.map((m) => ({ ...m, id: m.id }));
+}
+
+export interface CourrielNotification {
+  id: string;
+  destinataire: string;
+  nature: NatureNotification;
+  details: DetailsNotification;
+}
+
+/** Notifications récentes à livrer, relues hors de la transaction de création. */
+export async function notificationsEnAttenteCourriel(client: PoolClient): Promise<CourrielNotification[]> {
+  const r = await client.query<{ id: string; destinataire: string; nature: NatureNotification; details: DetailsNotification }>(
+    `SELECT id::text, destinataire::text, nature, details FROM notifications
+      WHERE email_envoyee_le IS NULL AND email_tentatives < 5 AND creee_le >= now() - interval '7 days'
+      ORDER BY id LIMIT 100`,
+  );
   return r.rows;
+}
+
+export async function noterCourrielNotification(client: PoolClient, id: string, envoye: boolean): Promise<void> {
+  await client.query(
+    `UPDATE notifications SET email_tentatives = email_tentatives + 1,
+            email_envoyee_le = CASE WHEN $2 THEN now() ELSE email_envoyee_le END
+      WHERE id = $1 AND email_envoyee_le IS NULL`,
+    [id, envoye],
+  );
 }
 
 /** Les membres qui ont l'un des rôles, sauf les personnes exclues (sans doublon). */

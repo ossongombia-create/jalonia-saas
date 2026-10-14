@@ -11,7 +11,7 @@ import type { EtatAction } from "@/lib/etat-action";
 import { poolApplication } from "@/server/db/pools";
 import { accepterAvecCompte, accepterAvecNouveauCompte } from "@/server/invitations/service";
 import { ErreurMetier } from "@/server/erreurs";
-import { exigerContexte, lireContexte, lireLangue } from "@/server/web/contexte";
+import { estMaintenanceActive, exigerContexte, lireContexte, lireLangue } from "@/server/web/contexte";
 import { poserCookieOrganisation } from "@/server/web/cookies";
 import { agentDepuisEntetes, ipDepuisEntetes } from "@/server/web/reseau";
 import { champ, executer, valider } from "@/server/web/actions";
@@ -22,6 +22,7 @@ export async function actionCreerCompteInvitation(_etat: EtatAction, formulaire:
   const etat = await executer(langue, async () => {
     // Quelqu'un est déjà connecté dans ce navigateur : il doit d'abord se déconnecter.
     if (await lireContexte()) throw new ErreurMetier("invitation.deja_connecte");
+    if (await estMaintenanceActive()) throw new ErreurMetier("maintenance.bloquee");
     const saisie = valider(schemaCompteInvitation, {
       jeton: champ(formulaire, "jeton"),
       nom: champ(formulaire, "nom"),

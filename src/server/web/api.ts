@@ -6,7 +6,7 @@ import { traduireMessage, type Langue } from "@/lib/i18n";
 import { aLeDroit, type Droit } from "@/lib/rbac";
 import { ConflitVersion } from "../documents/service";
 import { ErreurMetier } from "../erreurs";
-import { lireContexte, type ContexteOrganisation } from "./contexte";
+import { estMaintenanceActive, lireContexte, type ContexteOrganisation } from "./contexte";
 import { reponseJson } from "./requetes-json";
 
 export type ContexteApi = { ok: true; ctx: ContexteOrganisation } | { ok: false; reponse: Response };
@@ -21,6 +21,9 @@ export async function contexteApi(droit: Droit): Promise<ContexteApi> {
   // « langue » : l'éditeur affiche son explication dans la langue de la personne.
   const langue = ctx.langue;
   if (ctx.utilisateur.doitChangerMdp) return { ok: false, reponse: reponseJson({ erreur: "mot_de_passe", langue }, 403) };
+  if (!ctx.utilisateur.estSuperadmin && await estMaintenanceActive()) {
+    return { ok: false, reponse: reponseJson({ erreur: "maintenance", langue, message: traduireMessage(langue, "maintenance.bloquee") }, 503) };
+  }
   if (!ctx.organisation) return { ok: false, reponse: reponseJson({ erreur: "organisation", langue }, 403) };
   if (!aLeDroit(ctx.organisation.roles, droit)) {
     return { ok: false, reponse: reponseJson({ erreur: "interdit", langue, message: traduireMessage(langue, "erreur.interdit") }, 403) };

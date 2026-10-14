@@ -9,10 +9,9 @@ connectée en **root**. Si vous êtes connecté avec un autre utilisateur, tapez
 > pas le « collage encadré ». Tapez **au clavier** `bind 'set enable-bracketed-paste off'`, puis, pour que
 > ce soit permanent : `echo 'set enable-bracketed-paste off' >> ~/.inputrc`.
 
-> Aucune valeur secrète n'est à recopier à la main : les mots de passe de la base et le secret des sessions
-> sont générés sur le serveur et ne quittent jamais les fichiers `/etc/jalonia/jalonia.env` (configuration
-> de l'application, lue par systemd) et `/etc/jalonia/proprietaire.env` (mot de passe du rôle propriétaire
-> de la base, lu seulement pour les migrations).
+> Les secrets de la base et des sessions sont générés sur le serveur et restent dans les fichiers root-only.
+> Les identifiants fournis par R2 et Brevo, ainsi que la phrase secrète Restic, sont à saisir uniquement dans leurs
+> fichiers root-only respectifs (`/etc/jalonia/sauvegardes.env` et `/etc/jalonia/jalonia.env`) et à garder hors Git.
 
 > **Jalonia est déjà installé et en service ?** Ne refaites pas les étapes ci-dessous : appliquez une fois les
 > sections [Durcissement d'une installation existante](#durcissement-dune-installation-existante-une-fois),
@@ -47,7 +46,7 @@ Puis, sur le serveur :
 
 ```bash
 apt update && apt -y full-upgrade
-apt install -y git curl ca-certificates gnupg openssl ufw fail2ban postgresql caddy
+apt install -y git curl ca-certificates gnupg openssl ufw fail2ban postgresql caddy restic
 psql --version
 ```
 
@@ -255,15 +254,31 @@ Authenticator, Microsoft Authenticator, FreeOTP…), puis 10 codes de secours à
 ## Étape 13 — Sauvegarde quotidienne
 
 ```bash
-install -m 755 /opt/jalonia/depot/deploy/sauvegarde.sh /etc/cron.daily/jalonia-sauvegarde
-/etc/cron.daily/jalonia-sauvegarde && ls -l /var/backups/jalonia
+apt install -y restic
+install -m 600 /dev/null /etc/jalonia/sauvegardes.env
+nano /etc/jalonia/sauvegardes.env
 ```
 
-Une sauvegarde par jour, 14 jours conservés, dans `/var/backups/jalonia`, avec chaque jour un petit fichier
-`ancres-AAAA-MM-JJ.txt` : la dernière empreinte de chaque journal d'audit. Pensez à copier régulièrement les
-sauvegardes **et les fichiers d'ancres hors du VPS** (par exemple en vous les envoyant par e-mail) : une ancre
-gardée ailleurs prouve plus tard qu'aucune ligne antérieure du journal n'a été retouchée, même par quelqu'un
-qui aurait tous les droits sur la base.
+Créez au préalable un bucket R2 réservé à Jalonia et un jeton S3 limité à **Object Read & Write sur ce seul bucket**.
+Renseignez le fichier avec le modèle `deploy/sauvegardes.env.example` (endpoint `https://<ACCOUNT_ID>.r2.cloudflarestorage.com`,
+bucket et identifiants R2). Générez `RESTIC_PASSWORD` avec un gestionnaire de mots de passe et gardez-en une copie
+hors du VPS : elle est indispensable au déchiffrement et ne peut pas être récupérée depuis R2. Ne transmettez pas les
+clés R2 ni cette phrase secrète dans Git ou dans une conversation.
+
+Initialisez le dépôt chiffré une seule fois, puis installez et lancez la sauvegarde :
+
+```bash
+set -a; . /etc/jalonia/sauvegardes.env; set +a
+restic init
+install -m 755 /opt/jalonia/depot/deploy/sauvegarde.sh /etc/cron.daily/jalonia-sauvegarde
+/etc/cron.daily/jalonia-sauvegarde && ls -l /var/backups/jalonia
+restic snapshots --tag jalonia
+restic check
+```
+
+Une copie locale quotidienne (14 jours) est conservée sous `/var/backups/jalonia`; Restic chiffre et copie ce dossier
+vers R2, garde 14 sauvegardes quotidiennes, 8 hebdomadaires et 12 mensuelles, puis vérifie le dépôt. Le fichier
+`ancres-AAAA-MM-JJ.txt` est inclus pour contrôler les journaux d'audit après restauration.
 
 ## Étape 14 — Tâches quotidiennes (rappels de revue)
 
@@ -280,6 +295,61 @@ systemctl start jalonia-taches.service && journalctl -u jalonia-taches -n 5 --no
 
 Attendu : une ligne `{"evenement":"taches_quotidiennes",…,"erreurs":[]}`. `systemctl list-timers jalonia-taches`
 indique le prochain passage.
+
+## Étape 15 — Courriels transactionnels
+
+Dans Brevo, vérifiez un expéditeur sur votre domaine puis créez/récupérez une **clé SMTP** (pas la clé API). Sur le
+VPS, ajoutez ces valeurs à `/etc/jalonia/jalonia.env` avec `sudoedit` :
+
+```ini
+SMTP_HOTE=smtp-relay.brevo.com
+SMTP_PORT=587
+SMTP_UTILISATEUR=<identifiant SMTP affiché par Brevo>
+SMTP_MOT_DE_PASSE=<clé SMTP Brevo>
+SMTP_EXPEDITEUR=<adresse expéditeur vérifiée>
+```
+
+Ne copiez pas la clé SMTP dans Git ni dans une conversation. Vérifiez la connexion TLS et
+l'authentification sans envoyer d'e-mail, puis activez le minuteur :
+
+```bash
+cd /opt/jalonia/courant
+npx tsx --env-file=/etc/jalonia/jalonia.env scripts/verifier-smtp.ts
+systemctl restart jalonia
+systemctl restart jalonia-taches.service
+install -m 644 /opt/jalonia/depot/deploy/jalonia-courriels.service /etc/systemd/system/jalonia-courriels.service
+install -m 644 /opt/jalonia/depot/deploy/jalonia-courriels.timer /etc/systemd/system/jalonia-courriels.timer
+systemctl daemon-reload && systemctl enable --now jalonia-courriels.timer
+systemctl start jalonia-courriels.service
+journalctl -u jalonia-courriels -n 5 --no-pager
+```
+
+Les invitations sont envoyées après leur création. Les notifications d'approbation, rappels et escalades sont mises
+en file dans la même transaction que leur événement, puis envoyées par le service isolé dans les cinq minutes.
+Sans SMTP configuré, les notifications de l'application continuent de fonctionner et aucun courriel n'est tenté.
+
+## Étape 16 — Vérifier une restauration
+
+Ce contrôle restaure la sauvegarde R2 la plus récente dans une base temporaire distincte, puis compare les chaînes
+des journaux d'audit aux ancres de la sauvegarde. Il ne modifie pas la base Jalonia en service.
+
+```bash
+install -m 755 /opt/jalonia/depot/deploy/verifier-restauration.sh /usr/local/sbin/jalonia-verifier-restauration
+jalonia-verifier-restauration
+```
+
+Le contrôle doit afficher « Restauration temporaire et contrôle des journaux réussis ». Exécutez-le après la
+configuration R2, puis périodiquement (par exemple chaque mois).
+
+## Étape 17 — Surveillance
+
+- Journaux applicatifs : `journalctl -u jalonia -f`.
+- Résultat des rappels : `journalctl -u jalonia-taches -n 20 --no-pager`.
+- Envoi SMTP : `journalctl -u jalonia-courriels -n 20 --no-pager`.
+- Prochaines tâches : `systemctl list-timers 'jalonia-*'`.
+- Santé de l'application et de PostgreSQL : configurez un moniteur externe pour appeler toutes les cinq minutes
+  `https://jalonia.mosa-apps.com/api/sante`; il doit recevoir HTTP 200 et `{"etat":"ok"}`. Une erreur HTTP 503,
+  un délai dépassé ou l'arrêt d'un minuteur doit déclencher une alerte envoyée à l'administrateur.
 
 ---
 

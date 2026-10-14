@@ -18,6 +18,7 @@ import { revoquerSession } from "@/server/consultation/service";
 import { reinitialiserSecondFacteur } from "@/server/auth/second-facteur";
 import { exigerSuperadmin } from "@/server/web/contexte";
 import { champ, executer, valider } from "@/server/web/actions";
+import { envoyerInvitationCourriel } from "@/server/notifications/courriel";
 
 /**
  * Crée une organisation et invite son premier administrateur. Le lien d'invitation est affiché UNE fois (seule son
@@ -34,6 +35,11 @@ export async function actionCreerOrganisation(_etat: EtatAction, formulaire: For
       adminNom: champ(formulaire, "adminNom"),
     });
     const creee = await creerOrganisation(poolApplication(), { nom: saisie.nom, slug: saisie.slug, admin: { email: saisie.adminEmail, nom: saisie.adminNom } }, ctx.acteur);
+    try {
+      await envoyerInvitationCourriel({ a: saisie.adminEmail, nom: saisie.adminNom, organisation: saisie.nom, lien: cheminInvitation(creee.invitation.jeton), heures: DUREE_INVITATION_HEURES });
+    } catch {
+      console.error(JSON.stringify({ evenement: "courriel_invitation_echec", organisationId: creee.organisationId }));
+    }
     return { cle: "orgs.creee_invitation", variables: { heures: DUREE_INVITATION_HEURES }, lien: cheminInvitation(creee.invitation.jeton) };
   });
 }

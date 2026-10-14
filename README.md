@@ -13,8 +13,9 @@ des autres par PostgreSQL lui-même.
 | 2 — Documents Qualigramme | L'éditeur d'origine (cartographie N1 et fiches, procédures N2, instructions N3, logigramme, export et import Word, PDF, questionnement avec « sans objet », synthèse, modèles) en ligne : documents et cartographie enregistrés automatiquement dans l'espace de l'organisation, versions et conflits gérés, lecture seule selon le rôle, suppression tracée | ✔ |
 | 3 — Cycle de vie | Versions, vérification, approbation, publication, archivage, revues périodiques, notifications dans l'application et traçabilité | ✔ |
 | 4 — Pilotage | Risques / opportunités issus des documents, plan d'actions, objectifs et mesures d'indicateurs, tableaux de bord | ✔ |
-| 5 — Exploitation | Tâches quotidiennes (revues et rappels) | ✔ |
-| 5 — Exploitation (à compléter) | Mode maintenance, envoi d'e-mails (SMTP), sauvegardes hors serveur et restauration vérifiée, observabilité | à faire |
+| 5 — Exploitation | Tâches quotidiennes, mode maintenance, invitations et notifications SMTP, sauvegardes chiffrées R2, vérification de restauration, santé HTTP et journaux systemd | code prêt; configuration du VPS à terminer |
+
+Pour terminer la mise en service de l'incrément 5 : vérifier la clé d'hôte SSH du VPS, configurer le bucket R2 et ses identifiants limités, configurer la clé SMTP Brevo et l'expéditeur vérifié, lancer `jalonia-verifier-restauration`, puis brancher un moniteur externe sur `/api/sante`. Voir les étapes 13 à 17 de `deploy/INSTALL-VPS.md`. Ne jamais ajouter de secrets aux fichiers suivis par Git.
 
 ## Technique
 

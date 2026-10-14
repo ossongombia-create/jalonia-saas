@@ -25,7 +25,7 @@ export const DROITS = {
   "plateforme.sessions.gerer": { roles: [ROLE_SUPERADMIN], etat: "actif" },
   "plateforme.journal.lire": { roles: [ROLE_SUPERADMIN], etat: "actif" },
   "plateforme.droits.lire": { roles: [ROLE_SUPERADMIN], etat: "actif" },
-  "plateforme.maintenance.gerer": { roles: [ROLE_SUPERADMIN], etat: "prevu" },
+  "plateforme.maintenance.gerer": { roles: [ROLE_SUPERADMIN], etat: "actif" },
   // ----- Organisation -----
   "organisation.membres.gerer": { roles: ["ADMIN_ORGANISATION"], etat: "actif" },
   "organisation.journal.lire": { roles: ["ADMIN_ORGANISATION"], etat: "actif" },

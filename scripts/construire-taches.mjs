@@ -10,6 +10,7 @@ import { fileURLToPath } from "node:url";
 const RACINE = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const AUTONOME = path.join(RACINE, ".next/standalone");
 const SORTIE = path.join(AUTONOME, "taches/quotidiennes.cjs");
+const SORTIE_COURRIELS = path.join(AUTONOME, "taches/courriels-en-attente.cjs");
 
 if (!fs.existsSync(path.join(AUTONOME, "server.js"))) {
   console.error("✘ .next/standalone/server.js absent : construire d'abord l'application (next build).");
@@ -34,4 +35,18 @@ await build({
   legalComments: "none",
   logLevel: "warning",
 });
+await build({
+  entryPoints: [path.join(RACINE, "scripts/courriels-en-attente.ts")],
+  outfile: SORTIE_COURRIELS,
+  bundle: true,
+  platform: "node",
+  target: "node22",
+  format: "cjs",
+  external: ["pg"],
+  alias: { "server-only": path.join(RACINE, "tests/stubs/server-only.ts") },
+  tsconfig: path.join(RACINE, "tsconfig.json"),
+  legalComments: "none",
+  logLevel: "warning",
+});
 console.log(`✔ tâches quotidiennes : ${path.relative(RACINE, SORTIE)}`);
+console.log(`✔ file de courriels : ${path.relative(RACINE, SORTIE_COURRIELS)}`);

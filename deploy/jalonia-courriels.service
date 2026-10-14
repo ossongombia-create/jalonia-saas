@@ -1,0 +1,35 @@
+[Unit]
+Description=Jalonia (envoi des courriels en attente)
+After=network-online.target postgresql.service
+Wants=postgresql.service
+
+[Service]
+Type=oneshot
+User=jalonia-run
+Group=jalonia-run
+WorkingDirectory=/opt/jalonia/courant
+EnvironmentFile=/etc/jalonia/jalonia.env
+Environment=NODE_ENV=production
+Environment=NODE_OPTIONS=--max-old-space-size=128
+ExecStart=/usr/bin/node /opt/jalonia/courant/taches/courriels-en-attente.cjs
+TimeoutStartSec=10min
+MemoryMax=250M
+NoNewPrivileges=true
+CapabilityBoundingSet=
+UMask=0077
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+LockPersonality=true
+SystemCallArchitectures=native

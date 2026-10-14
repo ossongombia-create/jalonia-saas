@@ -2,6 +2,7 @@
 // Le lien est le seul secret : la page ne montre rien tant qu'il n'est pas valable (même réponse que le lien
 // soit inconnu, déjà utilisé, annulé ou expiré).
 import type { Metadata } from "next";
+import { redirect } from "next/navigation";
 import type { ReactNode } from "react";
 import Link from "next/link";
 import { actionAccepterInvitation, actionCreerCompteInvitation } from "@/actions/invitations";
@@ -14,7 +15,7 @@ import { traducteur } from "@/lib/i18n";
 import { config } from "@/server/config";
 import { poolApplication } from "@/server/db/pools";
 import { lireInvitation } from "@/server/invitations/service";
-import { lireContexte, lireLangue } from "@/server/web/contexte";
+import { estMaintenanceActive, lireContexte, lireLangue } from "@/server/web/contexte";
 
 export async function generateMetadata(): Promise<Metadata> {
   // Le lien contient le jeton : il ne doit pas être transmis à un autre site (en-tête Referer).
@@ -22,6 +23,7 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 export default async function PageInvitation({ params }: { params: Promise<{ jeton: string }> }) {
+  if (await estMaintenanceActive()) redirect("/maintenance");
   const { jeton } = await params;
   const ctx = await lireContexte();
   const langue = await lireLangue();

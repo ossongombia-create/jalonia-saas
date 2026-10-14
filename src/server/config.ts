@@ -4,6 +4,7 @@ import { z } from "zod";
 
 const schema = z.object({
   DATABASE_URL: z.string().min(1, "DATABASE_URL manquante"),
+  AUTH_URL: z.preprocess((v) => v === "" ? undefined : v, z.string().url().optional()),
   // (DATABASE_URL_PROPRIETAIRE n'est PAS lue par l'application : seulement par scripts/migrer.ts et
   // scripts/creer-superadmin.ts, depuis un fichier d'environnement réservé au déploiement.)
   SESSION_INACTIVITE_MINUTES: z.coerce.number().int().min(5).max(24 * 60).default(120),
@@ -17,6 +18,15 @@ const schema = z.object({
     .string()
     .optional()
     .refine((v) => v === undefined || v.trim() === "" || Buffer.from(v.trim(), "base64").length === 32, "CLE_SECOND_FACTEUR doit faire 32 octets en base64"),
+  SMTP_HOTE: z.preprocess((v) => v === "" ? undefined : v, z.string().trim().optional()),
+  SMTP_PORT: z.coerce.number().int().min(1).max(65535).default(587),
+  SMTP_UTILISATEUR: z.preprocess((v) => v === "" ? undefined : v, z.string().trim().optional()),
+  SMTP_MOT_DE_PASSE: z.preprocess((v) => v === "" ? undefined : v, z.string().optional()),
+  SMTP_EXPEDITEUR: z.preprocess((v) => v === "" ? undefined : v, z.string().trim().email().optional()),
+}).superRefine((c, ctx) => {
+  const smtp = [c.SMTP_HOTE, c.SMTP_UTILISATEUR, c.SMTP_MOT_DE_PASSE, c.SMTP_EXPEDITEUR].filter(Boolean).length;
+  if (smtp !== 0 && smtp !== 4) ctx.addIssue({ code: "custom", message: "SMTP_HOTE, SMTP_UTILISATEUR, SMTP_MOT_DE_PASSE et SMTP_EXPEDITEUR doivent être configurés ensemble" });
+  if (smtp === 4 && !c.AUTH_URL) ctx.addIssue({ code: "custom", message: "AUTH_URL est requise pour envoyer des liens Jalonia par courriel" });
 });
 
 function fuseauValide(fuseau: string): boolean {

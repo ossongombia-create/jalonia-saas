@@ -1,15 +1,4 @@
-// Tâches quotidiennes (audit W2, Q1) : rappels et escalades des revues périodiques et des actions, ménage des
-// notifications lues.
-// Lancées chaque jour par un minuteur systemd (deploy/jalonia-taches.timer → taches/quotidiennes.mjs, construit à
-// partir de scripts/taches-quotidiennes.ts), avec le rôle de l'APPLICATION (aucun droit de plus que le service web).
-//
-// Pour chaque organisation ACTIVE, dans sa propre transaction (une organisation en erreur n'empêche pas les autres) :
-//   - document publié dont la revue arrive à échéance (dans les `rappelJours` jours) → approbateurs ;
-//   - revue en retard → approbateurs ; en retard depuis `escaladeJours` jours ou plus → administrateurs aussi.
-//   (Sans approbateur actif dans l'organisation, ce sont les administrateurs qui sont prévenus.)
-// Chaque notification n'est créée qu'une fois (clé : document, échéance, stade) : relancer la tâche le même jour, ou
-// le lendemain, ne crée aucun doublon.
-// Actions ouvertes (qse/actions.ts) : rappel au responsable avant l'échéance, retard, escalade aux administrateurs.
+// Rappels et escalades des revues périodiques et des actions, ménage des notifications lues.
 import type { Pool } from "pg";
 import { ecartJours, jourLocal } from "@/lib/dates";
 import { dansOrganisation, enTransaction } from "../db/transactions";
@@ -46,7 +35,6 @@ export async function executerTachesQuotidiennes(pool: Pool, options: { fuseau: 
           const admins = ayantRole(membres, ["ADMIN_ORGANISATION"]);
           const pourRevue = approbateurs.length > 0 ? approbateurs : admins;
           const liste: NouvelleNotification[] = [];
-
           const docs = await client.query<{ id: string; titre: string; reference: string; etat: string; revue_le: Date | null }>(
             "SELECT id, titre, reference, etat, revue_le FROM documents WHERE etat = 'publie' AND supprime_le IS NULL AND revue_le IS NOT NULL ORDER BY id",
           );
@@ -63,7 +51,6 @@ export async function executerTachesQuotidiennes(pool: Pool, options: { fuseau: 
               if (revue.situation === "escalade") vers(admins, "revue_escalade", "escalade", { jours: ecartJours(revue.echeance, aujourdhui) });
             }
           }
-
           liste.push(...(await echeancesActions(client, membres, p, aujourdhui)));
           const creees = await notifier(client, liste);
           const purgees = await purgerNotificationsLues(client, CONSERVATION_NOTIFICATIONS_LUES_JOURS);

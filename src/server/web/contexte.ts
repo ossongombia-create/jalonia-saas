@@ -46,6 +46,13 @@ export function reglesSession() {
   return { inactiviteMinutes: c.SESSION_INACTIVITE_MINUTES, dureeMaxHeures: c.SESSION_DUREE_HEURES };
 }
 
+export const estMaintenanceActive = cache(async (): Promise<boolean> =>
+  enTransaction(poolApplication(), async (client) => {
+    const r = await client.query<{ actif: boolean }>("SELECT actif FROM platform.maintenance WHERE singleton");
+    return r.rows[0]?.actif ?? false;
+  }),
+);
+
 async function lireAdhesions(utilisateurId: string): Promise<AdhesionActive[]> {
   return enTransaction(poolApplication(), async (client) => {
     const r = await client.query<{ id: string; nom: string; slug: string; statut: "active" | "suspendue"; schema_name: string; role_name: string; roles: RoleOrganisation[] }>(
@@ -114,6 +121,7 @@ export async function exigerContexte(options: { permettreMdpProvisoire?: boolean
   const ctx = await lireContexte();
   if (!ctx) redirect("/connexion");
   if (ctx.utilisateur.doitChangerMdp && !options.permettreMdpProvisoire) redirect("/compte/mot-de-passe");
+  if (!ctx.utilisateur.estSuperadmin && await estMaintenanceActive()) redirect("/maintenance");
   return ctx;
 }
 

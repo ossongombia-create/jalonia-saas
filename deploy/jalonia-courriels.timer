@@ -1,0 +1,12 @@
+[Unit]
+Description=Traiter périodiquement la file de courriels Jalonia
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=5min
+RandomizedDelaySec=30s
+Persistent=true
+Unit=jalonia-courriels.service
+
+[Install]
+WantedBy=timers.target

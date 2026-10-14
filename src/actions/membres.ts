@@ -14,19 +14,20 @@ import { annulerInvitation, cheminInvitation, DUREE_INVITATION_HEURES, inviter }
 import { ErreurMetier } from "@/server/erreurs";
 import { exigerContexte, type Contexte } from "@/server/web/contexte";
 import { champ, executer, valider } from "@/server/web/actions";
+import { envoyerInvitationCourriel } from "@/server/notifications/courriel";
 
-async function autoriser(ctx: Contexte, formulaire: FormData): Promise<OrganisationCible> {
+async function autoriser(ctx: Contexte, formulaire: FormData): Promise<OrganisationCible & { nom: string }> {
   const organisationId = valider(identifiant, champ(formulaire, "organisationId"));
   if (ctx.utilisateur.estSuperadmin) {
     const org = await lireOrganisation(poolApplication(), organisationId);
     if (!org) throw new ErreurMetier("erreur.introuvable");
-    return { id: org.id, schemaName: org.schemaName, roleName: org.roleName };
+    return { id: org.id, nom: org.nom, schemaName: org.schemaName, roleName: org.roleName };
   }
   const ouverte = ctx.organisation;
   if (!ouverte || ouverte.id !== organisationId || !aLeDroit(ouverte.roles, "organisation.membres.gerer")) {
     throw new ErreurMetier("erreur.interdit");
   }
-  return { id: ouverte.id, schemaName: ouverte.schemaName, roleName: ouverte.roleName };
+  return { id: ouverte.id, nom: ouverte.nom, schemaName: ouverte.schemaName, roleName: ouverte.roleName };
 }
 
 function rolesCoches(formulaire: FormData): unknown[] {
@@ -40,6 +41,11 @@ export async function actionInviterMembre(_etat: EtatAction, formulaire: FormDat
     const org = await autoriser(ctx, formulaire);
     const saisie = valider(schemaInvitation, { email: champ(formulaire, "email"), nom: champ(formulaire, "nom"), roles: rolesCoches(formulaire) });
     const invitation = await inviter(poolApplication(), org, saisie, ctx.acteur);
+    try {
+      await envoyerInvitationCourriel({ a: saisie.email, nom: saisie.nom, organisation: org.nom, lien: cheminInvitation(invitation.jeton), heures: DUREE_INVITATION_HEURES });
+    } catch {
+      console.error(JSON.stringify({ evenement: "courriel_invitation_echec", organisationId: org.id }));
+    }
     return { cle: "invitation.creee", variables: { heures: DUREE_INVITATION_HEURES }, lien: cheminInvitation(invitation.jeton) };
   });
 }

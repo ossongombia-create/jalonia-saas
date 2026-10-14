@@ -9,7 +9,7 @@ import { nouveauNonce, politiquePages, POLITIQUE_EDITEUR } from "./lib/csp";
 
 const COOKIE_SESSION = /^(__Secure-)?authjs\.session-token(\.\d+)?$/;
 // Pages accessibles sans session : la connexion, et les invitations (/invitation/<jeton>, voir plus bas).
-const PAGES_PUBLIQUES = new Set(["/connexion"]);
+const PAGES_PUBLIQUES = new Set(["/connexion", "/maintenance"]);
 const CSP = "Content-Security-Policy";
 
 export function proxy(requete: NextRequest) {

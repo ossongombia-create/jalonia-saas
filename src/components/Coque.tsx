@@ -77,5 +77,6 @@ export function liensPlateforme(ctx: Contexte): LienCoque[] {
     { href: "/plateforme/sessions", libelle: t("nav.sessions") },
     { href: "/plateforme/journal", libelle: t("nav.journal") },
     { href: "/plateforme/droits", libelle: t("nav.droits") },
+    { href: "/plateforme/maintenance", libelle: t("nav.maintenance") },
   ];
 }
