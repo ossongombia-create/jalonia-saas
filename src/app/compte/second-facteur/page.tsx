@@ -44,7 +44,7 @@ export default async function PageMonSecondFacteur() {
           {champCode}
         </FormulaireAction>
         {etat.obligatoire ? (
-          <p className="discret">{t("mfa.obligatoire_superadmin")}</p>
+          <p className="discret">{t(ctx.utilisateur.estSuperadmin ? "mfa.obligatoire_superadmin" : "mfa.obligatoire_approbateur")}</p>
         ) : (
           <>
             <h2>{t("mfa.desactiver_titre")}</h2>

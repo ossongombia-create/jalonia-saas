@@ -50,7 +50,7 @@ export default async function AccueilOrganisation() {
       </>
     );
   }
-  const tb = await lireTableauDeBord(poolApplication(), organisation, { id: ctx.acteur.id, roles: organisation.roles }, fuseau, jourLocal(new Date(), fuseau));
+  const tb = await lireTableauDeBord(poolApplication(), organisation, { id: ctx.acteur.id, roles: organisation.roles, mode: organisation.modeValidation }, fuseau, jourLocal(new Date(), fuseau));
   const voir = t("tableau.voir");
 
   return (

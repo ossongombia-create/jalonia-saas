@@ -9,7 +9,8 @@ import { jourLocal } from "@/lib/dates";
 import { formaterDate, formaterJour } from "@/lib/format";
 import { identifiant } from "@/lib/validation";
 import { poolApplication } from "@/server/db/pools";
-import { ETATS, LISTE_TRANSITIONS, MOTIF_MAX, TRANSITIONS, lireCircuit, refusTransition, transitionsPossibles } from "@/server/documents/circuit";
+import { ETATS, LISTE_TRANSITIONS, MOTIF_MAX, TRANSITIONS, lireCircuit, refusTransition, transitionsPossibles, type ContexteDecision } from "@/server/documents/circuit";
+import { lireEtatSecondFacteur } from "@/server/auth/second-facteur";
 import { lireParametresOrganisation, revueDe } from "@/server/documents/revues";
 import { exigerOrganisation } from "@/server/web/contexte";
 import { titrePage } from "@/server/web/metadonnees";
@@ -30,11 +31,15 @@ export default async function PageValidation({ params, searchParams }: {
   if (!circuit) notFound();
   const revue = revueDe(circuit, await lireParametresOrganisation(poolApplication(), organisation), fuseau, jourLocal(new Date(), fuseau));
 
-  const possibles = transitionsPossibles(circuit.etat, organisation.roles, acteur.id, circuit.intervenants);
-  // Décisions que le rôle permettrait mais que la séparation des tâches réserve à une autre personne : on dit pourquoi.
+  // Mode de validation de l'organisation et second facteur de la personne (le serveur les relit à chaque décision).
+  const decision: ContexteDecision = { mode: organisation.modeValidation, secondFacteurActif: (await lireEtatSecondFacteur(poolApplication(), acteur.id)).actif };
+  const possibles = transitionsPossibles(circuit.etat, organisation.roles, acteur.id, circuit.intervenants, decision);
+  // Décisions que le rôle permettrait mais que la séparation des tâches réserve à une autre personne, ou qui attendent
+  // le second facteur : on dit pourquoi.
   const separations = [...new Set(
-    LISTE_TRANSITIONS.map((tr) => refusTransition(tr, circuit.etat, organisation.roles, acteur.id, circuit.intervenants, "x"))
-      .filter((r): r is "circuit.separation_auteur" | "circuit.separation_verificateur" => r === "circuit.separation_auteur" || r === "circuit.separation_verificateur"),
+    LISTE_TRANSITIONS.map((tr) => refusTransition(tr, circuit.etat, organisation.roles, acteur.id, circuit.intervenants, "x", decision))
+      .filter((r): r is "circuit.separation_auteur" | "circuit.separation_verificateur" | "circuit.second_facteur_requis" =>
+        r === "circuit.separation_auteur" || r === "circuit.separation_verificateur" || r === "circuit.second_facteur_requis"),
   )];
   // Retour d'une décision (?etat=…) : confirmé seulement si le document est toujours dans cet état.
   const q = await searchParams;
@@ -112,7 +117,9 @@ export default async function PageValidation({ params, searchParams }: {
             })}
           </div>
         )}
-        {separations.map((cle) => <p key={cle} className="discret separation">{t(cle)}</p>)}
+        {separations.map((cle) => <p key={cle} className="discret separation" data-refus={cle}>{t(cle)}</p>)}
+        {separations.includes("circuit.second_facteur_requis") ? <p><Link href="/compte/second-facteur">{t("circuit.second_facteur_lien")}</Link></p> : null}
+        <p className="discret petit" id="mode-validation" data-mode={organisation.modeValidation}>{t(`circuit.mode_${organisation.modeValidation}`)}</p>
         <p className="discret petit">{t("circuit.motif_aide")}</p>
       </section>
 

@@ -92,3 +92,21 @@ export async function cleErreur(promesse: Promise<unknown>): Promise<string | un
     return (erreur as { cle?: string }).cle ?? `non-métier: ${(erreur as Error).message}`;
   }
 }
+
+/**
+ * Second facteur ACTIF pour des comptes de test (rôle propriétaire), comme après un enrôlement : approuver, refuser une
+ * approbation, archiver et confirmer une revue l'exigent (décision n° 4 du 19/10/2026). Une personne fictive des tests
+ * (identifiant tiré au hasard, sans compte) reçoit d'abord un compte. Le secret n'est pas utilisable : ces tests ne
+ * donnent jamais de code (second-facteur.test.ts éprouve l'enrôlement réel).
+ */
+export async function secondFacteurDeTest(proprietaire: Pool, personnes: readonly { id: string; email: string; nom?: string }[]): Promise<void> {
+  await enTransaction(proprietaire, async (c) => {
+    for (const p of personnes) {
+      await c.query(
+        "INSERT INTO platform.utilisateurs (id, email, nom, mot_de_passe_hash, doit_changer_mdp) VALUES ($1, $2, $3, '$argon2id$compte-de-test', false) ON CONFLICT (id) DO NOTHING",
+        [p.id, p.email.toLowerCase(), p.nom ?? "Personne de test"],
+      );
+      await c.query("UPDATE platform.utilisateurs SET mfa_secret_chiffre = 'v1.test.test.test', mfa_active_le = now() WHERE id = $1", [p.id]);
+    }
+  });
+}

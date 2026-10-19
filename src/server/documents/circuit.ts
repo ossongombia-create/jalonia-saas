@@ -8,8 +8,12 @@
 //   figée ; pour changer un document publié, on le « révise » (retour au brouillon : la version publiée reste dans
 //   l'historique et le document garde son numéro de version publiée jusqu'à la publication suivante).
 // - Refuser et archiver demandent un MOTIF.
-// - Séparation des tâches (paramètre par défaut, à confirmer par Brice) : la personne qui a soumis la version, ou qui l'a
-//   rédigée (dernier auteur), ne peut ni la vérifier ni l'approuver ; celle qui l'a vérifiée ne peut pas l'approuver.
+// - Séparation des tâches (décision n° 2 du 19/10/2026) : la personne qui a soumis la version, ou qui l'a rédigée (dernier
+//   auteur), ne peut ni la vérifier ni l'approuver. En mode « standard » (par défaut), celle qui l'a vérifiée ne peut pas
+//   l'approuver : trois personnes distinctes. En mode « petite organisation » (activé par l'exploitant), cette dernière
+//   règle tombe : deux personnes suffisent.
+// - Second facteur (décision n° 4 du 19/10/2026) : approuver, refuser l'approbation, archiver et confirmer une revue sont
+//   refusés tant que la personne n'a pas activé son second facteur (en plus de son obligation à la connexion).
 // - La version soumise est copiée dans l'historique (copie « soumission ») : c'est elle qui est vérifiée, approuvée, publiée
 //   puis archivée, sans changer ; le document garde le numéro de la version publiée (version_publiee).
 // - Revue périodique (revues.ts) : un approbateur « confirme la revue » d'un document publié (il reste publié, nouvelle
@@ -57,6 +61,24 @@ export function estTransition(v: unknown): v is Transition {
   return typeof v === "string" && Object.hasOwn(TRANSITIONS, v);
 }
 
+export const MODES_VALIDATION = ["standard", "petite_organisation"] as const;
+export type ModeValidation = (typeof MODES_VALIDATION)[number];
+
+/** Les décisions réservées à l'approbateur : elles exigent un second facteur actif. */
+export const TRANSITIONS_SECOND_FACTEUR = ["approuver", "refuser_approbation", "archiver", "confirmer_revue"] as const satisfies readonly Transition[];
+
+/** Ce qui, en plus des rôles, conditionne une décision : le mode de l'organisation, le second facteur de la personne. */
+export interface ContexteDecision {
+  mode: ModeValidation;
+  secondFacteurActif: boolean;
+}
+
+/**
+ * Par défaut (affichage) : mode standard, second facteur supposé actif. Le serveur, lui, lit les deux en base avant
+ * chaque décision (appliquerTransition).
+ */
+export const CONTEXTE_STANDARD: ContexteDecision = { mode: "standard", secondFacteurActif: true };
+
 /** Qui a déjà agi sur la version en cours de circuit : son auteur, celui qui l'a soumise, celui qui l'a vérifiée. */
 export interface Intervenants {
   auteur: string | null;
@@ -68,22 +90,28 @@ export interface Intervenants {
  * Refus éventuel d'une transition (règle pure, testée sans base) : clé de message, ou null si elle est permise.
  * Les rôles sont ceux de la personne dans l'organisation ouverte.
  */
-export function refusTransition(t: Transition, etat: EtatDocument, roles: readonly RoleOrganisation[], personne: string, intervenants: Intervenants, motif: string): string | null {
+export function refusTransition(
+  t: Transition, etat: EtatDocument, roles: readonly RoleOrganisation[], personne: string, intervenants: Intervenants, motif: string,
+  contexte: ContexteDecision = CONTEXTE_STANDARD,
+): string | null {
   const regle = TRANSITIONS[t];
   if (!aLeDroit(roles, regle.droit)) return "erreur.interdit";
   if (!(regle.de as readonly string[]).includes(etat)) return "circuit.etat_incompatible";
   if (regle.motifObligatoire && motif.trim() === "") return "circuit.motif_requis";
   if (motif.length > MOTIF_MAX) return "circuit.motif_trop_long";
+  if ((TRANSITIONS_SECOND_FACTEUR as readonly string[]).includes(t) && !contexte.secondFacteurActif) return "circuit.second_facteur_requis";
   const decide = t === "verifier" || t === "refuser_verification" || t === "approuver" || t === "refuser_approbation";
   if (decide && (personne === intervenants.auteur || personne === intervenants.soumisPar)) return "circuit.separation_auteur";
-  if ((t === "approuver" || t === "refuser_approbation") && personne === intervenants.verifiePar) return "circuit.separation_verificateur";
+  if (contexte.mode === "standard" && (t === "approuver" || t === "refuser_approbation") && personne === intervenants.verifiePar) return "circuit.separation_verificateur";
   return null;
 }
 
 /** Les transitions qu'une personne peut déclencher maintenant (pour n'afficher que les boutons utiles). */
-export function transitionsPossibles(etat: EtatDocument, roles: readonly RoleOrganisation[], personne: string, intervenants: Intervenants): Transition[] {
+export function transitionsPossibles(
+  etat: EtatDocument, roles: readonly RoleOrganisation[], personne: string, intervenants: Intervenants, contexte: ContexteDecision = CONTEXTE_STANDARD,
+): Transition[] {
   return LISTE_TRANSITIONS.filter((t) => {
-    const r = refusTransition(t, etat, roles, personne, intervenants, "x");
+    const r = refusTransition(t, etat, roles, personne, intervenants, "x", contexte);
     return r === null;
   });
 }
@@ -158,6 +186,17 @@ export async function lireCircuit(pool: Pool, org: OrganisationCible, id: string
   });
 }
 
+/** Mode de validation de l'organisation et second facteur de la personne (tables de la plateforme). */
+export async function lireContexteDecision(client: PoolClient, organisationId: string, personneId: string): Promise<ContexteDecision> {
+  const r = await client.query<{ mode: ModeValidation | null; actif: boolean | null }>(
+    `SELECT (SELECT mode_validation FROM platform.organisations WHERE id = $1) AS mode,
+            (SELECT mfa_active_le IS NOT NULL FROM platform.utilisateurs WHERE id = $2) AS actif`,
+    [organisationId, personneId],
+  );
+  const l = r.rows[0];
+  return { mode: l?.mode ?? "standard", secondFacteurActif: l?.actif === true };
+}
+
 /**
  * Applique une transition. `versionVue` : la version que la personne avait sous les yeux (refus si le document a changé
  * depuis : elle décide sur ce qu'elle a lu). Les rôles sont revérifiés ici, en plus de l'action.
@@ -174,8 +213,10 @@ export async function appliquerTransition(
   const regle = TRANSITIONS[t];
   const motif = e.motif.trim();
   return enTransaction(pool, async (client) => {
-    // Membres actifs (tables de la plateforme : lues avant de passer dans l'organisation), pour les notifications.
+    // Membres actifs (tables de la plateforme : lues avant de passer dans l'organisation), pour les notifications ; mode
+    // de validation de l'organisation et second facteur de la personne, LUS EN BASE (jamais fournis par l'appelant).
     const membres = await membresDestinataires(client, org.id);
+    const contexte = await lireContexteDecision(client, org.id, acteur.id);
     const r = await dansOrganisation(client, org, async () => {
       const lu = await client.query<{ version: number; etat: EtatDocument; modifie_par: string | null; type: TypeDocument; titre: string; reference: string; empreinte: string }>(
         `SELECT version, etat, modifie_par, type, titre, reference, encode(sha256(convert_to(contenu::text, 'UTF8')), 'hex') AS empreinte
@@ -186,7 +227,7 @@ export async function appliquerTransition(
       if (!doc) throw new ErreurMetier("erreur.introuvable");
       if (doc.version !== e.versionVue) throw new ErreurMetier("versions.document_modifie");
       const intervenants = await lireIntervenants(client, id, doc.modifie_par, doc.etat);
-      const refus = refusTransition(t, doc.etat, e.roles, acteur.id, intervenants, motif);
+      const refus = refusTransition(t, doc.etat, e.roles, acteur.id, intervenants, motif, contexte);
       if (refus) throw new ErreurMetier(refus);
 
       const decision = await client.query<{ id: string }>(

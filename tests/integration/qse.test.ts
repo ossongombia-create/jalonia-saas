@@ -17,7 +17,7 @@ import { lireJournalOrganisation, lireJournalPlateforme } from "../../src/server
 import { avecOrganisation, enTransaction } from "../../src/server/db/transactions";
 import type { RoleOrganisation } from "../../src/lib/rbac";
 import type { Acteur } from "../../src/server/acteur";
-import { cleErreur, codeErreur, creerOrgDeTest, creerSuperadmin, membreDeTest, ouvrirPools, suffixe, type OrgDeTest } from "./outils";
+import { cleErreur, codeErreur, creerOrgDeTest, creerSuperadmin, membreDeTest, ouvrirPools, secondFacteurDeTest, suffixe, type OrgDeTest } from "./outils";
 
 let app: Pool;
 let proprietaire: Pool;
@@ -26,6 +26,7 @@ let superadmin: Acteur;
 beforeAll(async () => {
   ({ app, proprietaire } = ouvrirPools());
   superadmin = await creerSuperadmin(proprietaire);
+  await secondFacteurDeTest(proprietaire, [appro]); // approuver exige un second facteur actif (décision n° 4)
 });
 
 afterAll(async () => {

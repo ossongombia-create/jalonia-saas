@@ -1,5 +1,6 @@
 // Second facteur d'authentification (audit S3) : codes TOTP d'une application d'authentification et codes de
-// secours. OBLIGATOIRE pour les superadministrateurs, facultatif pour les autres comptes.
+// secours. OBLIGATOIRE pour les superadministrateurs et pour les approbateurs d'une organisation active (décision
+// n° 4 du 19/10/2026, obligation.ts), facultatif pour les autres comptes.
 //
 // Connexion en deux temps : le mot de passe ouvre une session « en attente » (platform.sessions.en_attente_mfa),
 // refusée partout (validerSession) tant que le code n'a pas été donné sur /connexion/second-facteur.
@@ -15,6 +16,7 @@ import { ErreurMetier } from "../erreurs";
 import { traceActeur, type Acteur } from "../acteur";
 import { revoquerSessionsDe } from "./sessions";
 import { MINUTES_DE_VERROU } from "./connexion";
+import { sqlSecondFacteurObligatoire } from "./obligation";
 import {
   adresseOtpauth, chiffrer, dechiffrer, empreinteCodeSecours, normaliserCodeSecours, nouveauSecret, nouveauxCodesSecours,
   verifierTotp, versBase32,
@@ -34,7 +36,7 @@ export interface EtatSecondFacteur {
 export async function lireEtatSecondFacteur(pool: Pool, utilisateurId: string): Promise<EtatSecondFacteur> {
   return enTransaction(pool, async (client) => {
     const r = await client.query<{ actif: boolean; obligatoire: boolean; codes: number }>(
-      `SELECT u.mfa_active_le IS NOT NULL AS actif, u.est_superadmin AS obligatoire,
+      `SELECT u.mfa_active_le IS NOT NULL AS actif, ${sqlSecondFacteurObligatoire("u")} AS obligatoire,
               (SELECT count(*)::int FROM platform.codes_secours c WHERE c.utilisateur_id = u.id AND c.utilise_le IS NULL) AS codes
          FROM platform.utilisateurs u WHERE u.id = $1`,
       [utilisateurId],
@@ -277,9 +279,9 @@ async function exigerCode<T>(pool: Pool, cle: Buffer, utilisateur: Acteur, saisi
   return r.valeur;
 }
 
-/** Désactive le second facteur (comptes NON superadmin : pour eux, il est obligatoire). */
+/** Désactive le second facteur (sauf pour un superadmin ou un approbateur : pour eux, il est obligatoire). */
 export async function desactiverSecondFacteur(pool: Pool, cleOuNull: Buffer | null, utilisateur: Acteur & { estSuperadmin: boolean }, saisie: string): Promise<void> {
-  if (utilisateur.estSuperadmin) throw new ErreurMetier("mfa.obligatoire");
+  if (utilisateur.estSuperadmin || (await lireEtatSecondFacteur(pool, utilisateur.id)).obligatoire) throw new ErreurMetier("mfa.obligatoire");
   const cle = exigerCle(cleOuNull);
   await exigerCode(pool, cle, utilisateur, saisie, async (client) => {
     await client.query("UPDATE platform.utilisateurs SET mfa_active_le = NULL, mfa_secret_chiffre = NULL, mfa_dernier_pas = NULL, echecs_mfa = 0 WHERE id = $1", [utilisateur.id]);

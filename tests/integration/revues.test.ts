@@ -11,7 +11,7 @@ import { lireJournalOrganisation, lireJournalPlateforme } from "../../src/server
 import { avecOrganisation, enTransaction } from "../../src/server/db/transactions";
 import type { RoleOrganisation } from "../../src/lib/rbac";
 import type { Acteur } from "../../src/server/acteur";
-import { cleErreur, codeErreur, creerOrgDeTest, creerSuperadmin, membreDeTest, ouvrirPools, suffixe, type OrgDeTest } from "./outils";
+import { cleErreur, codeErreur, creerOrgDeTest, creerSuperadmin, membreDeTest, ouvrirPools, secondFacteurDeTest, suffixe, type OrgDeTest } from "./outils";
 
 let app: Pool;
 let proprietaire: Pool;
@@ -32,6 +32,8 @@ type Personne = Acteur & { roles: RoleOrganisation[] };
 async function membre(org: OrgDeTest, nom: string, ...roles: RoleOrganisation[]): Promise<Personne> {
   const email = `${nom.toLowerCase()}-${suffixe()}@test.local`;
   const id = await membreDeTest(app, org.cible, { email, nom, roles }, superadmin);
+  // Un approbateur a un second facteur actif (décision n° 4 du 19/10/2026).
+  if (roles.includes("APPROBATEUR")) await secondFacteurDeTest(proprietaire, [{ id, email, nom }]);
   return { id, email, nom, ip: "127.0.0.1", agent: "vitest", roles };
 }
 const adminDe = (org: OrgDeTest): Personne => ({ id: org.adminId, email: org.adminEmail, nom: "Admin", roles: ["ADMIN_ORGANISATION"] });

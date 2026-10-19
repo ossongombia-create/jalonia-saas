@@ -75,6 +75,7 @@ const REGLES = {
   actionOuvrirAccesUrgence: { regle: "superadmin ; motif, rôle (administrateur, rédacteur, lecteur), durée (1, 4, 8, 24 h) ; notifié aux administrateurs" },
   actionFermerAccesUrgence: { regle: "superadmin ; accès encore valable" },
   actionReinitialiserParLien: { regle: "publique : lien de réinitialisation valable, personne connectée" },
+  actionChangerModeValidation: { regle: "superadmin (mode « petite organisation » ou standard), tracé" },
 };
 
 /** Chemin de page d'un « worker » du manifeste (app/app/documents/page → /app/documents). */
@@ -102,7 +103,7 @@ function lireActions() {
 // Exclus, car modifiés par la simple lecture d'une page : dernière activité et organisation notée des sessions,
 // compteur d'échecs de connexion et date de dernière connexion des comptes.
 const EMPREINTE = `SELECT md5(concat_ws('#',
-  (SELECT string_agg(row(id, nom, slug, statut)::text, ',' ORDER BY id) FROM platform.organisations),
+  (SELECT string_agg(row(id, nom, slug, statut, mode_validation)::text, ',' ORDER BY id) FROM platform.organisations),
   (SELECT string_agg(row(id, email, nom, mot_de_passe_hash, est_superadmin, statut, doit_changer_mdp, langue, verrouille_jusqua,
                          mfa_secret_chiffre, mfa_active_le, mfa_dernier_pas, echecs_mfa)::text, ',' ORDER BY id) FROM platform.utilisateurs),
   (SELECT string_agg(row(utilisateur_id, organisation_id, roles)::text, ',' ORDER BY utilisateur_id, organisation_id) FROM platform.adhesions),
@@ -769,6 +770,16 @@ let ACTIONS;
   await cas("superadmin", "actionFermerAccesUrgence", { accesId: ACCES_B }, "succes", { page: PAGE_ORG_B, effet: () => accesOuvertsB() === "0" });
   await cas("superadmin", "actionFermerAccesUrgence", { accesId: ACCES_B }, "acces.deja_ferme", { page: PAGE_ORG_B, note: "déjà fermé" });
   assert.equal((await api("superadmin", "GET", "/api/editeur/contexte")).statut, 403, "accès fermé : le superadmin n'entre plus dans B");
+
+  // Mode de validation (décision n° 2 du 19/10/2026) : réservé au superadmin ; A revient en mode standard ensuite.
+  const PAGE_ORG_A = `/plateforme/organisations/${ORG_A}`;
+  const modeA = () => sql(`SELECT mode_validation FROM platform.organisations WHERE id = '${ORG_A}'`);
+  const versPetite = { organisationId: ORG_A, mode: "petite_organisation" };
+  for (const qui of ["faux", "attente"]) await cas(qui, "actionChangerModeValidation", versPetite, "session", { page: PAGE_ORG_A });
+  for (const qui of NON_SUPERADMINS) await cas(qui, "actionChangerModeValidation", versPetite, "404", { page: PAGE_ORG_A });
+  await cas("superadmin", "actionChangerModeValidation", { organisationId: ORG_A, mode: "libre" }, "erreur.saisie_invalide", { page: PAGE_ORG_A, note: "mode inconnu" });
+  await cas("superadmin", "actionChangerModeValidation", versPetite, "succes", { page: PAGE_ORG_A, effet: () => modeA() === "petite_organisation" });
+  await cas("superadmin", "actionChangerModeValidation", { organisationId: ORG_A, mode: "standard" }, "succes", { page: PAGE_ORG_A, effet: () => modeA() === "standard", note: "retour au mode standard" });
 
   // Lien de réinitialisation (page publique) : la personne choisit SON mot de passe ; à usage unique ; refusé à une
   // personne déjà connectée. Le lien est créé ici directement en base (le serveur de test n'envoie pas de courriel).

@@ -7,7 +7,8 @@ import type { EtatAction } from "@/lib/etat-action";
 import { poolApplication } from "@/server/db/pools";
 import { creerOrganisation } from "@/server/organisations/provisionnement";
 import { cheminInvitation, DUREE_INVITATION_HEURES } from "@/server/invitations/service";
-import { changerStatutOrganisation } from "@/server/organisations/service";
+import { changerModeValidation, changerStatutOrganisation } from "@/server/organisations/service";
+import { MODES_VALIDATION } from "@/server/documents/circuit";
 import {
   annulerReinitialisation,
   cheminReinitialisation,
@@ -57,6 +58,18 @@ export async function actionChangerStatutOrganisation(_etat: EtatAction, formula
     const s = valider(schemaStatut, { organisationId: champ(formulaire, "organisationId"), statut: champ(formulaire, "statut") });
     await changerStatutOrganisation(poolApplication(), s.organisationId, s.statut, ctx.acteur);
     return { cle: "commun.succes" };
+  });
+}
+
+const schemaMode = z.object({ organisationId: identifiant, mode: z.enum(MODES_VALIDATION, "erreur.saisie_invalide") });
+
+/** Mode de validation d'une organisation (décision n° 2 du 19/10/2026) : réservé à l'exploitant, tracé. */
+export async function actionChangerModeValidation(_etat: EtatAction, formulaire: FormData): Promise<EtatAction> {
+  const ctx = await exigerSuperadmin();
+  return executer(ctx.langue, async () => {
+    const s = valider(schemaMode, { organisationId: champ(formulaire, "organisationId"), mode: champ(formulaire, "mode") });
+    await changerModeValidation(poolApplication(), s.organisationId, s.mode, ctx.acteur);
+    return { cle: `orgs.mode_${s.mode}_fait` };
   });
 }
 

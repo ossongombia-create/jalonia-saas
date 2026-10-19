@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { actionChangerStatutOrganisation } from "@/actions/plateforme";
+import { actionChangerModeValidation, actionChangerStatutOrganisation } from "@/actions/plateforme";
 import { FormulaireAction } from "@/components/FormulaireAction";
 import { AccesUrgence } from "@/components/AccesUrgence";
 import { GestionMembres } from "@/components/GestionMembres";
@@ -53,6 +53,24 @@ export default async function PageOrganisation({ params }: { params: Promise<{ i
         </FormulaireAction>
       </header>
       {suspendue ? <p className="bandeau bandeau-alerte">{t("orgs.suspendue_info")}</p> : null}
+      <section className="carte" id="mode-validation" data-mode={org.modeValidation}>
+        <h2>{t("orgs.mode_titre")}</h2>
+        <p>
+          <span className={org.modeValidation === "standard" ? "etiquette" : "etiquette etiquette-alerte"}>{t(`orgs.mode_${org.modeValidation}`)}</span>{" "}
+          <span className="discret">{t(`orgs.mode_${org.modeValidation}_aide`)}</span>
+        </p>
+        <p className="discret petit">{t("orgs.mode_contrat")}</p>
+        <FormulaireAction
+          action={actionChangerModeValidation}
+          libelle={org.modeValidation === "standard" ? t("orgs.mode_vers_petite") : t("orgs.mode_vers_standard")}
+          libelleEnCours={t("commun.en_cours")}
+          variante="ligne"
+          confirmation={org.modeValidation === "standard" ? t("orgs.mode_confirmation_petite") : t("orgs.mode_confirmation_standard")}
+        >
+          <input type="hidden" name="organisationId" value={org.id} />
+          <input type="hidden" name="mode" value={org.modeValidation === "standard" ? "petite_organisation" : "standard"} />
+        </FormulaireAction>
+      </section>
       <AccesUrgence ctx={ctx} organisationId={org.id} acces={acces} gestion suspendue={suspendue} />
       <GestionMembres ctx={ctx} organisationId={org.id} membres={membres} invitations={invitations} />
     </>

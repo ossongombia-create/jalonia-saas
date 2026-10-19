@@ -1,7 +1,7 @@
 // Circuit de validation (W1) : règles pures (droits, états, motif, séparation des tâches), sans base.
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { ETATS, LISTE_TRANSITIONS, MOTIF_MAX, TRANSITIONS, estTransition, refusTransition, transitionsPossibles, type Intervenants } from "../../src/server/documents/circuit";
+import { ETATS, LISTE_TRANSITIONS, MOTIF_MAX, TRANSITIONS, TRANSITIONS_SECOND_FACTEUR, estTransition, refusTransition, transitionsPossibles, type ContexteDecision, type Intervenants } from "../../src/server/documents/circuit";
 import { estCle } from "../../src/lib/i18n";
 import { en } from "../../src/lib/i18n/en";
 import type { RoleOrganisation } from "../../src/lib/rbac";
@@ -136,3 +136,46 @@ describe("circuit : décisions proposées", () => {
     for (const r of ["ADMIN_ORGANISATION", "REDACTEUR", "VERIFICATEUR", "APPROBATEUR", "LECTEUR"] as const) expect(transitionsPossibles("archive", [r], "u", aucun), r).toEqual([]);
   });
 });
+
+describe("circuit : second facteur (décision n° 4 du 19/10/2026)", () => {
+  const sansMfa: ContexteDecision = { mode: "standard", secondFacteurActif: false };
+  const tous = R("ADMIN_ORGANISATION", "REDACTEUR", "VERIFICATEUR", "APPROBATEUR");
+  it("les décisions de l'approbateur exigent un second facteur actif ; les autres non", () => {
+    expect([...TRANSITIONS_SECOND_FACTEUR].sort()).toEqual(["approuver", "archiver", "confirmer_revue", "refuser_approbation"]);
+    expect(refusTransition("approuver", "en_approbation", tous, "u", aucun, "", sansMfa)).toBe("circuit.second_facteur_requis");
+    expect(refusTransition("refuser_approbation", "en_approbation", tous, "u", aucun, "m", sansMfa)).toBe("circuit.second_facteur_requis");
+    expect(refusTransition("archiver", "publie", tous, "u", aucun, "m", sansMfa)).toBe("circuit.second_facteur_requis");
+    expect(refusTransition("confirmer_revue", "publie", tous, "u", aucun, "", sansMfa)).toBe("circuit.second_facteur_requis");
+    expect(refusTransition("soumettre", "brouillon", tous, "u", aucun, "", sansMfa)).toBeNull();
+    expect(refusTransition("verifier", "en_verification", tous, "u", aucun, "", sansMfa)).toBeNull();
+    expect(refusTransition("reviser", "publie", tous, "u", aucun, "", sansMfa)).toBeNull();
+    expect(transitionsPossibles("publie", tous, "u", aucun, sansMfa)).toEqual(["reviser"]);
+  });
+  it("le rôle et l'état passent avant : un non-approbateur reste « interdit »", () => {
+    expect(refusTransition("approuver", "en_approbation", R("LECTEUR"), "u", aucun, "", sansMfa)).toBe("erreur.interdit");
+    expect(refusTransition("approuver", "publie", tous, "u", aucun, "", sansMfa)).toBe("circuit.etat_incompatible");
+  });
+});
+
+describe("circuit : mode « petite organisation » (décision n° 2 du 19/10/2026)", () => {
+  const petite: ContexteDecision = { mode: "petite_organisation", secondFacteurActif: true };
+  const standard: ContexteDecision = { mode: "standard", secondFacteurActif: true };
+  const tous = R("REDACTEUR", "VERIFICATEUR", "APPROBATEUR");
+  const i: Intervenants = { auteur: "alice", soumisPar: "bob", verifiePar: "carla" };
+  it("la personne qui a vérifié peut approuver ; en mode standard, non", () => {
+    expect(refusTransition("approuver", "en_approbation", tous, "carla", i, "", petite)).toBeNull();
+    expect(refusTransition("refuser_approbation", "en_approbation", tous, "carla", i, "m", petite)).toBeNull();
+    expect(refusTransition("approuver", "en_approbation", tous, "carla", i, "", standard)).toBe("circuit.separation_verificateur");
+    expect(transitionsPossibles("en_approbation", tous, "carla", i, petite)).toEqual(["approuver", "refuser_approbation"]);
+    expect(transitionsPossibles("en_approbation", tous, "carla", i, standard)).toEqual([]);
+  });
+  it("l'auteur et la personne qui a soumis restent exclus dans les deux modes", () => {
+    for (const contexte of [petite, standard]) {
+      for (const qui of ["alice", "bob"]) {
+        expect(refusTransition("verifier", "en_verification", tous, qui, i, "", contexte), `${contexte.mode} ${qui}`).toBe("circuit.separation_auteur");
+        expect(refusTransition("approuver", "en_approbation", tous, qui, i, "", contexte), `${contexte.mode} ${qui}`).toBe("circuit.separation_auteur");
+      }
+    }
+  });
+});
+
