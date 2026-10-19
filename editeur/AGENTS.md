@@ -82,3 +82,16 @@ installation de Chromium, `test:bpmn`, `test:e2e`.
   (par exemple `git tag -a v1.7 -m "Jalonia v1.7"`).
 - Une release = une entrée en tête de `CHANGELOG.md` + `js/version.js` au même numéro + toutes les familles de tests
   vertes (ci-dessus), dans cet ordre, puis le tag.
+
+## Environnement cloud (proxy GitHub)
+
+- Dans une session cloud, le proxy GitHub **accepte les push de branches** (`git push origin <branche>`, `main`
+  compris) mais **refuse les push de tags** : `git push origin vX.Y` échoue avec HTTP 403. C'est une politique d'accès,
+  pas une panne : ne pas réessayer ni contourner.
+- Les tags de release se créent donc **hors de la session cloud** : depuis un poste local (`git tag -a vX.Y <commit>
+  -m "…"` puis `git push origin vX.Y`), ou dans l'interface web GitHub (**Releases → Draft a new release**, en
+  choisissant le tag et le commit cible).
+- La release **v1.7** a été créée via l'interface web sur le commit `0d06bca` (contenu identique à la fusion `32a3073`
+  sur `main`). L'interface web crée un tag **léger** (sans objet tag annoté) : `git ls-remote --tags origin` montre
+  `refs/tags/v1.7` → `0d06bca`. Un tag annoté `v1.7` créé localement dans une session cloud n'a pas été publié ; avant
+  de créer un tag localement, faire `git fetch --tags origin` pour partir de celui de GitHub.
