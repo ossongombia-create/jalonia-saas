@@ -109,7 +109,7 @@ Restent hors de l'incrément : géolocalisation des sessions (ligne du 11/10), o
 > - correctif : clé du second facteur obligatoire au démarrage : commit `2aa046e` ;
 > - n° 4 et n° 2 (second facteur des approbateurs, mode « petite organisation ») : commit `c45b3d8` ;
 > - n° 5 (séparation dans le plan d'actions) : commit `de67a85` ;
-> - n° 3 et n° 6 (fin de contrat : export et suppression d'une organisation, procédure dans `deploy/INSTALL-VPS.md`) : commit de la session 4 (renseigné au commit de release).
+> - n° 3 et n° 6 (fin de contrat : export et suppression d'une organisation, procédure dans `deploy/INSTALL-VPS.md`) : commit `4de7840`.
 >
 > Migrations : plateforme 0008 et 0009, organisation 0009 et 0010. Le tag `v1.8` se crée sur le commit qui inscrit cette note.
 
