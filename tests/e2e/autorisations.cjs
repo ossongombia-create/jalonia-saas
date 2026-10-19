@@ -43,7 +43,7 @@ const REGLES = {
   actionRetablirDocument: { regle: "documents.supprimer dans l'organisation OUVERTE ; document de CETTE organisation" },
   actionRestaurerVersion: { regle: "documents.rediger dans l'organisation OUVERTE ; document de CETTE organisation" },
   actionCreerAction: { regle: "actions.gerer dans l'organisation OUVERTE ; responsable membre actif, document visé de CETTE organisation" },
-  actionModifierAction: { regle: "actions.gerer dans l'organisation OUVERTE ; action de CETTE organisation ; version vue" },
+  actionModifierAction: { regle: "actions.gerer dans l'organisation OUVERTE, OU responsable de l'action (avancement et compte rendu seulement) ; jamais clore ni abandonner sa propre action ; action de CETTE organisation ; version vue" },
   actionDefinirObjectif: { regle: "indicateurs.objectifs dans l'organisation OUVERTE ; indicateur d'un document de CETTE organisation" },
   actionRetirerObjectif: { regle: "indicateurs.objectifs dans l'organisation OUVERTE ; indicateur d'un document de CETTE organisation" },
   actionEnregistrerMesure: { regle: "indicateurs.mesurer dans l'organisation OUVERTE ; indicateur d'un document de CETTE organisation" },
@@ -118,7 +118,7 @@ const EMPREINTE = `SELECT md5(concat_ws('#',
      'SELECT (SELECT string_agg(row(id, titre, version, modifie_le, supprime_le, etat, version_publiee, revue_le)::text, '','' ORDER BY id) FROM %1$I.documents) AS d,
              (SELECT string_agg(row(periode_revue_mois, rappel_jours, escalade_jours, modifie_le)::text, '','') FROM %1$I.parametres) AS pa,
              (SELECT string_agg(row(id, destinataire, lue_le)::text, '','' ORDER BY id) FROM %1$I.notifications) AS n,
-             (SELECT string_agg(row(id, version, statut, responsable, echeance)::text, '','' ORDER BY id) FROM %1$I.actions) AS ac,
+             (SELECT string_agg(row(id, version, statut, responsable, echeance, titre, resultat, cloture_par)::text, '','' ORDER BY id) FROM %1$I.actions) AS ac,
              (SELECT string_agg(row(document_id, element_id, sens, seuil, unite, modifie_le)::text, '','' ORDER BY document_id, element_id) FROM %1$I.objectifs_indicateur) AS ob,
              (SELECT string_agg(row(id, valeur, commentaire, saisi_le)::text, '','' ORDER BY id) FROM %1$I.mesures_indicateur) AS me,
              (SELECT count(*) FROM %1$I.versions_document) AS v,
@@ -554,6 +554,24 @@ let ACTIONS;
   await cas("verifA", "actionModifierAction", { ...modification, statut: "cloturee", efficace: "oui" }, "actions.statut_impossible", { page: PAGE_ACTION, note: "à faire → close" });
   const etatAction = () => sql(`SELECT statut || '/' || version FROM "${SCHEMA_A}".actions WHERE id = '${ACTION_A}'`);
   await cas("verifA", "actionModifierAction", modification, "succes", { page: PAGE_ACTION, effet: () => etatAction() === "en_cours/2" });
+  // Décision n° 5 : le responsable (même gestionnaire) ne clôt ni n'abandonne SON action.
+  await cas("redacA", "actionModifierAction", { ...modification, version: "2", statut: "abandonnee", resultat: "Plus d'objet" }, "actions.cloture_responsable", { page: PAGE_ACTION, note: "gestionnaire responsable : abandon" });
+
+  // Un lecteur responsable d'une action : formulaire réduit (avancement, compte rendu), sans clôture ni abandon.
+  await cas("redacA", "actionCreerAction", { ...nouvelle, titre: "Action du lecteur", responsableId: LECT_A, documentId: "", elementId: "" }, "redirection^/app/actions/", { effet: () => nbActionsA() === nA + 2 });
+  const ACTION_L = sql(`SELECT id FROM "${SCHEMA_A}".actions WHERE titre = 'Action du lecteur'`);
+  const PAGE_ACTION_L = `/app/actions/${ACTION_L}`;
+  const etatActionL = () => sql(`SELECT statut || '/' || version || '/' || coalesce(cloture_par::text, '-') FROM "${SCHEMA_A}".actions WHERE id = '${ACTION_L}'`);
+  const avancement = (version, statut, plus = {}) => ({ organisationId: ORG_A, actionId: ACTION_L, version, statut, resultat: "", efficace: "", avancement: "1", ...plus });
+  await cas("lecteurA", "actionModifierAction", { ...avancement("1", "en_cours"), actionId: ACTION_A, version: "2" }, "erreur.interdit", { page: PAGE_ACTION, note: "lecteur, action d'un autre" });
+  await cas("lecteurA", "actionModifierAction", avancement("1", "en_cours"), "succes", { page: PAGE_ACTION_L, note: "lecteur responsable : avancement", effet: () => etatActionL() === "en_cours/2/-" });
+  await cas("lecteurA", "actionModifierAction", avancement("2", "realisee", { resultat: "Fait" }), "succes", { page: PAGE_ACTION_L, note: "lecteur responsable : réalisée", effet: () => etatActionL() === "realisee/3/-" });
+  await cas("lecteurA", "actionModifierAction", avancement("3", "cloturee", { resultat: "Vérifié", efficace: "oui" }), "actions.cloture_responsable", { page: PAGE_ACTION_L, note: "lecteur responsable : clôture" });
+  await cas("lecteurA", "actionModifierAction", avancement("3", "abandonnee", { resultat: "Plus d'objet" }), "actions.cloture_responsable", { page: PAGE_ACTION_L, note: "lecteur responsable : abandon" });
+  await cas("lecteurA", "actionModifierAction", { ...modification, actionId: ACTION_L, version: "3", statut: "realisee", resultat: "Fait", responsableId: LECT_A, titre: "Autre titre", echeance: "2026-12-31" }, "actions.reserve_gestion", { page: PAGE_ACTION_L, note: "lecteur responsable : intitulé" });
+  await cas("lecteurA", "actionModifierAction", { ...modification, actionId: ACTION_L, version: "3", statut: "realisee", resultat: "Fait", titre: "Action du lecteur", responsableId: "", echeance: "2026-12-31" }, "actions.reserve_gestion", { page: PAGE_ACTION_L, note: "lecteur responsable : se retire" });
+  const ID_VERIF_A = idDe("verif-a@droits.test");
+  await cas("verifA", "actionModifierAction", avancement("3", "cloturee", { resultat: "Vérifié", efficace: "oui" }), "succes", { page: PAGE_ACTION_L, note: "autre gestionnaire : clôture", effet: () => etatActionL() === `cloturee/4/${ID_VERIF_A}` });
 
   const objectif = { organisationId: ORG_A, documentId: DOCQ, elementId: "e1", sens: "max", seuil: "5", unite: "j" };
   const objectifA = () => sql(`SELECT sens || '/' || seuil::float8 || '/' || unite FROM "${SCHEMA_A}".objectifs_indicateur WHERE document_id = '${DOCQ}'`);

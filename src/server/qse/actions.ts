@@ -4,13 +4,17 @@
 // viser un élément d'un document (risque, opportunité ou instruction portant un indicateur), a un responsable (membre
 // actif de l'organisation), une échéance et un avancement : à faire ↔ en cours → réalisée → close (efficacité
 // vérifiée, ISO 9001 § 10.2), ou abandonnée (motif). Close et abandonnée sont définitives. Aucune action ne se supprime.
+// Séparation (décision n° 5 du 19/10/2026, règle dans src/lib/qse.ts) : le responsable fait avancer SON action et en
+// écrit le résultat, même sans le droit actions.gerer ; une AUTRE personne ayant ce droit la clôt ou l'abandonne,
+// jamais le responsable. L'auteur de la clôture (ou de l'abandon) est rangé avec l'action (migration 0010).
 // Chaque création ou modification est inscrite au journal de l'organisation (avec les champs changés) ; la plateforme
 // ne reçoit que l'opération. Verrou optimiste : une modification faite sur une page périmée est refusée.
 // Notifications : action confiée (au responsable, sauf s'il se l'est confiée lui-même) ; échéances proches, dépassées
 // et escaladées (tâches quotidiennes).
 import type { Pool, PoolClient } from "pg";
 import { ecartJours, estJour, situationEcheance } from "@/lib/dates";
-import { estOrigine, estStatut, refusStatut, STATUTS_OUVERTS, type OrigineAction, type StatutAction } from "@/lib/qse";
+import { estOrigine, estStatut, refusIntervenant, refusStatut, STATUTS_OUVERTS, type OrigineAction, type StatutAction } from "@/lib/qse";
+import { aLeDroit, type Role } from "@/lib/rbac";
 import { avecOrganisation, dansOrganisation, enTransaction } from "../db/transactions";
 import type { OrganisationCible } from "../membres/service";
 import { journaliserOrganisation, journaliserPlateforme, type EntreeJournal } from "../audit/journal";
@@ -49,6 +53,8 @@ export interface ActionQse {
   modifieParNom: string;
   modifieLe: Date;
   clotureLe: Date | null;
+  /** Qui l'a close ou abandonnée (vide pour une action close avant la v1.8 : voir le journal). */
+  clotureParNom: string;
 }
 
 export interface SaisieAction {
@@ -65,7 +71,11 @@ export interface CreationAction extends SaisieAction {
   elementId?: string | null;
 }
 
-export interface ModificationAction extends SaisieAction {
+/**
+ * Modification d'une action. Les champs de la saisie (intitulé, description, origine, responsable, échéance) sont
+ * facultatifs : absents, ils restent tels quels (formulaire réduit du responsable sans le droit actions.gerer).
+ */
+export interface ModificationAction extends Partial<SaisieAction> {
   version: number;
   statut: string;
   resultat: string;
@@ -85,13 +95,13 @@ export function controlerSaisie(s: SaisieAction): string | null {
 
 const COLONNES = `a.id, a.numero, a.titre, a.description, a.origine, a.document_id, coalesce(d.reference, '') AS document_reference,
   coalesce(d.titre, '') AS document_titre, a.element_id, a.element_libelle, a.responsable, a.responsable_nom, to_char(a.echeance, 'YYYY-MM-DD') AS echeance,
-  a.statut, a.resultat, a.efficace, a.version, a.cree_par_nom, a.cree_le, a.modifie_par_nom, a.modifie_le, a.cloture_le`;
+  a.statut, a.resultat, a.efficace, a.version, a.cree_par_nom, a.cree_le, a.modifie_par_nom, a.modifie_le, a.cloture_le, a.cloture_par_nom`;
 
 interface LigneAction {
   id: string; numero: number; titre: string; description: string; origine: OrigineAction; document_id: string | null; document_reference: string;
   document_titre: string; element_id: string | null; element_libelle: string; responsable: string | null; responsable_nom: string; echeance: string | null;
   statut: StatutAction; resultat: string; efficace: boolean | null; version: number; cree_par_nom: string; cree_le: Date; modifie_par_nom: string;
-  modifie_le: Date; cloture_le: Date | null;
+  modifie_le: Date; cloture_le: Date | null; cloture_par_nom: string;
 }
 
 function versAction(l: LigneAction): ActionQse {
@@ -100,6 +110,7 @@ function versAction(l: LigneAction): ActionQse {
     documentReference: l.document_reference, documentTitre: l.document_titre, elementId: l.element_id, elementLibelle: l.element_libelle,
     responsable: l.responsable, responsableNom: l.responsable_nom, echeance: l.echeance, statut: l.statut, resultat: l.resultat, efficace: l.efficace,
     version: l.version, creeParNom: l.cree_par_nom, creeLe: l.cree_le, modifieParNom: l.modifie_par_nom, modifieLe: l.modifie_le, clotureLe: l.cloture_le,
+    clotureParNom: l.cloture_par_nom,
   };
 }
 
@@ -193,28 +204,44 @@ export async function creerAction(pool: Pool, org: OrganisationCible, e: Creatio
   });
 }
 
-export async function modifierAction(pool: Pool, org: OrganisationCible, id: string, e: ModificationAction, acteur: Acteur): Promise<{ version: number; statut: StatutAction }> {
+/**
+ * `roles` : rôles de la personne dans l'organisation ouverte (le droit actions.gerer en dépend) ; sans ce droit, seul
+ * le responsable de l'action peut la faire avancer.
+ */
+export async function modifierAction(pool: Pool, org: OrganisationCible, id: string, e: ModificationAction, acteur: Acteur, roles: readonly Role[]): Promise<{ version: number; statut: StatutAction }> {
   if (!estIdentifiant(id)) throw new ErreurMetier("erreur.introuvable");
-  const refusSaisie = controlerSaisie(e);
-  if (refusSaisie) throw new ErreurMetier(refusSaisie);
   if (!estStatut(e.statut)) throw new ErreurMetier("actions.statut_impossible");
   if (e.resultat.length > RESULTAT_MAX) throw new ErreurMetier("actions.erreur.resultat");
   const statut: StatutAction = e.statut;
-  const titre = e.titre.trim();
+  const gestionnaire = aLeDroit(roles, "actions.gerer");
   return enTransaction(pool, async (client) => {
-    const r = await dansOrganisation(client, org, async () => {
+    const { r, saisie } = await dansOrganisation(client, org, async () => {
       const lu = await client.query<LigneAction>(`SELECT ${COLONNES} FROM actions a LEFT JOIN documents d ON d.id = a.document_id WHERE a.id = $1 FOR UPDATE OF a`, [id]);
       const avant = lu.rows[0] ? versAction(lu.rows[0]) : null;
       if (!avant) throw new ErreurMetier("erreur.introuvable");
+      // Ni gestionnaire ni responsable : refusé avant tout autre contrôle (rien n'est dit de l'action).
+      if (!gestionnaire && avant.responsable !== acteur.id) throw new ErreurMetier("erreur.interdit");
+      // Champs absents : inchangés.
+      const saisie: SaisieAction = {
+        titre: e.titre ?? avant.titre, description: e.description ?? avant.description, origine: e.origine ?? avant.origine,
+        responsableId: e.responsableId === undefined ? avant.responsable : e.responsableId, echeance: e.echeance === undefined ? avant.echeance : e.echeance,
+      };
+      const refusSaisie = controlerSaisie(saisie);
+      if (refusSaisie) throw new ErreurMetier(refusSaisie);
       if (avant.version !== e.version) throw new ErreurMetier("actions.modifiee");
-      const refus = refusStatut(avant.statut, statut, statut === "cloturee" ? e.efficace : null, e.resultat);
+      const reservesModifies = saisie.titre.trim() !== avant.titre || saisie.description !== avant.description || saisie.origine !== avant.origine
+        || saisie.responsableId !== avant.responsable || saisie.echeance !== avant.echeance;
+      const responsable = avant.responsable === acteur.id || saisie.responsableId === acteur.id;
+      const refus = refusIntervenant(avant.statut, statut, { gestionnaire, responsable }, reservesModifies)
+        ?? refusStatut(avant.statut, statut, statut === "cloturee" ? e.efficace : null, e.resultat);
       if (refus) throw new ErreurMetier(refus);
-      return avant;
+      return { r: avant, saisie };
     });
+    const titre = saisie.titre.trim();
     // Responsable : vérifié seulement s'il change (un responsable parti reste nommé sur ses anciennes actions).
-    const responsable = e.responsableId === r.responsable ? (r.responsable ? { id: r.responsable, nom: r.responsableNom } : null) : await responsableValide(client, org.id, e.responsableId);
+    const responsable = saisie.responsableId === r.responsable ? (r.responsable ? { id: r.responsable, nom: r.responsableNom } : null) : await responsableValide(client, org.id, saisie.responsableId);
     const efficace = statut === "cloturee" ? e.efficace : null;
-    const apres = { titre, description: e.description, origine: e.origine, responsable: responsable?.nom ?? null, echeance: e.echeance, statut, resultat: e.resultat, efficace };
+    const apres = { titre, description: saisie.description, origine: saisie.origine, responsable: responsable?.nom ?? null, echeance: saisie.echeance, statut, resultat: e.resultat, efficace };
     const avantVue = { titre: r.titre, description: r.description, origine: r.origine, responsable: r.responsable ? r.responsableNom : null, echeance: r.echeance, statut: r.statut, resultat: r.resultat, efficace: r.efficace };
     const changements = Object.fromEntries(
       (Object.keys(apres) as (keyof typeof apres)[]).filter((k) => apres[k] !== avantVue[k]).map((k) => [k, { avant: avantVue[k], apres: apres[k] }]),
@@ -225,12 +252,14 @@ export async function modifierAction(pool: Pool, org: OrganisationCible, id: str
       await client.query(
         `UPDATE actions SET titre = $2, description = $3, origine = $4, responsable = $5, responsable_nom = $6, echeance = $7, statut = $8, resultat = $9,
                 efficace = $10, version = $11, modifie_par = $12, modifie_par_nom = $13, modifie_le = now(),
-                cloture_le = CASE WHEN $8 IN ('cloturee', 'abandonnee') THEN coalesce(cloture_le, now()) ELSE NULL END
+                cloture_le = CASE WHEN $8 IN ('cloturee', 'abandonnee') THEN coalesce(cloture_le, now()) ELSE NULL END,
+                cloture_par = CASE WHEN $8 IN ('cloturee', 'abandonnee') THEN $12::uuid ELSE NULL END,
+                cloture_par_nom = CASE WHEN $8 IN ('cloturee', 'abandonnee') THEN $13 ELSE '' END
           WHERE id = $1`,
-        [id, titre, e.description, e.origine, responsable?.id ?? null, responsable?.nom ?? "", e.echeance, statut, e.resultat, efficace, version, acteur.id, nomActeur(acteur)],
+        [id, titre, saisie.description, saisie.origine, responsable?.id ?? null, responsable?.nom ?? "", saisie.echeance, statut, e.resultat, efficace, version, acteur.id, nomActeur(acteur)],
       );
       if (responsable && responsable.id !== r.responsable && responsable.id !== acteur.id) {
-        await notifier(client, [notificationConfiee({ id, titre, echeance: e.echeance }, responsable.id, `action:${id}:confiee:${version}`, acteur)]);
+        await notifier(client, [notificationConfiee({ id, titre, echeance: saisie.echeance }, responsable.id, `action:${id}:confiee:${version}`, acteur)]);
       }
     });
     const nature: ActionJournal = statut !== r.statut && statut === "cloturee" ? "ACTION_CLOTUREE" : statut !== r.statut && statut === "abandonnee" ? "ACTION_ABANDONNEE" : "ACTION_MODIFIEE";

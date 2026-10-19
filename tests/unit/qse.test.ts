@@ -1,6 +1,6 @@
 // Règles QSE (Q1) sans base : cotation identique à l'éditeur, nombres saisis, objectifs, avancement des actions.
 import { describe, expect, it } from "vitest";
-import { criticite, lireNombre, objectifAtteint, refusStatut, scoreOpportunite, STATUTS_ACTION, SUITES_STATUT, type StatutAction } from "../../src/lib/qse";
+import { criticite, lireNombre, objectifAtteint, refusIntervenant, refusStatut, scoreOpportunite, statutsProposes, STATUTS_ACTION, SUITES_STATUT, type Intervenant, type StatutAction } from "../../src/lib/qse";
 import { situationIndicateur } from "../../src/server/qse/indicateurs";
 import { controlerSaisie } from "../../src/server/qse/actions";
 
@@ -87,5 +87,55 @@ describe("actions", () => {
     expect(controlerSaisie({ ...ok, echeance: "2026-02-30" })).toBe("actions.erreur.echeance");
     expect(controlerSaisie({ ...ok, echeance: null })).toBeNull();
     expect(controlerSaisie({ ...ok, responsableId: "pas-un-id" })).toBe("actions.erreur.responsable");
+  });
+});
+
+describe("séparation dans le plan d'actions (décision n° 5 du 19/10/2026)", () => {
+  const lecteurResponsable: Intervenant = { gestionnaire: false, responsable: true };
+  const gestionnaireResponsable: Intervenant = { gestionnaire: true, responsable: true };
+  const gestionnaire: Intervenant = { gestionnaire: true, responsable: false };
+  const personne: Intervenant = { gestionnaire: false, responsable: false };
+  const tous = (qui: Intervenant, reserves = false) =>
+    STATUTS_ACTION.flatMap((de) => STATUTS_ACTION.map((vers) => [de, vers, refusIntervenant(de, vers, qui, reserves)] as const));
+
+  it("ni gestionnaire ni responsable : tout est refusé (interdit)", () => {
+    expect(tous(personne).every(([, , r]) => r === "erreur.interdit")).toBe(true);
+  });
+
+  it("le responsable (avec ou sans actions.gerer) ne clôt ni n'abandonne jamais ; le reste de l'avancement lui est permis", () => {
+    for (const qui of [lecteurResponsable, gestionnaireResponsable]) {
+      for (const [de, vers, r] of tous(qui)) {
+        const definitif = vers === "cloturee" || vers === "abandonnee";
+        expect(r, `${de} → ${vers}`).toBe(definitif && de !== vers ? "actions.cloture_responsable" : null);
+      }
+    }
+  });
+
+  it("une autre personne ayant actions.gerer peut clore et abandonner", () => {
+    expect(tous(gestionnaire).every(([, , r]) => r === null)).toBe(true);
+    expect(refusIntervenant("realisee", "cloturee", gestionnaire, true)).toBeNull();
+  });
+
+  it("intitulé, description, origine, responsable, échéance : réservés à actions.gerer", () => {
+    expect(refusIntervenant("en_cours", "en_cours", lecteurResponsable, true)).toBe("actions.reserve_gestion");
+    expect(refusIntervenant("en_cours", "realisee", lecteurResponsable, true)).toBe("actions.reserve_gestion");
+    expect(refusIntervenant("en_cours", "realisee", gestionnaireResponsable, true)).toBeNull();
+    // La clôture par le responsable est le motif annoncé, même si d'autres champs changent aussi.
+    expect(refusIntervenant("realisee", "cloturee", lecteurResponsable, true)).toBe("actions.cloture_responsable");
+  });
+
+  it("statuts proposés : jamais « close » ni « abandonnée » au responsable ; tous à une autre personne", () => {
+    const attendu: Record<StatutAction, StatutAction[]> = {
+      a_faire: ["a_faire", "en_cours", "realisee"],
+      en_cours: ["en_cours", "a_faire", "realisee"],
+      realisee: ["realisee", "en_cours"],
+      cloturee: ["cloturee"],
+      abandonnee: ["abandonnee"],
+    };
+    for (const s of STATUTS_ACTION) {
+      expect(statutsProposes(s, lecteurResponsable), s).toEqual(attendu[s]);
+      expect(statutsProposes(s, gestionnaireResponsable), s).toEqual(attendu[s]);
+      expect(statutsProposes(s, gestionnaire), s).toEqual([s, ...SUITES_STATUT[s]]);
+    }
   });
 });
