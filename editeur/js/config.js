@@ -1,12 +1,12 @@
-// config.js — les réglages de la version d'essai, à remplir par la personne qui publie l'application.
+// config.js — les réglages de l'outil, à remplir par la personne qui publie l'application.
 // Rien d'autre à toucher : le bouton « Envoyer un retour » et la fenêtre « Mentions et licences » s'adaptent à ce qui est renseigné ici.
 
 export const CONFIG = {
   // Le NOM de l'outil, tel qu'il s'affiche partout (titre de l'onglet, colonne de gauche, accueil, mentions, en-tête des fichiers Word).
   // C'est le seul endroit à changer pour renommer l'outil (voir « Renommer l'outil » dans le CHANGELOG : deux guides à mettre à jour aussi).
   nomOutil: "Jalonia",
-  // Titulaire des droits sur l'outil, affiché dans « Mentions et licences » sous la forme « © 2026 Prénom Nom — tous droits réservés — version d'essai ».
-  // Laissé vide, la ligne n'est pas affichée. (Décision D3 du 30/09/2026.)
+  // Titulaire des droits sur l'outil, affiché dans « Mentions et licences » sous la forme « © 2026 Prénom Nom — tous droits réservés. Utilisation soumise à contrat. »
+  // Laissé vide, la ligne n'est pas affichée. (Décision D3 du 30/09/2026 ; licence propriétaire depuis la v1.7.)
   titulaire: "Brice Ossongombia",
   // Année de la mention ci-dessus (quatre chiffres). Laissée vide ou incorrecte : l'année en cours.
   anneeDroits: "2026",

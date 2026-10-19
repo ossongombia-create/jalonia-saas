@@ -2,9 +2,10 @@
   "name": "jalonia-saas",
   "version": "0.1.0",
   "private": true,
+  "license": "UNLICENSED",
   "description": "Jalonia — application multi-organisations de documentation selon le langage Qualigramme",
   "engines": {
-    "node": ">=22.12.0"
+    "node": ">=22.22.0"
   },
   "scripts": {
     "predev": "node scripts/copier-editeur.mjs",
@@ -28,7 +29,7 @@
     "@node-rs/argon2": "2.2.2",
     "next": "16.4.0",
     "next-auth": "5.0.0-beta.32",
-    "nodemailer": "^8.0.11",
+    "nodemailer": "^10.1.7",
     "pg": "8.23.1",
     "qrcode-generator": "2.0.4",
     "react": "19.3.0",
@@ -38,7 +39,6 @@
   },
   "devDependencies": {
     "@types/node": "22.20.5",
-    "@types/nodemailer": "^8.0.2",
     "@types/pg": "8.23.1",
     "@types/react": "^19",
     "@types/react-dom": "^19",
@@ -50,5 +50,8 @@
     "tsx": "4.23.15",
     "typescript": "^5",
     "vitest": "5.0.3"
+  },
+  "overrides": {
+    "nodemailer": "$nodemailer"
   }
 }

@@ -333,14 +333,14 @@ test("textes et sources : rien de propre à une entreprise réelle, aucun HTML i
 });
 
 // ---------- Mentions et licences ----------
-test("mentions : « aide à la rédaction, sans garantie », version d'essai non commerciale, aucun lien avec les auteurs, données dans le navigateur", () => {
+test("mentions : « aide à la rédaction, sans garantie », licence propriétaire (v1.7), aucun lien avec les auteurs, données dans le navigateur", () => {
   assert.match(fr["mentions.aide.texte"], /aide à rédiger/);
   assert.match(fr["mentions.aide.texte"], /sans garantie/);
   assert.match(fr["mentions.aide.texte"], /responsabilité de l'organisation/);
   assert.match(en["mentions.aide.texte"], /without warranty/);
-  assert.match(fr["mentions.essai.texte"], /essai/);
-  assert.match(fr["mentions.essai.texte"], /n'est pas vendue/);
-  assert.match(en["mentions.essai.texte"], /not for sale/);
+  assert.match(fr["mentions.essai.texte"], /logiciel propriétaire/);
+  assert.match(fr["mentions.essai.texte"], /accord écrit préalable/);
+  assert.match(en["mentions.essai.texte"], /prior written consent/);
   assert.match(fr["mentions.methode.texte"], /ni édité, ni approuvé, ni recommandé/);
   assert.match(en["mentions.methode.texte"], /neither published, approved nor recommended/);
   assert.match(fr["mentions.donnees.texte"], /navigateur/);

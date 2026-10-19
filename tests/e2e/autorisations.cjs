@@ -71,6 +71,7 @@ const REGLES = {
   actionRevoquerSession: { regle: "superadmin" },
   actionReinitialiserMotDePasse: { regle: "superadmin" },
   actionReinitialiserSecondFacteur: { regle: "superadmin" },
+  actionEnregistrerMaintenance: { regle: "superadmin (activer comme lever la maintenance)" },
 };
 
 /** Chemin de page d'un « worker » du manifeste (app/app/documents/page → /app/documents). */
@@ -106,6 +107,7 @@ const EMPREINTE = `SELECT md5(concat_ws('#',
   (SELECT string_agg(row(utilisateur_id, empreinte, utilise_le)::text, ',' ORDER BY utilisateur_id, empreinte) FROM platform.codes_secours),
   (SELECT string_agg(row(id, utilisateur_id, fin, motif_fin, en_attente_mfa, echecs_mfa)::text, ',' ORDER BY id) FROM platform.sessions),
   (SELECT count(*)::text FROM platform.journal),
+  (SELECT string_agg(row(actif, message_fr, message_en, modifie_le, modifie_par)::text, ',') FROM platform.maintenance),
   (SELECT string_agg(query_to_xml(format(
      'SELECT (SELECT string_agg(row(id, titre, version, modifie_le, supprime_le, etat, version_publiee, revue_le)::text, '','' ORDER BY id) FROM %1$I.documents) AS d,
              (SELECT string_agg(row(periode_revue_mois, rappel_jours, escalade_jours, modifie_le)::text, '','') FROM %1$I.parametres) AS pa,
@@ -215,8 +217,9 @@ let mauvaisMotDePasse = 0;
 async function cas(qui, action, champs, attendu, { effet, origine, sansEmpreinte, note, page } = {}) {
   const libelle = `${action} / ${qui}${note ? ` (${note})` : ""}`;
   // Refus : renvoi vers la connexion, « introuvable », origine refusée, message d'erreur, ou renvoi vers le choix
-  // d'organisation. Le reste (« succes », autres redirections) est un succès.
-  const refus = !(attendu === "succes" || attendu.startsWith("redirection^") || (attendu.startsWith("redirection:") && attendu !== "redirection:/choisir-organisation"));
+  // d'organisation ou vers la page de maintenance. Le reste (« succes », autres redirections) est un succès.
+  const refus = !(attendu === "succes" || attendu.startsWith("redirection^")
+    || (attendu.startsWith("redirection:") && attendu !== "redirection:/choisir-organisation" && attendu !== "redirection:/maintenance"));
   const avant = refus && !sansEmpreinte ? empreinte() : null;
   const r = await forger(qui, action, champs, { origine, page });
   if (origine && origine !== BASE) origineEssayee++;
@@ -286,7 +289,7 @@ let ACTIONS;
     return [chemin, a];
   }
   const PLATEFORME = ["/plateforme", "/plateforme/organisations", "/plateforme/organisations/nouvelle", `/plateforme/organisations/${ORG_A}`,
-    "/plateforme/utilisateurs", `/plateforme/utilisateurs/${LECT_A}`, "/plateforme/sessions", "/plateforme/journal", "/plateforme/droits"];
+    "/plateforme/utilisateurs", `/plateforme/utilisateurs/${LECT_A}`, "/plateforme/sessions", "/plateforme/journal", "/plateforme/droits", "/plateforme/maintenance"];
   // Un document de A, pour ses pages d'historique et de validation : B ne les trouve pas (404), même avec l'identifiant.
   const docPages = await api("redacA", "POST", "/api/documents", { organisationId: ORG_A, contenu: { meta: { typeDocument: "procedure", titre: "Pour les pages" }, roles: [], etapes: [] } });
   assert.equal(docPages.statut, 201);
@@ -728,6 +731,18 @@ let ACTIONS;
   const hashJ = sql(`SELECT mot_de_passe_hash FROM platform.utilisateurs WHERE id = '${JETABLE}'`);
   await plateforme("actionReinitialiserMotDePasse", { utilisateurId: JETABLE, motDePasse: "provisoire-e2e-motdepasse-42" },
     () => sql(`SELECT mot_de_passe_hash <> '${hashJ}' AND doit_changer_mdp FROM platform.utilisateurs WHERE id = '${JETABLE}'`) === "t");
+  // Mode maintenance : réservé au superadmin, qu'il s'agisse de l'activer ou de le lever. Requêtes forgées refusées
+  // maintenance inactive (« introuvable ») PUIS maintenance active (renvoi vers /maintenance), sans aucune écriture
+  // (l'état de maintenance fait partie de l'empreinte) ; le superadmin la lève ensuite pour la suite du test.
+  const maintenance = () => sql("SELECT actif::text || '|' || message_fr FROM platform.maintenance WHERE singleton");
+  const textesMaintenance = { messageFr: "Maintenance d'essai (e2e).", messageEn: "Test maintenance (e2e)." };
+  await plateforme("actionEnregistrerMaintenance", { actif: "oui", ...textesMaintenance },
+    () => maintenance() === `true|${textesMaintenance.messageFr}`, "activation");
+  const lever = { actif: "non", ...textesMaintenance };
+  for (const qui of ["faux", "attente"]) await cas(qui, "actionEnregistrerMaintenance", lever, "session", { note: "maintenance active" });
+  for (const qui of NON_SUPERADMINS) await cas(qui, "actionEnregistrerMaintenance", lever, "redirection:/maintenance", { note: "lever la maintenance active" });
+  assert.equal(maintenance(), `true|${textesMaintenance.messageFr}`, "la maintenance reste active après les requêtes forgées");
+  await cas("superadmin", "actionEnregistrerMaintenance", lever, "succes", { effet: () => maintenance() === `false|${textesMaintenance.messageFr}`, note: "levée" });
   // En dernier : l'administrateur « en attente » perd ici son second facteur.
   await plateforme("actionReinitialiserSecondFacteur", { utilisateurId: MFA_A }, () => sql(`SELECT mfa_active_le IS NULL FROM platform.utilisateurs WHERE id = '${MFA_A}'`) === "t");
 

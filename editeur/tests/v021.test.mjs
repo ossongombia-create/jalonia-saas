@@ -105,8 +105,9 @@ test("les textes de la version d'essai existent en FR et en EN, avec les mêmes 
     assert.equal(variables(en[k]), variables(fr[k]), "variables différentes : " + k);
   });
   Object.keys(en).filter((k) => k.startsWith("retour.") || k.startsWith("apropos.")).forEach((k) => assert.ok(fr[k], "clé manquante en français : " + k));
-  assert.match(fr["retour.mention"], /non commerciale/);
-  assert.match(en["retour.mention"], /[Nn]on-commercial/);
+  // Depuis la v1.7 : licence propriétaire (plus de « version d'essai non commerciale »).
+  assert.match(fr["retour.mention"], /propriétaire.*soumise à contrat/);
+  assert.match(en["retour.mention"], /[Pp]roprietary.*subject to contract/);
 });
 
 // ---------- Page ----------
@@ -158,7 +159,7 @@ test("guides de démarrage : assez courts pour une page A4, et les noms de menus
       const cite = visible.toLowerCase().includes(attendu.toLowerCase());
       assert.ok(cite, `${fichier} : le guide doit citer « ${attendu} » (${cle}) exactement comme l'application`);
     });
-    assert.ok(visible.includes(texte["apropos.essai"]), fichier + " : mention « version d'essai »");
+    assert.ok(visible.includes(texte["apropos.essai"]), fichier + " : mention « logiciel propriétaire » (v1.7)");
     assert.ok(visible.includes(langue === "fr" ? "S. Guillard et C. Berger" : "S. Guillard and C. Berger"), fichier + " : mention de la méthode");
   });
 });
