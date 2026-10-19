@@ -171,9 +171,27 @@ unset MDP_PROPRIETAIRE MDP_APP SECRET CLE_MFA
 ls -l /etc/jalonia
 ```
 
+> ⚠️ **Étape obligatoire — clé du second facteur.** Le bloc ci-dessus génère la clé avec
+> `openssl rand -base64 32` et l'assigne à `CLE_SECOND_FACTEUR` dans `/etc/jalonia/jalonia.env`.
+> **Sans cette clé, les approbateurs sont bloqués à la connexion** (ainsi que les superadmins) : le second
+> facteur leur est obligatoire. Jalonia **refuse donc de démarrer** si la clé est absente ou invalide, avec le
+> message `ERREUR FATALE : La variable CLE_SECOND_FACTEUR est absente ou invalide…` (visible avec
+> `journalctl -u jalonia -n 20 --no-pager`). Vérifiez qu'elle est présente (attendu : `1`) :
+>
+> ```bash
+> grep -c '^CLE_SECOND_FACTEUR=.\{32,\}' /etc/jalonia/jalonia.env
+> ```
+>
+> Si la réponse est `0`, ajoutez-la (une seule fois) :
+>
+> ```bash
+> grep -q '^CLE_SECOND_FACTEUR=' /etc/jalonia/jalonia.env || echo "CLE_SECOND_FACTEUR=$(openssl rand -base64 32)" >> /etc/jalonia/jalonia.env
+> ```
+
 `CLE_SECOND_FACTEUR` chiffre les seconds facteurs des comptes (codes à 6 chiffres) : **gardez une copie de
 `/etc/jalonia/jalonia.env` en lieu sûr**, hors du serveur. Sans cette clé, chaque second facteur devrait être
-réinitialisé.
+réinitialisé. **Ne la changez jamais** sur une installation en service : les seconds facteurs déjà activés ne
+pourraient plus être vérifiés.
 
 Le message « Base prête. » doit apparaître, puis les deux fichiers :
 `-rw------- 1 root root … jalonia.env` et `-rw-r----- 1 root jalonia … proprietaire.env`.
@@ -407,8 +425,10 @@ Saisissez l'e-mail du compte, puis `oui`.
 ## Second facteur sur une installation existante (une fois)
 
 Pour une installation faite avant l'arrivée du second facteur : `/etc/jalonia/jalonia.env` ne contient pas encore
-`CLE_SECOND_FACTEUR`. Ajoutez-la **avant ou juste après** la mise à jour (sans elle, les superadmins ne peuvent
-plus entrer dans l'interface : le second facteur leur est obligatoire) :
+`CLE_SECOND_FACTEUR`. Ajoutez-la **avant** la mise à jour : depuis la v1.8, Jalonia **refuse de démarrer** sans
+elle (message `ERREUR FATALE : La variable CLE_SECOND_FACTEUR est absente ou invalide…` dans
+`journalctl -u jalonia`). **Sans cette clé, les approbateurs sont bloqués à la connexion**, comme les superadmins :
+le second facteur leur est obligatoire :
 
 ```bash
 grep -q '^CLE_SECOND_FACTEUR=' /etc/jalonia/jalonia.env || echo "CLE_SECOND_FACTEUR=$(openssl rand -base64 32)" >> /etc/jalonia/jalonia.env
