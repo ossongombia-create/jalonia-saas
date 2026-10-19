@@ -96,3 +96,33 @@ export function refusStatut(avant: StatutAction, apres: StatutAction, efficace: 
   if (apres === "abandonnee" && resultat.trim() === "") return "actions.motif_abandon";
   return null;
 }
+
+/** Statuts définitifs : une action close ou abandonnée ne se modifie plus. */
+export const STATUTS_DEFINITIFS: readonly StatutAction[] = ["cloturee", "abandonnee"];
+
+/**
+ * Qui modifie une action (décision n° 5 du 19/10/2026) : `gestionnaire` = droit actions.gerer ; `responsable` = la
+ * personne est responsable de l'action (avant OU après la modification).
+ */
+export interface Intervenant {
+  gestionnaire: boolean;
+  responsable: boolean;
+}
+
+/**
+ * Séparation dans le plan d'actions (décision n° 5) : le responsable fait avancer SON action (à faire, en cours,
+ * réalisée) et en écrit le résultat, même sans le droit actions.gerer ; il ne la clôt ni ne l'abandonne jamais, même
+ * avec ce droit : c'est une AUTRE personne ayant actions.gerer qui le fait. L'intitulé, la description, l'origine, le
+ * responsable et l'échéance restent réservés à actions.gerer. Refus éventuel (clé de message).
+ */
+export function refusIntervenant(avant: StatutAction, apres: StatutAction, qui: Intervenant, champsReservesModifies: boolean): string | null {
+  if (!qui.gestionnaire && !qui.responsable) return "erreur.interdit";
+  if (apres !== avant && STATUTS_DEFINITIFS.includes(apres) && qui.responsable) return "actions.cloture_responsable";
+  if (!qui.gestionnaire && champsReservesModifies) return "actions.reserve_gestion";
+  return null;
+}
+
+/** Statuts proposés à cette personne depuis le statut actuel (le statut actuel d'abord). */
+export function statutsProposes(statut: StatutAction, qui: Intervenant): StatutAction[] {
+  return [statut, ...SUITES_STATUT[statut].filter((s) => refusIntervenant(statut, s, qui, false) === null)];
+}

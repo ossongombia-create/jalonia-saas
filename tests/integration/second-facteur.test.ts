@@ -10,6 +10,8 @@ import {
 } from "../../src/server/auth/second-facteur";
 import { depuisBase32, hotp, pasDe } from "../../src/server/auth/totp";
 import { lireJournalOrganisation } from "../../src/server/consultation/service";
+import { changerStatutOrganisation } from "../../src/server/organisations/service";
+import { modifierRoles } from "../../src/server/membres/service";
 import { enTransaction } from "../../src/server/db/transactions";
 import type { Acteur } from "../../src/server/acteur";
 import { cleErreur, codeErreur, creerOrgDeTest, creerSuperadmin, MDP_TEST, membreDeTest, ouvrirPools, suffixe, type OrgDeTest } from "./outils";
@@ -230,6 +232,52 @@ describe("compte ordinaire : second facteur facultatif", () => {
     const journal = (await lireJournalOrganisation(app, org.cible, { page: 1 })).lignes.find((l) => l.action === "SECOND_FACTEUR_REINITIALISE" && l.cibleId === p.id);
     expect(journal?.acteurEmail).toBe(superadmin.email);
     expect(await cleErreur(reinitialiserSecondFacteur(app, p.id, superadmin))).toBe("mfa.inactif");
+  });
+});
+
+describe("approbateur : second facteur obligatoire (décision n° 4 du 19/10/2026)", () => {
+  async function approbateur(cible: OrgDeTest): Promise<Acteur> {
+    const email = `appro-${suffixe()}@test.local`;
+    const id = await membreDeTest(app, cible.cible, { email, roles: ["APPROBATEUR"] }, superadmin);
+    return { id, email, ip: "127.0.0.1", agent: "vitest" };
+  }
+
+  it("le mot de passe n'ouvre qu'une session en attente ; enrôlement imposé ; ensuite la session est valable", async () => {
+    const a = await approbateur(org);
+    expect((await lireEtatSecondFacteur(app, a.id)).obligatoire).toBe(true);
+    const r = await connexion(a.email);
+    expect(r.secondFacteur).toBe(true);
+    expect(await valide(r)).toBeNull();
+    expect(await lireSessionEnAttente(app, ids(r), MINUTES_SESSION_EN_ATTENTE)).toMatchObject({ mfaActif: false, utilisateur: { estSuperadmin: false } });
+    const { secret } = await preparerEnrolement(app, CLE, a);
+    await activerSecondFacteur(app, CLE, a, codeDe(secret), r.sessionId);
+    expect(await valide(r)).not.toBeNull();
+  });
+
+  it("il ne peut pas le désactiver", async () => {
+    const a = await approbateur(org);
+    const { secret } = await avecSecondFacteur(a);
+    expect(await cleErreur(desactiverSecondFacteur(app, CLE, { ...a, estSuperadmin: false }, codeDe(secret, 1)))).toBe("mfa.obligatoire");
+    expect((await lireEtatSecondFacteur(app, a.id)).actif).toBe(true);
+  });
+
+  it("le rôle d'approbateur reçu plus tard rend le second facteur obligatoire ; le retirer le rend facultatif", async () => {
+    const m = await nouveauMembre(); // lecteur
+    expect((await connexion(m.email)).secondFacteur).toBe(false);
+    await modifierRoles(app, org.cible, m.id, ["LECTEUR", "APPROBATEUR"], superadmin);
+    expect((await connexion(m.email)).secondFacteur).toBe(true);
+    await modifierRoles(app, org.cible, m.id, ["LECTEUR"], superadmin);
+    expect((await connexion(m.email)).secondFacteur).toBe(false);
+  });
+
+  it("organisation suspendue : le rôle ne compte pas ; réactivée : second facteur exigé à la connexion suivante", async () => {
+    const autre = await creerOrgDeTest(app, proprietaire, superadmin);
+    const a = await approbateur(autre);
+    await changerStatutOrganisation(app, autre.organisationId, "suspendue", superadmin);
+    expect((await connexion(a.email)).secondFacteur).toBe(false);
+    expect((await lireEtatSecondFacteur(app, a.id)).obligatoire).toBe(false);
+    await changerStatutOrganisation(app, autre.organisationId, "active", superadmin);
+    expect((await connexion(a.email)).secondFacteur).toBe(true);
   });
 });
 

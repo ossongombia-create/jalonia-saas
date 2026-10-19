@@ -1,5 +1,6 @@
 // Deuxième étape de la connexion : le code de l'application d'authentification (ou un code de secours). Un
-// superadmin qui n'a pas encore de second facteur l'enrôle ici : il lui est obligatoire.
+// superadmin ou un approbateur (décision n° 4 du 19/10/2026) qui n'a pas encore de second facteur l'enrôle ici : il lui
+// est obligatoire.
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { actionAbandonnerConnexion, actionActiverSecondFacteurConnexion, actionCodeSecondFacteur } from "@/actions/second-facteur";

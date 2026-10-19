@@ -1,5 +1,7 @@
-// Une action (audit Q1) : sa fiche, sa modification (droit actions.gerer ; jamais une action close ou abandonnée) et
-// son historique (journal de l'organisation). Lecture : tous les rôles de l'organisation.
+// Une action (audit Q1) : sa fiche, sa modification (jamais une action close ou abandonnée) et son historique (journal
+// de l'organisation). Lecture : tous les rôles de l'organisation. Modification (décision n° 5 du 19/10/2026) : le droit
+// actions.gerer donne le formulaire complet ; le responsable sans ce droit a un formulaire réduit (avancement et compte
+// rendu). Le responsable ne voit jamais « Close » ni « Abandonnée » (une autre personne le fait ; le serveur le vérifie).
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { actionModifierAction } from "@/actions/qse";
@@ -7,7 +9,7 @@ import { ChampsAction } from "@/components/ChampsAction";
 import { FormulaireAction } from "@/components/FormulaireAction";
 import { formaterDate, formaterJour } from "@/lib/format";
 import { estCle, type Traducteur } from "@/lib/i18n";
-import { SUITES_STATUT } from "@/lib/qse";
+import { statutsProposes } from "@/lib/qse";
 import { aLeDroit } from "@/lib/rbac";
 import { identifiant } from "@/lib/validation";
 import { poolApplication } from "@/server/db/pools";
@@ -41,9 +43,11 @@ export default async function PageAction({ params, searchParams }: {
   const [historique, membres] = await Promise.all([historiqueAction(pool, organisation, action.id), listerMembres(pool, organisation.id)]);
   const responsables = membres.filter((m) => m.statut === "actif").map((m) => ({ id: m.utilisateurId, nom: m.nom || m.email }));
   const definitive = action.statut === "cloturee" || action.statut === "abandonnee";
-  const peutModifier = aLeDroit(organisation.roles, "actions.gerer") && !definitive;
+  const gestionnaire = aLeDroit(organisation.roles, "actions.gerer");
+  const estResponsable = action.responsable !== null && action.responsable === ctx.acteur.id;
+  const peutModifier = (gestionnaire || estResponsable) && !definitive;
   const q = await searchParams;
-  const statuts = [action.statut, ...SUITES_STATUT[action.statut]];
+  const statuts = statutsProposes(action.statut, { gestionnaire, responsable: estResponsable });
 
   return (
     <>
@@ -76,9 +80,13 @@ export default async function PageAction({ params, searchParams }: {
           <dt>{t("actions.champ.responsable")}</dt><dd>{action.responsableNom || "—"}</dd>
           <dt>{t("actions.champ.echeance")}</dt><dd>{formaterJour(langue, action.echeance)}</dd>
           {action.resultat ? <><dt>{t("actions.champ.resultat")}</dt><dd className="texte-long">{action.resultat}</dd></> : null}
+          {definitive && action.clotureParNom ? (
+            <><dt>{t("actions.champ.cloture_par")}</dt><dd id="cloture-par">{action.clotureParNom}{action.clotureLe ? ` — ${formaterDate(langue, action.clotureLe, fuseau)}` : ""}</dd></>
+          ) : null}
         </dl>
         {definitive ? <p className="bandeau bandeau-info">{t("actions.definitive_texte")}</p> : null}
-        {!aLeDroit(organisation.roles, "actions.gerer") ? <p className="bandeau bandeau-info">{t("actions.lecture_seule")}</p> : null}
+        {!gestionnaire && !estResponsable ? <p className="bandeau bandeau-info">{t("actions.lecture_seule")}</p> : null}
+        {estResponsable && !definitive ? <p className="bandeau bandeau-info" id="action-responsable">{t("actions.responsable_texte")}</p> : null}
       </section>
 
       {peutModifier ? (
@@ -87,8 +95,10 @@ export default async function PageAction({ params, searchParams }: {
             <input type="hidden" name="organisationId" value={organisation.id} />
             <input type="hidden" name="actionId" value={action.id} />
             <input type="hidden" name="version" value={action.version} />
-            <ChampsAction t={t} responsables={responsables}
-              valeurs={{ titre: action.titre, description: action.description, origine: action.origine, responsableId: action.responsable, responsableNom: action.responsableNom, echeance: action.echeance }} />
+            {gestionnaire ? (
+              <ChampsAction t={t} responsables={responsables}
+                valeurs={{ titre: action.titre, description: action.description, origine: action.origine, responsableId: action.responsable, responsableNom: action.responsableNom, echeance: action.echeance }} />
+            ) : <input type="hidden" name="avancement" value="1" />}
             <div className="grille-champs">
               <label className="champ">
                 <span>{t("actions.champ.statut")}</span>
@@ -96,19 +106,21 @@ export default async function PageAction({ params, searchParams }: {
                   {statuts.map((s) => <option key={s} value={s}>{t(`actions.statut.${s}`)}</option>)}
                 </select>
               </label>
-              <label className="champ">
-                <span>{t("actions.champ.efficace")}</span>
-                <select name="efficace" defaultValue="">
-                  <option value="">{t("actions.efficace.a_preciser")}</option>
-                  <option value="oui">{t("actions.efficace.oui")}</option>
-                  <option value="non">{t("actions.efficace.non")}</option>
-                </select>
-              </label>
+              {statuts.includes("cloturee") ? (
+                <label className="champ">
+                  <span>{t("actions.champ.efficace")}</span>
+                  <select name="efficace" defaultValue="">
+                    <option value="">{t("actions.efficace.a_preciser")}</option>
+                    <option value="oui">{t("actions.efficace.oui")}</option>
+                    <option value="non">{t("actions.efficace.non")}</option>
+                  </select>
+                </label>
+              ) : null}
             </div>
             <label className="champ">
               <span>{t("actions.champ.resultat")}</span>
               <textarea name="resultat" defaultValue={action.resultat} rows={3} maxLength={4000} />
-              <small>{t("actions.resultat_aide")}</small>
+              <small>{t(statuts.includes("cloturee") || statuts.includes("abandonnee") ? "actions.resultat_aide" : "actions.resultat_aide_responsable")}</small>
             </label>
           </FormulaireAction>
         </section>

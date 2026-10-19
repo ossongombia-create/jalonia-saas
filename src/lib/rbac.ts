@@ -49,6 +49,11 @@ export const DROITS = {
   // ----- QSE (src/server/qse) : plan d'actions, objectifs et mesures des indicateurs -----
   // Valeurs par défaut (à confirmer par Brice) : tout rôle sauf lecteur fait avancer les actions et saisit les mesures ;
   // les objectifs chiffrés sont fixés par l'administrateur et l'approbateur (direction).
+  // Plan d'actions (décision n° 5 du 19/10/2026, règle dans src/lib/qse.ts : refusIntervenant) : en plus de ce droit,
+  // le RESPONSABLE d'une action la fait avancer (à faire, en cours, réalisée) et en écrit le compte rendu, même s'il ne
+  // l'a pas (un lecteur, par exemple). Clore ou abandonner une action : actions.gerer, et jamais par son responsable.
+  // Pas de droit « actions.clore » à part : il ne servirait que pour réserver la clôture à certains rôles, ce qui n'est
+  // pas retenu ; actions.gerer suffit.
   "actions.gerer": { roles: ["ADMIN_ORGANISATION", "REDACTEUR", "VERIFICATEUR", "APPROBATEUR"], etat: "actif" },
   "indicateurs.mesurer": { roles: ["ADMIN_ORGANISATION", "REDACTEUR", "VERIFICATEUR", "APPROBATEUR"], etat: "actif" },
   "indicateurs.objectifs": { roles: ["ADMIN_ORGANISATION", "APPROBATEUR"], etat: "actif" },

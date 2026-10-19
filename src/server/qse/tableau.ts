@@ -7,7 +7,7 @@ import { situationEcheance } from "@/lib/dates";
 import { STATUTS_OUVERTS } from "@/lib/qse";
 import { avecOrganisation } from "../db/transactions";
 import type { OrganisationCible } from "../membres/service";
-import { ETATS, lireIntervenants, transitionsPossibles, type EtatDocument } from "../documents/circuit";
+import { ETATS, lireIntervenants, transitionsPossibles, type EtatDocument, type ModeValidation } from "../documents/circuit";
 import { lireParametres, revueDe } from "../documents/revues";
 import { lireIndicateurs, lireOpportunites, lireRisques } from "./registres";
 import { cleIndicateur, dernieresMesures, lireObjectifs, situationIndicateur, type SituationIndicateur } from "./indicateurs";
@@ -38,7 +38,7 @@ export interface TableauDeBord {
   mesActions: ActionResumee[];
 }
 
-export async function lireTableauDeBord(pool: Pool, org: OrganisationCible, personne: { id: string; roles: readonly RoleOrganisation[] }, fuseau: string, aujourdhui: string): Promise<TableauDeBord> {
+export async function lireTableauDeBord(pool: Pool, org: OrganisationCible, personne: { id: string; roles: readonly RoleOrganisation[]; mode?: ModeValidation }, fuseau: string, aujourdhui: string): Promise<TableauDeBord> {
   return avecOrganisation(pool, org, async (client) => {
     const p = await lireParametres(client);
     const docs = await client.query<{ id: string; reference: string; titre: string; etat: EtatDocument; revue_le: Date | null; modifie_par: string | null }>(
@@ -54,7 +54,8 @@ export async function lireTableauDeBord(pool: Pool, org: OrganisationCible, pers
       else if (revue && revue.situation !== "a_jour") revues.retard++;
       if (d.etat === "en_verification" || d.etat === "en_approbation") {
         const intervenants = await lireIntervenants(client, d.id, d.modifie_par, d.etat);
-        if (transitionsPossibles(d.etat, personne.roles, personne.id, intervenants).length > 0) aDecider.push({ id: d.id, reference: d.reference, titre: d.titre, etat: d.etat });
+        // (Second facteur supposé actif : un approbateur qui ne l'a pas encore activé voit quand même ce qui l'attend.)
+        if (transitionsPossibles(d.etat, personne.roles, personne.id, intervenants, { mode: personne.mode ?? "standard", secondFacteurActif: true }).length > 0) aDecider.push({ id: d.id, reference: d.reference, titre: d.titre, etat: d.etat });
       }
     }
 

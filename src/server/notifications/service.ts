@@ -14,6 +14,7 @@ export const NATURES = [
   "a_verifier", "a_approuver", "refuse", "publie",
   "revue_proche", "revue_retard", "revue_escalade",
   "action_confiee", "action_proche", "action_retard", "action_escalade",
+  "acces_urgence",
 ] as const;
 export type NatureNotification = (typeof NATURES)[number];
 
@@ -26,6 +27,8 @@ export interface DetailsNotification {
   par?: string;
   echeance?: string;
   jours?: number;
+  /** Accès d'urgence : durée en heures. */
+  heures?: number;
 }
 
 export interface NouvelleNotification {

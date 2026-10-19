@@ -13,11 +13,10 @@ const editeur = (chemin) => fs.readFileSync(new URL("../" + chemin, import.meta.
 const depot = (chemin) => fs.readFileSync(new URL("../../" + chemin, import.meta.url), "utf8").replace(/\r\n/g, "\n");
 
 // ---------- Contrat de l'agent ----------
-test("editeur/AGENTS.md existe et donne la version, les comptes de tests, la stratégie de tag et les prérequis", () => {
+// (Depuis la v1.8, les comptes de tests à jour sont vérifiés par tests/v180.test.mjs.)
+test("editeur/AGENTS.md existe et donne la version, la stratégie de tag et les prérequis", () => {
   const agents = editeur("AGENTS.md");
   assert.ok(agents.includes(`VERSION = "${VERSION}"`), "la version de js/version.js");
-  assert.ok(agents.includes("780 tests automatisés"), "le total des tests automatisés de la v1.7");
-  ["486 éditeur (477 + 9)", "133 unitaires", "161 intégration", "7/7", "6/6", "16/16"].forEach((n) => assert.ok(agents.includes(n), `détail des familles : ${n}`));
   assert.match(agents, /tag Git annoté `vX\.Y`/);
   assert.match(agents, /openssl/);
   assert.match(agents, /22\.22/);
@@ -42,8 +41,11 @@ test("docs/DECISIONS.md : plus de chiffres périmés, une section « Incrément 
 });
 
 // ---------- Version ----------
-test("la version est 1.7", () => {
-  assert.equal(VERSION, "1.7");
+test("l'entrée v1.7 reste dans le CHANGELOG, avec ses 486 tests (la version courante est vérifiée par v180)", () => {
+  const journal = editeur("CHANGELOG.md");
+  const v17 = journal.slice(journal.indexOf("## v1.7 "), journal.indexOf("## v1.6 "));
+  assert.match(v17, /^## v1\.7 — Licence propriétaire/);
+  assert.match(v17, /486 tests Node au vert/);
 });
 
 // ---------- Licence propriétaire ----------

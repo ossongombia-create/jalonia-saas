@@ -1,5 +1,6 @@
 // Espace d'une organisation. La mise en page vérifie l'accès ; CHAQUE page le revérifie aussi.
 import { Coque, type LienCoque } from "@/components/Coque";
+import { formaterDate } from "@/lib/format";
 import { aLeDroit } from "@/lib/rbac";
 import { poolApplication } from "@/server/db/pools";
 import { compterNonLues } from "@/server/notifications/service";
@@ -27,6 +28,11 @@ export default async function MiseEnPageOrganisation({ children }: { children: R
 
   return (
     <Coque ctx={ctx} espace={organisation.nom} liens={liens} liensSecondaires={secondaires}>
+      {organisation.urgence ? (
+        <p className="bandeau bandeau-alerte" role="status">
+          {t("acces.bandeau", { role: organisation.roles.map((r) => t(`role.${r}`)).join(", "), date: formaterDate(ctx.langue, organisation.urgence.expireLe, ctx.fuseau) })}
+        </p>
+      ) : null}
       {children}
     </Coque>
   );

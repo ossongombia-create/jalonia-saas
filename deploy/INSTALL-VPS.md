@@ -171,9 +171,27 @@ unset MDP_PROPRIETAIRE MDP_APP SECRET CLE_MFA
 ls -l /etc/jalonia
 ```
 
+> ⚠️ **Étape obligatoire — clé du second facteur.** Le bloc ci-dessus génère la clé avec
+> `openssl rand -base64 32` et l'assigne à `CLE_SECOND_FACTEUR` dans `/etc/jalonia/jalonia.env`.
+> **Sans cette clé, les approbateurs sont bloqués à la connexion** (ainsi que les superadmins) : le second
+> facteur leur est obligatoire. Jalonia **refuse donc de démarrer** si la clé est absente ou invalide, avec le
+> message `ERREUR FATALE : La variable CLE_SECOND_FACTEUR est absente ou invalide…` (visible avec
+> `journalctl -u jalonia -n 20 --no-pager`). Vérifiez qu'elle est présente (attendu : `1`) :
+>
+> ```bash
+> grep -c '^CLE_SECOND_FACTEUR=.\{32,\}' /etc/jalonia/jalonia.env
+> ```
+>
+> Si la réponse est `0`, ajoutez-la (une seule fois) :
+>
+> ```bash
+> grep -q '^CLE_SECOND_FACTEUR=' /etc/jalonia/jalonia.env || echo "CLE_SECOND_FACTEUR=$(openssl rand -base64 32)" >> /etc/jalonia/jalonia.env
+> ```
+
 `CLE_SECOND_FACTEUR` chiffre les seconds facteurs des comptes (codes à 6 chiffres) : **gardez une copie de
 `/etc/jalonia/jalonia.env` en lieu sûr**, hors du serveur. Sans cette clé, chaque second facteur devrait être
-réinitialisé.
+réinitialisé. **Ne la changez jamais** sur une installation en service : les seconds facteurs déjà activés ne
+pourraient plus être vérifiés.
 
 Le message « Base prête. » doit apparaître, puis les deux fichiers :
 `-rw------- 1 root root … jalonia.env` et `-rw-r----- 1 root jalonia … proprietaire.env`.
@@ -404,11 +422,88 @@ cd /root
 
 Saisissez l'e-mail du compte, puis `oui`.
 
+## Fin de contrat d'une organisation
+
+Décisions n° 3 et n° 6 du 19/10/2026. Deux scripts, lancés avec le rôle propriétaire de la base (comme la création
+d'un superadmin) : **exporter** toutes les données de l'organisation, puis la **supprimer** définitivement. Les autres
+organisations ne sont jamais touchées.
+
+**Rappels.**
+
+- **Corbeille sans limite de durée** (décision n° 3) : pendant tout le contrat, un document mis à la corbeille n'est
+  jamais effacé (personne ne vide la corbeille depuis l'application). Il figure dans l'export (avec sa date de mise à
+  la corbeille, `supprime_le`) et ne disparaît qu'avec la suppression de l'organisation.
+- **Quotas au contrat seulement** (décision n° 6) : le nombre d'utilisateurs prévu par l'offre (par exemple 50) est
+  fixé **dans le contrat**. L'application ne bloque rien : vérifiez-le dans l'interface du superadmin (page
+  « Organisations », colonne des membres). **Il n'y a pas de quota de stockage** : le quota de 5 Go, envisagé, a été
+  retiré (irréaliste à mesurer et à faire respecter) ; aucune limite de stockage n'existe dans le code.
+
+**Quand.** À la date de fin du contrat (ou plus tôt, à la demande écrite du client), après l'avoir prévenu. L'ordre est
+toujours : **suspendre → exporter → remettre l'export → sauvegarder → supprimer**.
+
+**1. Suspendre l'organisation** (interface du superadmin, page de l'organisation, « Suspendre »). Plus personne ne
+peut y entrer ni rien y modifier : l'export qui suit est donc définitif.
+
+**2. Exporter.** Un seul fichier JSON : toutes les tables de l'organisation (documents et leur historique, décisions
+du circuit, cartographie, plan d'actions, objectifs et mesures des indicateurs, notifications, paramètres, journal)
+et ses lignes des tables communes (membres avec nom, e-mail et rôles, invitations, accès d'urgence, entrées du journal
+de la plateforme). **Jamais** de mot de passe ni de secret. Rien n'est modifié ; l'export est tracé dans les journaux.
+
+```bash
+install -d -o jalonia -g jalonia -m 700 /var/lib/jalonia/fin-de-contrat
+cd "$(readlink -f /opt/jalonia/courant)/../.."
+sudo -u jalonia -H npx tsx --env-file=/etc/jalonia/proprietaire.env scripts/exporter-organisation.ts \
+  --organisation <identifiant-court> --sortie /var/lib/jalonia/fin-de-contrat/<identifiant-court>-$(date +%F).json
+cd /root
+```
+
+Attendu : « ✔ Organisation … exportée », le nombre de lignes par table, la taille et l'**empreinte SHA-256** du
+fichier. `--organisation` accepte l'identifiant court (`slug`, visible dans l'interface) ou l'identifiant complet.
+Le fichier n'écrase jamais un fichier existant et n'est lisible que par le compte `jalonia`.
+
+**Où stocker le fichier.** Notez l'empreinte SHA-256 avec le fichier (`sha256sum <fichier>` doit redonner la même).
+Remettez-le au client par un moyen chiffré (archive chiffrée, partage sécurisé ; mot de passe transmis à part), avec
+son empreinte. Gardez-en une copie **hors du serveur**, chiffrée, pendant la durée prévue au contrat ; puis effacez
+celle du serveur (`shred -u <fichier>`). Ne laissez pas le fichier dans `/var/backups/jalonia` (il partirait dans les
+sauvegardes quotidiennes).
+
+**3. Sauvegarde préalable.** Juste avant la suppression, lancez une sauvegarde (elle permettrait, en dernier recours,
+de revenir en arrière) :
+
+```bash
+/etc/cron.daily/jalonia-sauvegarde && ls -l /var/backups/jalonia | tail -3
+```
+
+**4. Supprimer.** Définitif : le schéma de l'organisation, son rôle PostgreSQL et ses lignes des tables communes
+(organisation, adhésions, invitations, accès d'urgence) sont retirés, tout ou rien. Le script refuse :
+- hors d'un **terminal interactif** (pas de saisie par un tube ni par un script) ;
+- si le **nom de l'organisation** n'est pas retapé à l'identique ;
+- si l'organisation n'est pas **suspendue**, ou n'a pas été **exportée depuis sa suspension**.
+
+```bash
+cd "$(readlink -f /opt/jalonia/courant)/../.."
+sudo -u jalonia -H npx tsx --env-file=/etc/jalonia/proprietaire.env scripts/supprimer-organisation.ts --organisation <identifiant-court>
+cd /root
+```
+
+Le script affiche l'organisation, ses tables et la date du dernier export, puis demande le nom exact. Attendu :
+« ✔ Organisation … supprimée ». Il liste ensuite les **comptes qui n'appartiennent plus à aucune organisation** :
+désactivez-les depuis l'interface du superadmin (page « Utilisateurs ») si la personne n'a plus de raison d'avoir un
+compte. La suppression est tracée dans le journal de la plateforme (`ORGANISATION_SUPPRIMEE`) ; ce journal, en ajout
+seul et chaîné, garde ses entrées sur l'organisation (opérations seulement, jamais le contenu des documents).
+
+**5. Vérifier** les journaux (voir « Au quotidien ») : attendu « ✔ … journal(aux) intact(s). ».
+
+**À savoir.** Les sauvegardes chiffrées déjà faites contiennent encore l'organisation jusqu'à leur rotation
+(14 sauvegardes quotidiennes, 8 hebdomadaires, 12 mensuelles : **jusqu'à 12 mois**). Le contrat doit le dire.
+
 ## Second facteur sur une installation existante (une fois)
 
 Pour une installation faite avant l'arrivée du second facteur : `/etc/jalonia/jalonia.env` ne contient pas encore
-`CLE_SECOND_FACTEUR`. Ajoutez-la **avant ou juste après** la mise à jour (sans elle, les superadmins ne peuvent
-plus entrer dans l'interface : le second facteur leur est obligatoire) :
+`CLE_SECOND_FACTEUR`. Ajoutez-la **avant** la mise à jour : depuis la v1.8, Jalonia **refuse de démarrer** sans
+elle (message `ERREUR FATALE : La variable CLE_SECOND_FACTEUR est absente ou invalide…` dans
+`journalctl -u jalonia`). **Sans cette clé, les approbateurs sont bloqués à la connexion**, comme les superadmins :
+le second facteur leur est obligatoire :
 
 ```bash
 grep -q '^CLE_SECOND_FACTEUR=' /etc/jalonia/jalonia.env || echo "CLE_SECOND_FACTEUR=$(openssl rand -base64 32)" >> /etc/jalonia/jalonia.env

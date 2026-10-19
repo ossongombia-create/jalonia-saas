@@ -11,11 +11,11 @@ import { listerVersions, restaurerVersion } from "../../src/server/documents/ver
 import { lireJournalOrganisation, lireJournalPlateforme } from "../../src/server/consultation/service";
 import { appliquerMigrationsOrganisation, lireMigrations } from "../../src/server/migrations/lanceur";
 import { creerOrganisation } from "../../src/server/organisations/provisionnement";
-import { lireOrganisation } from "../../src/server/organisations/service";
+import { changerModeValidation, lireOrganisation } from "../../src/server/organisations/service";
 import { avecOrganisation, enTransaction } from "../../src/server/db/transactions";
 import type { RoleOrganisation } from "../../src/lib/rbac";
 import type { Acteur } from "../../src/server/acteur";
-import { cleErreur, codeErreur, creerOrgDeTest, creerSuperadmin, ouvrirPools, suffixe, type OrgDeTest } from "./outils";
+import { cleErreur, codeErreur, creerOrgDeTest, creerSuperadmin, ouvrirPools, secondFacteurDeTest, suffixe, type OrgDeTest } from "./outils";
 
 let app: Pool;
 let proprietaire: Pool;
@@ -57,6 +57,11 @@ beforeAll(() => {
   paul = personne("Paul", "APPROBATEUR");
   multi = personne("Multi", "VERIFICATEUR", "APPROBATEUR");
   lea = personne("Lea", "LECTEUR");
+});
+// Les approbateurs ont un second facteur actif (décision n° 4 du 19/10/2026) ; sans lui, leurs décisions sont refusées
+// (voir « second facteur obligatoire pour approuver » plus bas).
+beforeAll(async () => {
+  await secondFacteurDeTest(proprietaire, [alice, bob, vera, paul, multi]);
 });
 
 describe("circuit de validation", () => {
@@ -315,5 +320,68 @@ describe("mise à niveau d'une organisation existante", () => {
     expect((await listerVersions(app, cible, id))!.versions.map((v) => [v.version, v.motif])).toEqual([[4, "soumission"]]);
     await decider(org, id, "refuser_verification", vera, "À reprendre.");
     expect((await enregistrerDocument(app, cible, id, { contenu: procedure("Existant modifié"), version: 4 }, alice)).version).toBe(5);
+  });
+});
+
+describe("second facteur obligatoire pour les décisions de l'approbateur (décision n° 4 du 19/10/2026)", () => {
+  it("sans second facteur actif : approuver, refuser l'approbation, archiver et confirmer une revue sont refusés, sans rien écrire", async () => {
+    const org = await creerOrgDeTest(app, proprietaire, superadmin);
+    const sansMfa = personne("SansMfa", "APPROBATEUR");
+    const d = await creerDocument(app, org.cible, procedure("MFA"), alice);
+    await decider(org, d.id, "soumettre", alice);
+    await decider(org, d.id, "verifier", vera);
+    expect(await cleErreur(decider(org, d.id, "approuver", sansMfa))).toBe("circuit.second_facteur_requis");
+    expect(await cleErreur(decider(org, d.id, "refuser_approbation", sansMfa, "non"))).toBe("circuit.second_facteur_requis");
+    expect(await etat(org, d.id)).toBe("en_approbation");
+    expect((await lireCircuit(app, org.cible, d.id))!.decisions).toHaveLength(2);
+    // Le même approbateur, une fois son second facteur activé, décide.
+    await secondFacteurDeTest(proprietaire, [sansMfa]);
+    expect(await decider(org, d.id, "approuver", sansMfa)).toEqual({ etat: "publie" });
+    const autre = personne("SansMfa2", "APPROBATEUR");
+    expect(await cleErreur(decider(org, d.id, "confirmer_revue", autre))).toBe("circuit.second_facteur_requis");
+    expect(await cleErreur(decider(org, d.id, "archiver", autre, "Remplacé"))).toBe("circuit.second_facteur_requis");
+    expect(await etat(org, d.id)).toBe("publie");
+  });
+
+  it("vérifier et soumettre n'exigent pas de second facteur", async () => {
+    const org = await creerOrgDeTest(app, proprietaire, superadmin);
+    const redac = personne("RedacSansMfa", "REDACTEUR");
+    const verif = personne("VerifSansMfa", "VERIFICATEUR");
+    const d = await creerDocument(app, org.cible, procedure("Sans MFA"), redac);
+    await decider(org, d.id, "soumettre", redac);
+    expect(await decider(org, d.id, "verifier", verif)).toEqual({ etat: "en_approbation" });
+  });
+});
+
+describe("mode « petite organisation » (décision n° 2 du 19/10/2026)", () => {
+  it("deux personnes suffisent : la même personne vérifie puis approuve ; refusé en mode standard", async () => {
+    const org = await creerOrgDeTest(app, proprietaire, superadmin);
+    const d = await creerDocument(app, org.cible, procedure("Petite"), alice);
+    await decider(org, d.id, "soumettre", alice);
+    await decider(org, d.id, "verifier", multi);
+    expect(await cleErreur(decider(org, d.id, "approuver", multi))).toBe("circuit.separation_verificateur"); // standard
+    await changerModeValidation(app, org.organisationId, "petite_organisation", superadmin);
+    expect(await decider(org, d.id, "approuver", multi)).toEqual({ etat: "publie" });
+    // Retour au mode standard : la règle des trois personnes s'applique de nouveau.
+    await changerModeValidation(app, org.organisationId, "standard", superadmin);
+    await decider(org, d.id, "reviser", alice);
+    await enregistrerDocument(app, org.cible, d.id, { contenu: procedure("Petite v2"), version: (await lireDocument(app, org.cible, d.id))!.version }, alice);
+    await decider(org, d.id, "soumettre", alice);
+    await decider(org, d.id, "verifier", multi);
+    expect(await cleErreur(decider(org, d.id, "approuver", multi))).toBe("circuit.separation_verificateur");
+  });
+
+  it("l'auteur ou la personne qui soumet reste exclu dans les deux modes", async () => {
+    const org = await creerOrgDeTest(app, proprietaire, superadmin);
+    await changerModeValidation(app, org.organisationId, "petite_organisation", superadmin);
+    const aliceTout = { ...alice, roles: ["REDACTEUR", "VERIFICATEUR", "APPROBATEUR"] as RoleOrganisation[] };
+    const bobTout = { ...bob, roles: ["REDACTEUR", "VERIFICATEUR", "APPROBATEUR"] as RoleOrganisation[] };
+    const d = await creerDocument(app, org.cible, procedure("Auteur"), alice);
+    await decider(org, d.id, "soumettre", bob);
+    expect(await cleErreur(decider(org, d.id, "verifier", aliceTout))).toBe("circuit.separation_auteur");
+    expect(await cleErreur(decider(org, d.id, "verifier", bobTout))).toBe("circuit.separation_auteur");
+    await decider(org, d.id, "verifier", multi);
+    expect(await cleErreur(decider(org, d.id, "approuver", aliceTout))).toBe("circuit.separation_auteur");
+    expect(await cleErreur(decider(org, d.id, "approuver", bobTout))).toBe("circuit.separation_auteur");
   });
 });

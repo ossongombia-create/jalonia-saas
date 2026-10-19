@@ -83,6 +83,9 @@ const { BASE, lancer, connecter, api, capture, etape, assert } = require("./outi
   await capture(rita, "tableau-de-bord");
   await rita.goto(pageAction);
   await rita.waitForLoadState("networkidle");
+  // Responsable (même avec le droit de gérer les actions) : ni « Close » ni « Abandonnée » (décision n° 5).
+  const statutsDe = (p) => p.locator('select[name="statut"] option').evaluateAll((os) => os.map((o) => o.value));
+  assert.deepEqual(await statutsDe(rita), ["a_faire", "en_cours", "realisee"]);
   await rita.selectOption('select[name="statut"]', "realisee");
   await rita.fill('textarea[name="resultat"]', "Double contrôle en place depuis le 1er novembre.");
   await rita.click('button:has-text("Enregistrer")');
@@ -103,6 +106,7 @@ const { BASE, lancer, connecter, api, capture, etape, assert } = require("./outi
   await agathe.click('button:has-text("Enregistrer")');
   await agathe.waitForFunction(() => document.querySelector("#fiche-action")?.dataset.statut === "cloturee");
   assert.ok((await agathe.innerText("#fiche-action")).includes("Close — Efficace"));
+  assert.match(await agathe.innerText("#cloture-par"), /^Agathe Approbatrice — /);
   assert.equal(await agathe.locator("#modifier-action").count(), 0);
   assert.ok(await agathe.isVisible("text=Action close ou abandonnée : elle ne se modifie plus."));
   await agathe.goto(`${BASE}/app/risques`);
@@ -174,6 +178,39 @@ const { BASE, lancer, connecter, api, capture, etape, assert } = require("./outi
   await lea.goto(pageIndicateur);
   assert.equal(await lea.locator('button:has-text("Record the measurement")').count(), 0);
   assert.ok(await lea.isVisible("text=Your role gives read access to indicators."));
+
+  etape("lectrice responsable d'une action : formulaire réduit (avancement, compte rendu), ni clôture ni abandon");
+  await agathe.goto(`${BASE}/app/actions/nouvelle`);
+  await agathe.waitForLoadState("networkidle");
+  await agathe.fill('input[name="titre"]', "Afficher la consigne au poste");
+  await agathe.selectOption('select[name="origine"]', "autre");
+  await agathe.selectOption('select[name="responsableId"]', { label: "Léa Lectrice" });
+  await agathe.click('button:has-text("Créer l\'action")');
+  await agathe.waitForURL((u) => /^\/app\/actions\/[0-9a-f-]{36}$/.test(u.pathname) && u.searchParams.has("cree"));
+  const pageActionLea = agathe.url().split("?")[0];
+  await lea.goto(pageActionLea);
+  await lea.waitForLoadState("networkidle");
+  assert.ok(await lea.isVisible("#action-responsable"));
+  for (const champ of ['input[name="titre"]', 'textarea[name="description"]', 'select[name="origine"]', 'select[name="responsableId"]', 'input[name="echeance"]', 'select[name="efficace"]']) {
+    assert.equal(await lea.locator(`#modifier-action ${champ}`).count(), 0, champ);
+  }
+  assert.deepEqual(await statutsDe(lea), ["a_faire", "en_cours", "realisee"]);
+  await lea.selectOption('select[name="statut"]', "realisee");
+  await lea.fill('textarea[name="resultat"]', "Consigne affichée au poste 3.");
+  await lea.click('button:has-text("Save")');
+  await lea.waitForSelector("text=Action saved.");
+  await lea.waitForFunction(() => document.querySelector("#fiche-action")?.dataset.statut === "realisee");
+  assert.deepEqual(await statutsDe(lea), ["realisee", "en_cours"]);
+  await capture(lea, "action-lectrice-responsable");
+  await agathe.goto(pageActionLea);
+  await agathe.waitForLoadState("networkidle");
+  await agathe.selectOption('select[name="statut"]', "cloturee");
+  await agathe.selectOption('select[name="efficace"]', "oui");
+  await agathe.click('button:has-text("Enregistrer")');
+  await agathe.waitForFunction(() => document.querySelector("#fiche-action")?.dataset.statut === "cloturee");
+  await lea.goto(pageActionLea);
+  assert.match(await lea.innerText("#cloture-par"), /^Agathe Approbatrice — /);
+  assert.equal(await lea.locator("#modifier-action").count(), 0);
 
   for (const p of [rita, victor, agathe, lea]) assert.deepEqual(p.erreurs, [], "erreurs console");
   console.log("  erreurs console : aucune");

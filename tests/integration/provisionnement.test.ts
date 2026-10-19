@@ -4,7 +4,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { Pool } from "pg";
 import { appliquerMigrationsOrganisation, lireMigrations, migrer, synchroniserGabarits } from "../../src/server/migrations/lanceur";
 import { creerOrganisation } from "../../src/server/organisations/provisionnement";
-import { changerStatutOrganisation, listerOrganisations } from "../../src/server/organisations/service";
+import { changerModeValidation, changerStatutOrganisation, listerOrganisations, lireOrganisation } from "../../src/server/organisations/service";
 import { enTransaction } from "../../src/server/db/transactions";
 import type { Acteur } from "../../src/server/acteur";
 import { cleErreur, codeErreur, creerOrgDeTest, creerSuperadmin, ouvrirPools, suffixe } from "./outils";
@@ -169,5 +169,31 @@ describe("suspension", () => {
     }));
     expect(actions.plateforme).toEqual(["ORGANISATION_CREEE", "ORGANISATION_SUSPENDUE", "ORGANISATION_REACTIVEE"]);
     expect(actions.organisation).toEqual(["ORGANISATION_CREEE", "ORGANISATION_SUSPENDUE", "ORGANISATION_REACTIVEE"]);
+  });
+});
+
+describe("mode de validation (décision n° 2 du 19/10/2026)", () => {
+  it("standard par défaut ; changement tracé dans les deux journaux avec l'ancien et le nouveau mode ; sans effet s'il ne change rien", async () => {
+    const org = await creerOrgDeTest(app, proprietaire, superadmin);
+    expect((await lireOrganisation(app, org.organisationId))?.modeValidation).toBe("standard");
+    await changerModeValidation(app, org.organisationId, "petite_organisation", superadmin);
+    await changerModeValidation(app, org.organisationId, "petite_organisation", superadmin); // sans effet
+    expect((await lireOrganisation(app, org.organisationId))?.modeValidation).toBe("petite_organisation");
+    await changerModeValidation(app, org.organisationId, "standard", superadmin);
+    const lignes = await enTransaction(proprietaire, async (c) => ({
+      plateforme: (await c.query<{ acteur_email: string; details: unknown }>("SELECT acteur_email, details FROM platform.journal WHERE organisation_id = $1 AND action = 'MODE_VALIDATION_MODIFIE' ORDER BY id", [org.organisationId])).rows,
+      organisation: (await c.query<{ details: unknown }>(`SELECT details FROM "${org.schemaName}".journal WHERE action = 'MODE_VALIDATION_MODIFIE' ORDER BY id`)).rows,
+    }));
+    const attendus = [{ avant: "standard", apres: "petite_organisation" }, { avant: "petite_organisation", apres: "standard" }];
+    expect(lignes.plateforme.map((l) => l.details)).toEqual(attendus);
+    expect(lignes.plateforme.every((l) => l.acteur_email === superadmin.email)).toBe(true);
+    expect(lignes.organisation.map((l) => l.details)).toEqual(attendus);
+  });
+
+  it("mode inconnu ou organisation inconnue : refus ; la base n'accepte que les deux modes", async () => {
+    const org = await creerOrgDeTest(app, proprietaire, superadmin);
+    expect(await cleErreur(changerModeValidation(app, org.organisationId, "libre" as never, superadmin))).toBe("erreur.saisie_invalide");
+    expect(await cleErreur(changerModeValidation(app, "00000000-0000-4000-8000-000000000000", "standard", superadmin))).toBe("erreur.introuvable");
+    expect(await codeErreur(enTransaction(app, (c) => c.query("UPDATE platform.organisations SET mode_validation = 'libre' WHERE id = $1", [org.organisationId])))).toBe("23514");
   });
 });

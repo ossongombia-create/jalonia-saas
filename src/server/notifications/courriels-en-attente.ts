@@ -6,8 +6,8 @@ import { courrielConfigure, envoyerCourriel } from "./courriel";
 import { membresDestinataires, notificationsEnAttenteCourriel, noterCourrielNotification } from "./service";
 
 const OBJETS = {
-  fr: { a_verifier: "Document à vérifier", a_approuver: "Document à approuver", refuse: "Document refusé", publie: "Document publié", revue_proche: "Revue périodique à venir", revue_retard: "Revue périodique en retard", revue_escalade: "Escalade de revue périodique", action_confiee: "Action confiée", action_proche: "Échéance d’action proche", action_retard: "Action en retard", action_escalade: "Escalade d’action" },
-  en: { a_verifier: "Document to review", a_approuver: "Document to approve", refuse: "Document rejected", publie: "Document published", revue_proche: "Periodic review due soon", revue_retard: "Periodic review overdue", revue_escalade: "Periodic review escalation", action_confiee: "Action assigned", action_proche: "Action due soon", action_retard: "Action overdue", action_escalade: "Action escalation" },
+  fr: { a_verifier: "Document à vérifier", a_approuver: "Document à approuver", refuse: "Document refusé", publie: "Document publié", revue_proche: "Revue périodique à venir", revue_retard: "Revue périodique en retard", revue_escalade: "Escalade de revue périodique", action_confiee: "Action confiée", action_proche: "Échéance d’action proche", action_retard: "Action en retard", action_escalade: "Escalade d’action", acces_urgence: "Accès d’urgence de l’exploitant" },
+  en: { a_verifier: "Document to review", a_approuver: "Document to approve", refuse: "Document rejected", publie: "Document published", revue_proche: "Periodic review due soon", revue_retard: "Periodic review overdue", revue_escalade: "Periodic review escalation", action_confiee: "Action assigned", action_proche: "Action due soon", action_retard: "Action overdue", action_escalade: "Action escalation", acces_urgence: "Emergency access by the operator" },
 } as const;
 
 export interface BilanCourriels {
@@ -48,10 +48,13 @@ export async function traiterCourrielsEnAttente(pool: Pool): Promise<BilanCourri
             const url = origine ? new URL("/app/notifications", origine).toString() : "/app/notifications";
             const titre = n.details.titre ? `\n${n.details.titre}${n.details.reference ? ` (${n.details.reference})` : ""}` : "";
             const echeance = n.details.echeance ? `\n${langue === "en" ? "Due date" : "Échéance"} : ${n.details.echeance}` : "";
+            const urgence = n.nature === "acces_urgence"
+              ? `\n${langue === "en" ? "By" : "Par"} : ${n.details.par ?? "—"}\n${langue === "en" ? "Duration" : "Durée"} : ${n.details.heures ?? "—"} h\n${langue === "en" ? "Reason" : "Motif"} : ${n.details.motif ?? "—"}`
+              : "";
             await envoyerCourriel({
               a: membre.email,
               sujet: `Jalonia — ${libelle}`,
-              texte: `${libelle}${titre}${echeance}\n\n${langue === "en" ? "Open Jalonia" : "Ouvrir Jalonia"} : ${url}\n\n${langue === "en" ? "This message was generated automatically." : "Ce message a été généré automatiquement."}`,
+              texte: `${libelle}${titre}${echeance}${urgence}\n\n${langue === "en" ? "Open Jalonia" : "Ouvrir Jalonia"} : ${url}\n\n${langue === "en" ? "This message was generated automatically." : "Ce message a été généré automatiquement."}`,
             });
           }
           await avecOrganisation(pool, org, (client) => noterCourrielNotification(client, n.id, true));

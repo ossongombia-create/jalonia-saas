@@ -16,6 +16,8 @@ import { poolApplication } from "../db/pools";
 import { lireSessionEnAttente, noterOrganisationDeSession, validerSession, type SessionEnAttente, type UtilisateurSession } from "../auth/sessions";
 import { MINUTES_SESSION_EN_ATTENTE } from "../auth/second-facteur";
 import type { Acteur } from "../acteur";
+import { lireAccesActifs } from "../acces-urgence/service";
+import type { ModeValidation } from "../documents/circuit";
 import type { OrganisationCible } from "../membres/service";
 import { agentDepuisEntetes, ipDepuisEntetes } from "./reseau";
 
@@ -27,6 +29,10 @@ export interface AdhesionActive extends OrganisationCible {
   slug: string;
   statut: "active" | "suspendue";
   roles: RoleOrganisation[];
+  /** Mode de validation (décision n° 2 du 19/10/2026) : trois personnes (standard) ou deux (petite organisation). */
+  modeValidation: ModeValidation;
+  /** Accès d'urgence de l'exploitant (superadmin) : adhésion temporaire, jusqu'à cette échéance. */
+  urgence?: { expireLe: Date };
 }
 
 export interface Contexte {
@@ -55,14 +61,30 @@ export const estMaintenanceActive = cache(async (): Promise<boolean> =>
 
 async function lireAdhesions(utilisateurId: string): Promise<AdhesionActive[]> {
   return enTransaction(poolApplication(), async (client) => {
-    const r = await client.query<{ id: string; nom: string; slug: string; statut: "active" | "suspendue"; schema_name: string; role_name: string; roles: RoleOrganisation[] }>(
-      `SELECT o.id, o.nom, o.slug, o.statut, o.schema_name, o.role_name, a.roles
+    const r = await client.query<{ id: string; nom: string; slug: string; statut: "active" | "suspendue"; schema_name: string; role_name: string; roles: RoleOrganisation[]; mode_validation: ModeValidation }>(
+      `SELECT o.id, o.nom, o.slug, o.statut, o.schema_name, o.role_name, a.roles, o.mode_validation
          FROM platform.adhesions a JOIN platform.organisations o ON o.id = a.organisation_id
         WHERE a.utilisateur_id = $1
         ORDER BY o.nom`,
       [utilisateurId],
     );
-    return r.rows.map((o) => ({ id: o.id, nom: o.nom, slug: o.slug, statut: o.statut, schemaName: o.schema_name, roleName: o.role_name, roles: o.roles }));
+    const adhesions: AdhesionActive[] = r.rows.map((o) => ({
+      id: o.id, nom: o.nom, slug: o.slug, statut: o.statut, schemaName: o.schema_name, roleName: o.role_name, roles: o.roles, modeValidation: o.mode_validation,
+    }));
+    // Un superadmin n'est membre d'aucune organisation : il n'y entre que par un accès d'urgence encore valable.
+    const acces = await lireAccesActifs(client, utilisateurId);
+    if (acces.length > 0) {
+      const o = await client.query<{ id: string; nom: string; slug: string; statut: "active" | "suspendue"; schema_name: string; role_name: string; mode_validation: ModeValidation }>(
+        "SELECT id, nom, slug, statut, schema_name, role_name, mode_validation FROM platform.organisations WHERE id = ANY ($1::uuid[]) ORDER BY nom",
+        [acces.map((a) => a.organisationId)],
+      );
+      for (const org of o.rows) {
+        const a = acces.find((x) => x.organisationId === org.id)!;
+        if (adhesions.some((x) => x.id === org.id)) continue;
+        adhesions.push({ id: org.id, nom: org.nom, slug: org.slug, statut: org.statut, schemaName: org.schema_name, roleName: org.role_name, roles: [a.role], modeValidation: org.mode_validation, urgence: { expireLe: a.expireLe } });
+      }
+    }
+    return adhesions;
   });
 }
 

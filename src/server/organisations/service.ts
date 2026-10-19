@@ -1,10 +1,11 @@
-// Lecture des organisations et changement de statut (suspension / réactivation).
+// Lecture des organisations, changement de statut (suspension / réactivation) et de mode de validation.
 import type { Pool } from "pg";
 import { enTransaction, dansOrganisation } from "../db/transactions";
 import type { OrganisationTechnique } from "../db/identifiants";
 import { journaliserOrganisation, journaliserPlateforme } from "../audit/journal";
 import { ErreurMetier } from "../erreurs";
 import { traceActeur, type Acteur } from "../acteur";
+import { MODES_VALIDATION, type ModeValidation } from "../documents/circuit";
 
 export type StatutOrganisation = "active" | "suspendue";
 
@@ -23,6 +24,7 @@ export interface Organisation extends OrganisationTechnique {
   slug: string;
   statut: StatutOrganisation;
   creeLe: Date;
+  modeValidation: ModeValidation;
 }
 
 export async function listerOrganisations(pool: Pool): Promise<OrganisationResume[]> {
@@ -39,12 +41,14 @@ export async function listerOrganisations(pool: Pool): Promise<OrganisationResum
 
 export async function lireOrganisation(pool: Pool, id: string): Promise<Organisation | null> {
   return enTransaction(pool, async (client) => {
-    const r = await client.query<{ id: string; nom: string; slug: string; statut: StatutOrganisation; cree_le: Date; schema_name: string; role_name: string }>(
-      "SELECT id, nom, slug, statut, cree_le, schema_name, role_name FROM platform.organisations WHERE id = $1",
+    const r = await client.query<{ id: string; nom: string; slug: string; statut: StatutOrganisation; cree_le: Date; schema_name: string; role_name: string; mode_validation: ModeValidation }>(
+      "SELECT id, nom, slug, statut, cree_le, schema_name, role_name, mode_validation FROM platform.organisations WHERE id = $1",
       [id],
     );
     const o = r.rows[0];
-    return o ? { id: o.id, nom: o.nom, slug: o.slug, statut: o.statut, creeLe: o.cree_le, schemaName: o.schema_name, roleName: o.role_name } : null;
+    return o
+      ? { id: o.id, nom: o.nom, slug: o.slug, statut: o.statut, creeLe: o.cree_le, schemaName: o.schema_name, roleName: o.role_name, modeValidation: o.mode_validation }
+      : null;
   });
 }
 
@@ -66,5 +70,27 @@ export async function changerStatutOrganisation(pool: Pool, organisationId: stri
     await dansOrganisation(client, { schemaName: o.schema_name, roleName: o.role_name }, () =>
       journaliserOrganisation(client, { action, ...trace, cibleType: "organisation", cibleId: organisationId }),
     );
+  });
+}
+
+/**
+ * Mode de validation (décision n° 2 du 19/10/2026) : « standard » (trois personnes) ou « petite_organisation » (deux).
+ * Réservé à l'exploitant (l'action revérifie le rôle superadmin) ; le critère d'éligibilité est fixé au contrat.
+ * Tracé dans le journal de la plateforme ET dans celui de l'organisation, avec l'ancien et le nouveau mode.
+ */
+export async function changerModeValidation(pool: Pool, organisationId: string, mode: ModeValidation, acteur: Acteur): Promise<void> {
+  if (!(MODES_VALIDATION as readonly string[]).includes(mode)) throw new ErreurMetier("erreur.saisie_invalide");
+  await enTransaction(pool, async (client) => {
+    const avant = await client.query<{ mode_validation: ModeValidation; schema_name: string; role_name: string }>(
+      "SELECT mode_validation, schema_name, role_name FROM platform.organisations WHERE id = $1 FOR UPDATE",
+      [organisationId],
+    );
+    const o = avant.rows[0];
+    if (!o) throw new ErreurMetier("erreur.introuvable");
+    if (o.mode_validation === mode) return; // déjà dans ce mode : rien à faire
+    await client.query("UPDATE platform.organisations SET mode_validation = $2 WHERE id = $1", [organisationId, mode]);
+    const entree = { action: "MODE_VALIDATION_MODIFIE" as const, ...traceActeur(acteur), cibleType: "organisation", cibleId: organisationId, details: { avant: o.mode_validation, apres: mode } };
+    await journaliserPlateforme(client, { ...entree, organisationId });
+    await dansOrganisation(client, { schemaName: o.schema_name, roleName: o.role_name }, () => journaliserOrganisation(client, entree));
   });
 }

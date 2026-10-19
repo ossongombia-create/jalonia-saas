@@ -1,13 +1,15 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { actionChangerStatutOrganisation } from "@/actions/plateforme";
+import { actionChangerModeValidation, actionChangerStatutOrganisation } from "@/actions/plateforme";
 import { FormulaireAction } from "@/components/FormulaireAction";
+import { AccesUrgence } from "@/components/AccesUrgence";
 import { GestionMembres } from "@/components/GestionMembres";
 import { formaterDate } from "@/lib/format";
 import { identifiant } from "@/lib/validation";
 import { poolApplication } from "@/server/db/pools";
 import { listerMembres } from "@/server/membres/service";
 import { listerInvitations } from "@/server/invitations/service";
+import { listerAccesUrgence } from "@/server/acces-urgence/service";
 import { lireOrganisation } from "@/server/organisations/service";
 import { exigerSuperadmin } from "@/server/web/contexte";
 import { titrePage } from "@/server/web/metadonnees";
@@ -22,7 +24,7 @@ export default async function PageOrganisation({ params }: { params: Promise<{ i
   const pool = poolApplication();
   const org = await lireOrganisation(pool, lu.data);
   if (!org) notFound();
-  const [membres, invitations] = await Promise.all([listerMembres(pool, org.id), listerInvitations(pool, org.id)]);
+  const [membres, invitations, acces] = await Promise.all([listerMembres(pool, org.id), listerInvitations(pool, org.id), listerAccesUrgence(pool, org.id)]);
   const suspendue = org.statut === "suspendue";
 
   return (
@@ -51,6 +53,25 @@ export default async function PageOrganisation({ params }: { params: Promise<{ i
         </FormulaireAction>
       </header>
       {suspendue ? <p className="bandeau bandeau-alerte">{t("orgs.suspendue_info")}</p> : null}
+      <section className="carte" id="mode-validation" data-mode={org.modeValidation}>
+        <h2>{t("orgs.mode_titre")}</h2>
+        <p>
+          <span className={org.modeValidation === "standard" ? "etiquette" : "etiquette etiquette-alerte"}>{t(`orgs.mode_${org.modeValidation}`)}</span>{" "}
+          <span className="discret">{t(`orgs.mode_${org.modeValidation}_aide`)}</span>
+        </p>
+        <p className="discret petit">{t("orgs.mode_contrat")}</p>
+        <FormulaireAction
+          action={actionChangerModeValidation}
+          libelle={org.modeValidation === "standard" ? t("orgs.mode_vers_petite") : t("orgs.mode_vers_standard")}
+          libelleEnCours={t("commun.en_cours")}
+          variante="ligne"
+          confirmation={org.modeValidation === "standard" ? t("orgs.mode_confirmation_petite") : t("orgs.mode_confirmation_standard")}
+        >
+          <input type="hidden" name="organisationId" value={org.id} />
+          <input type="hidden" name="mode" value={org.modeValidation === "standard" ? "petite_organisation" : "standard"} />
+        </FormulaireAction>
+      </section>
+      <AccesUrgence ctx={ctx} organisationId={org.id} acces={acces} gestion suspendue={suspendue} />
       <GestionMembres ctx={ctx} organisationId={org.id} membres={membres} invitations={invitations} />
     </>
   );

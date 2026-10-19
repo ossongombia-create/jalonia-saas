@@ -43,7 +43,7 @@ const REGLES = {
   actionRetablirDocument: { regle: "documents.supprimer dans l'organisation OUVERTE ; document de CETTE organisation" },
   actionRestaurerVersion: { regle: "documents.rediger dans l'organisation OUVERTE ; document de CETTE organisation" },
   actionCreerAction: { regle: "actions.gerer dans l'organisation OUVERTE ; responsable membre actif, document visé de CETTE organisation" },
-  actionModifierAction: { regle: "actions.gerer dans l'organisation OUVERTE ; action de CETTE organisation ; version vue" },
+  actionModifierAction: { regle: "actions.gerer dans l'organisation OUVERTE, OU responsable de l'action (avancement et compte rendu seulement) ; jamais clore ni abandonner sa propre action ; action de CETTE organisation ; version vue" },
   actionDefinirObjectif: { regle: "indicateurs.objectifs dans l'organisation OUVERTE ; indicateur d'un document de CETTE organisation" },
   actionRetirerObjectif: { regle: "indicateurs.objectifs dans l'organisation OUVERTE ; indicateur d'un document de CETTE organisation" },
   actionEnregistrerMesure: { regle: "indicateurs.mesurer dans l'organisation OUVERTE ; indicateur d'un document de CETTE organisation" },
@@ -72,6 +72,10 @@ const REGLES = {
   actionReinitialiserMotDePasse: { regle: "superadmin" },
   actionReinitialiserSecondFacteur: { regle: "superadmin" },
   actionEnregistrerMaintenance: { regle: "superadmin (activer comme lever la maintenance)" },
+  actionOuvrirAccesUrgence: { regle: "superadmin ; motif, rôle (administrateur, rédacteur, lecteur), durée (1, 4, 8, 24 h) ; notifié aux administrateurs" },
+  actionFermerAccesUrgence: { regle: "superadmin ; accès encore valable" },
+  actionReinitialiserParLien: { regle: "publique : lien de réinitialisation valable, personne connectée" },
+  actionChangerModeValidation: { regle: "superadmin (mode « petite organisation » ou standard), tracé" },
 };
 
 /** Chemin de page d'un « worker » du manifeste (app/app/documents/page → /app/documents). */
@@ -99,7 +103,7 @@ function lireActions() {
 // Exclus, car modifiés par la simple lecture d'une page : dernière activité et organisation notée des sessions,
 // compteur d'échecs de connexion et date de dernière connexion des comptes.
 const EMPREINTE = `SELECT md5(concat_ws('#',
-  (SELECT string_agg(row(id, nom, slug, statut)::text, ',' ORDER BY id) FROM platform.organisations),
+  (SELECT string_agg(row(id, nom, slug, statut, mode_validation)::text, ',' ORDER BY id) FROM platform.organisations),
   (SELECT string_agg(row(id, email, nom, mot_de_passe_hash, est_superadmin, statut, doit_changer_mdp, langue, verrouille_jusqua,
                          mfa_secret_chiffre, mfa_active_le, mfa_dernier_pas, echecs_mfa)::text, ',' ORDER BY id) FROM platform.utilisateurs),
   (SELECT string_agg(row(utilisateur_id, organisation_id, roles)::text, ',' ORDER BY utilisateur_id, organisation_id) FROM platform.adhesions),
@@ -108,11 +112,13 @@ const EMPREINTE = `SELECT md5(concat_ws('#',
   (SELECT string_agg(row(id, utilisateur_id, fin, motif_fin, en_attente_mfa, echecs_mfa)::text, ',' ORDER BY id) FROM platform.sessions),
   (SELECT count(*)::text FROM platform.journal),
   (SELECT string_agg(row(actif, message_fr, message_en, modifie_le, modifie_par)::text, ',') FROM platform.maintenance),
+  (SELECT string_agg(row(id, ferme_le)::text, ',' ORDER BY id) FROM platform.acces_urgence),
+  (SELECT string_agg(row(id, utilisee_le, annulee_le)::text, ',' ORDER BY id) FROM platform.reinitialisations),
   (SELECT string_agg(query_to_xml(format(
      'SELECT (SELECT string_agg(row(id, titre, version, modifie_le, supprime_le, etat, version_publiee, revue_le)::text, '','' ORDER BY id) FROM %1$I.documents) AS d,
              (SELECT string_agg(row(periode_revue_mois, rappel_jours, escalade_jours, modifie_le)::text, '','') FROM %1$I.parametres) AS pa,
              (SELECT string_agg(row(id, destinataire, lue_le)::text, '','' ORDER BY id) FROM %1$I.notifications) AS n,
-             (SELECT string_agg(row(id, version, statut, responsable, echeance)::text, '','' ORDER BY id) FROM %1$I.actions) AS ac,
+             (SELECT string_agg(row(id, version, statut, responsable, echeance, titre, resultat, cloture_par)::text, '','' ORDER BY id) FROM %1$I.actions) AS ac,
              (SELECT string_agg(row(document_id, element_id, sens, seuil, unite, modifie_le)::text, '','' ORDER BY document_id, element_id) FROM %1$I.objectifs_indicateur) AS ob,
              (SELECT string_agg(row(id, valeur, commentaire, saisi_le)::text, '','' ORDER BY id) FROM %1$I.mesures_indicateur) AS me,
              (SELECT count(*) FROM %1$I.versions_document) AS v,
@@ -325,6 +331,8 @@ let ACTIONS;
     attendus("/compte/second-facteur", () => "200"),
     ...PLATEFORME.map((c) => attendus(c, (q) => (q === "superadmin" ? "200" : "404"))),
     ["/connexion", { faux: "200", attente: "→/connexion/second-facteur", ...Object.fromEntries(Object.keys(COMPTES).map((q) => [q, `→${accueil[q]}`])) }],
+    // Lien de réinitialisation (public) : un lien inconnu montre « lien non valable », à tout le monde.
+    [`/reinitialisation/${"x".repeat(43)}`, Object.fromEntries(PROFILS.map((q) => [q, "200"]))],
     ["/connexion/second-facteur", { faux: "→/connexion", attente: "200", ...Object.fromEntries(Object.keys(COMPTES).map((q) => [q, `→${accueil[q]}`])) }],
   ];
   const lignes = [];
@@ -546,6 +554,24 @@ let ACTIONS;
   await cas("verifA", "actionModifierAction", { ...modification, statut: "cloturee", efficace: "oui" }, "actions.statut_impossible", { page: PAGE_ACTION, note: "à faire → close" });
   const etatAction = () => sql(`SELECT statut || '/' || version FROM "${SCHEMA_A}".actions WHERE id = '${ACTION_A}'`);
   await cas("verifA", "actionModifierAction", modification, "succes", { page: PAGE_ACTION, effet: () => etatAction() === "en_cours/2" });
+  // Décision n° 5 : le responsable (même gestionnaire) ne clôt ni n'abandonne SON action.
+  await cas("redacA", "actionModifierAction", { ...modification, version: "2", statut: "abandonnee", resultat: "Plus d'objet" }, "actions.cloture_responsable", { page: PAGE_ACTION, note: "gestionnaire responsable : abandon" });
+
+  // Un lecteur responsable d'une action : formulaire réduit (avancement, compte rendu), sans clôture ni abandon.
+  await cas("redacA", "actionCreerAction", { ...nouvelle, titre: "Action du lecteur", responsableId: LECT_A, documentId: "", elementId: "" }, "redirection^/app/actions/", { effet: () => nbActionsA() === nA + 2 });
+  const ACTION_L = sql(`SELECT id FROM "${SCHEMA_A}".actions WHERE titre = 'Action du lecteur'`);
+  const PAGE_ACTION_L = `/app/actions/${ACTION_L}`;
+  const etatActionL = () => sql(`SELECT statut || '/' || version || '/' || coalesce(cloture_par::text, '-') FROM "${SCHEMA_A}".actions WHERE id = '${ACTION_L}'`);
+  const avancement = (version, statut, plus = {}) => ({ organisationId: ORG_A, actionId: ACTION_L, version, statut, resultat: "", efficace: "", avancement: "1", ...plus });
+  await cas("lecteurA", "actionModifierAction", { ...avancement("1", "en_cours"), actionId: ACTION_A, version: "2" }, "erreur.interdit", { page: PAGE_ACTION, note: "lecteur, action d'un autre" });
+  await cas("lecteurA", "actionModifierAction", avancement("1", "en_cours"), "succes", { page: PAGE_ACTION_L, note: "lecteur responsable : avancement", effet: () => etatActionL() === "en_cours/2/-" });
+  await cas("lecteurA", "actionModifierAction", avancement("2", "realisee", { resultat: "Fait" }), "succes", { page: PAGE_ACTION_L, note: "lecteur responsable : réalisée", effet: () => etatActionL() === "realisee/3/-" });
+  await cas("lecteurA", "actionModifierAction", avancement("3", "cloturee", { resultat: "Vérifié", efficace: "oui" }), "actions.cloture_responsable", { page: PAGE_ACTION_L, note: "lecteur responsable : clôture" });
+  await cas("lecteurA", "actionModifierAction", avancement("3", "abandonnee", { resultat: "Plus d'objet" }), "actions.cloture_responsable", { page: PAGE_ACTION_L, note: "lecteur responsable : abandon" });
+  await cas("lecteurA", "actionModifierAction", { ...modification, actionId: ACTION_L, version: "3", statut: "realisee", resultat: "Fait", responsableId: LECT_A, titre: "Autre titre", echeance: "2026-12-31" }, "actions.reserve_gestion", { page: PAGE_ACTION_L, note: "lecteur responsable : intitulé" });
+  await cas("lecteurA", "actionModifierAction", { ...modification, actionId: ACTION_L, version: "3", statut: "realisee", resultat: "Fait", titre: "Action du lecteur", responsableId: "", echeance: "2026-12-31" }, "actions.reserve_gestion", { page: PAGE_ACTION_L, note: "lecteur responsable : se retire" });
+  const ID_VERIF_A = idDe("verif-a@droits.test");
+  await cas("verifA", "actionModifierAction", avancement("3", "cloturee", { resultat: "Vérifié", efficace: "oui" }), "succes", { page: PAGE_ACTION_L, note: "autre gestionnaire : clôture", effet: () => etatActionL() === `cloturee/4/${ID_VERIF_A}` });
 
   const objectif = { organisationId: ORG_A, documentId: DOCQ, elementId: "e1", sens: "max", seuil: "5", unite: "j" };
   const objectifA = () => sql(`SELECT sens || '/' || seuil::float8 || '/' || unite FROM "${SCHEMA_A}".objectifs_indicateur WHERE document_id = '${DOCQ}'`);
@@ -728,9 +754,67 @@ let ACTIONS;
   await connecter("jetable@droits.test");
   const SESSION_J = sql(`SELECT id FROM platform.sessions WHERE utilisateur_id = '${JETABLE}' AND fin IS NULL`);
   await plateforme("actionRevoquerSession", { sessionId: SESSION_J }, () => sql(`SELECT fin IS NOT NULL FROM platform.sessions WHERE id = '${SESSION_J}'`) === "t");
-  const hashJ = sql(`SELECT mot_de_passe_hash FROM platform.utilisateurs WHERE id = '${JETABLE}'`);
-  await plateforme("actionReinitialiserMotDePasse", { utilisateurId: JETABLE, motDePasse: "provisoire-e2e-motdepasse-42" },
-    () => sql(`SELECT mot_de_passe_hash <> '${hashJ}' AND doit_changer_mdp FROM platform.utilisateurs WHERE id = '${JETABLE}'`) === "t");
+  // Réinitialisation par le superadmin (décision n° 1 du 19/10/2026) : un lien envoyé PAR COURRIEL, jamais montré au
+  // superadmin. Ce serveur de test n'a pas de SMTP : la demande est refusée, sans rien écrire.
+  for (const qui of ["faux", "attente"]) await cas(qui, "actionReinitialiserMotDePasse", { utilisateurId: JETABLE }, "session");
+  for (const qui of NON_SUPERADMINS) await cas(qui, "actionReinitialiserMotDePasse", { utilisateurId: JETABLE }, "404");
+  const sansSmtp = await cas("superadmin", "actionReinitialiserMotDePasse", { utilisateurId: JETABLE }, "users.reinit_smtp_requis", { note: "sans SMTP" });
+  assert.ok(!sansSmtp.corps.includes("/reinitialisation/"), "aucun lien de réinitialisation montré au superadmin");
+
+  // Accès d'urgence (décision n° 1 du 19/10/2026) : réservé au superadmin, motivé, limité, notifié aux administrateurs.
+  const PAGE_ORG_B = `/plateforme/organisations/${ORG_B}`;
+  const accesOuvertsB = () => sql(`SELECT count(*) FROM platform.acces_urgence WHERE organisation_id = '${ORG_B}' AND ferme_le IS NULL AND expire_le > now()`);
+  const notificationsAccesB = () => Number(sql(`SELECT count(*) FROM "${SCHEMA_B}".notifications WHERE nature = 'acces_urgence'`));
+  const adminsB = Number(sql(`SELECT count(*) FROM platform.adhesions a JOIN platform.utilisateurs u ON u.id = a.utilisateur_id
+    WHERE a.organisation_id = '${ORG_B}' AND 'ADMIN_ORGANISATION' = ANY (a.roles) AND u.statut = 'actif'`));
+  assert.ok(adminsB >= 1, "B a au moins un administrateur actif");
+  const ouverture = { organisationId: ORG_B, role: "LECTEUR", dureeHeures: "1", motif: "Vérification de l'accès d'urgence (parcours e2e)" };
+  for (const qui of ["faux", "attente"]) await cas(qui, "actionOuvrirAccesUrgence", ouverture, "session", { page: PAGE_ORG_B });
+  for (const qui of NON_SUPERADMINS) await cas(qui, "actionOuvrirAccesUrgence", ouverture, "404", { page: PAGE_ORG_B });
+  await cas("superadmin", "actionOuvrirAccesUrgence", { ...ouverture, motif: "court" }, "acces.motif_requis", { page: PAGE_ORG_B, note: "motif trop court" });
+  await cas("superadmin", "actionOuvrirAccesUrgence", { ...ouverture, dureeHeures: "48" }, "acces.duree_invalide", { page: PAGE_ORG_B, note: "48 h" });
+  await cas("superadmin", "actionOuvrirAccesUrgence", { ...ouverture, role: "APPROBATEUR" }, "erreur.role_invalide", { page: PAGE_ORG_B, note: "rôle hors liste" });
+  const notifiesAvant = notificationsAccesB();
+  await cas("superadmin", "actionOuvrirAccesUrgence", ouverture, "succes", {
+    page: PAGE_ORG_B, effet: () => accesOuvertsB() === "1" && notificationsAccesB() === notifiesAvant + adminsB,
+  });
+  await cas("superadmin", "actionOuvrirAccesUrgence", ouverture, "acces.deja_ouvert", { page: PAGE_ORG_B, note: "déjà ouvert" });
+  const pendant = await api("superadmin", "GET", "/api/editeur/contexte");
+  assert.equal(pendant.statut, 200, "pendant l'accès d'urgence, le superadmin entre dans B");
+  assert.equal(pendant.json.organisation.id, ORG_B, "accès d'urgence : l'organisation B, et elle seule");
+  const ACCES_B = sql(`SELECT id FROM platform.acces_urgence WHERE organisation_id = '${ORG_B}' AND ferme_le IS NULL`);
+  for (const qui of ["faux", "attente"]) await cas(qui, "actionFermerAccesUrgence", { accesId: ACCES_B }, "session", { page: PAGE_ORG_B });
+  for (const qui of NON_SUPERADMINS) await cas(qui, "actionFermerAccesUrgence", { accesId: ACCES_B }, "404", { page: PAGE_ORG_B });
+  await cas("superadmin", "actionFermerAccesUrgence", { accesId: ACCES_B }, "succes", { page: PAGE_ORG_B, effet: () => accesOuvertsB() === "0" });
+  await cas("superadmin", "actionFermerAccesUrgence", { accesId: ACCES_B }, "acces.deja_ferme", { page: PAGE_ORG_B, note: "déjà fermé" });
+  assert.equal((await api("superadmin", "GET", "/api/editeur/contexte")).statut, 403, "accès fermé : le superadmin n'entre plus dans B");
+
+  // Mode de validation (décision n° 2 du 19/10/2026) : réservé au superadmin ; A revient en mode standard ensuite.
+  const PAGE_ORG_A = `/plateforme/organisations/${ORG_A}`;
+  const modeA = () => sql(`SELECT mode_validation FROM platform.organisations WHERE id = '${ORG_A}'`);
+  const versPetite = { organisationId: ORG_A, mode: "petite_organisation" };
+  for (const qui of ["faux", "attente"]) await cas(qui, "actionChangerModeValidation", versPetite, "session", { page: PAGE_ORG_A });
+  for (const qui of NON_SUPERADMINS) await cas(qui, "actionChangerModeValidation", versPetite, "404", { page: PAGE_ORG_A });
+  await cas("superadmin", "actionChangerModeValidation", { organisationId: ORG_A, mode: "libre" }, "erreur.saisie_invalide", { page: PAGE_ORG_A, note: "mode inconnu" });
+  await cas("superadmin", "actionChangerModeValidation", versPetite, "succes", { page: PAGE_ORG_A, effet: () => modeA() === "petite_organisation" });
+  await cas("superadmin", "actionChangerModeValidation", { organisationId: ORG_A, mode: "standard" }, "succes", { page: PAGE_ORG_A, effet: () => modeA() === "standard", note: "retour au mode standard" });
+
+  // Lien de réinitialisation (page publique) : la personne choisit SON mot de passe ; à usage unique ; refusé à une
+  // personne déjà connectée. Le lien est créé ici directement en base (le serveur de test n'envoie pas de courriel).
+  const { createHash, randomBytes } = require("node:crypto");
+  const jetonReinit = randomBytes(32).toString("base64url");
+  const empreinteReinit = createHash("sha256").update(jetonReinit).digest("hex");
+  sql(`INSERT INTO platform.reinitialisations (utilisateur_id, jeton_empreinte, expire_le) VALUES ('${JETABLE}', '${empreinteReinit}', now() + interval '30 minutes')`);
+  const saisieReinit = (jeton) => ({ jeton, nouveau: "choisi-par-la-personne-e2e-1", confirmation: "choisi-par-la-personne-e2e-1" });
+  ctx.anonyme = await navigateur.newContext(); // le visiteur de tout à l'heure a créé son compte : un navigateur neuf, sans session
+  await cas("anonyme", "actionReinitialiserParLien", saisieReinit("x".repeat(43)), "reinit.invalide", { note: "lien inconnu" });
+  for (const qui of ["lecteurA", "superadmin"]) await cas(qui, "actionReinitialiserParLien", saisieReinit(jetonReinit), "invitation.deja_connecte", { note: "personne connectée" });
+  const hashAvantLien = sql(`SELECT mot_de_passe_hash FROM platform.utilisateurs WHERE id = '${JETABLE}'`);
+  await cas("anonyme", "actionReinitialiserParLien", saisieReinit(jetonReinit), "succes", {
+    effet: () => sql(`SELECT mot_de_passe_hash <> '${hashAvantLien}' AND NOT doit_changer_mdp FROM platform.utilisateurs WHERE id = '${JETABLE}'`) === "t"
+      && sql(`SELECT utilisee_le IS NOT NULL FROM platform.reinitialisations WHERE jeton_empreinte = '${empreinteReinit}'`) === "t",
+  });
+  await cas("anonyme", "actionReinitialiserParLien", saisieReinit(jetonReinit), "reinit.invalide", { note: "lien déjà utilisé" });
   // Mode maintenance : réservé au superadmin, qu'il s'agisse de l'activer ou de le lever. Requêtes forgées refusées
   // maintenance inactive (« introuvable ») PUIS maintenance active (renvoi vers /maintenance), sans aucune écriture
   // (l'état de maintenance fait partie de l'empreinte) ; le superadmin la lève ensuite pour la suite du test.

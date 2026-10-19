@@ -1,8 +1,8 @@
 # Contrat de l'agent — éditeur Qualigramme (`editeur/`)
 
 Ce fichier dit à un agent (ou à une personne) ce qu'il doit savoir avant de modifier l'éditeur. Il complète
-`AGENTS.md` à la racine du dépôt ; en cas de doute, les tests font foi : `tests/v170.test.mjs` vérifie que ce
-fichier reste à jour.
+`AGENTS.md` à la racine du dépôt ; en cas de doute, les tests font foi : `tests/v170.test.mjs` et
+`tests/v180.test.mjs` vérifient que ce fichier reste à jour.
 
 ## Règles héritées de la racine
 
@@ -35,18 +35,19 @@ fichier reste à jour.
   les deux changent dans le même commit.
 - **Nouvelle fonctionnalité = nouveau fichier de test** dans `tests/`. Le nommage `vXYZ.test.mjs` a servi jusqu'à la
   v1.3, puis a été abandonné au profit de noms de fonctionnalité : v1.4 = `synchro.test.mjs` + `en-ligne.test.mjs`,
-  v1.5 = `bpmn.test.mjs` (v1.6 n'a pas ajouté de test à l'éditeur). Exception : `v170.test.mjs` vérifie la
-  documentation et la licence de la v1.7.
+  v1.5 = `bpmn.test.mjs` (v1.6 n'a pas ajouté de test à l'éditeur). Exceptions : `v170.test.mjs` vérifie la
+  documentation et la licence de la v1.7 ; `v180.test.mjs`, la release v1.8 (version, CHANGELOG, comptes de tests,
+  migrations, scripts et procédure de fin de contrat).
 - **Compatibilité** : un fichier `.json` ou Word enregistré par une version précédente doit toujours s'ouvrir, et la
   signature de validation d'un document déjà validé ne doit pas changer.
 
 ## État actuel
 
-- Version : `VERSION = "1.7"` (`js/version.js`).
-- Tests à la v1.7 : **780 tests automatisés** = 486 éditeur (477 + 9) + 133 unitaires + 161 intégration ; plus
+- Version : `VERSION = "1.8"` (`js/version.js`).
+- Tests à la v1.8 : **855 tests automatisés** = 493 éditeur (486 + 7) + 163 unitaires + 199 intégration ; plus
   les contrôles BPMN (7/7 fichiers conformes au schéma XSD de l'OMG, 6/6 ouverts sans avertissement par bpmn-js)
-  et 16/16 parties du parcours navigateur (dont la matrice des autorisations : 40 actions × 9 profils, 323 appels
-  forgés).
+  et 16/16 parties du parcours navigateur (dont la matrice des autorisations : 44 actions × 9 profils,
+  372 appels forgés).
 
 ## Prérequis
 
@@ -95,3 +96,5 @@ installation de Chromium, `test:bpmn`, `test:e2e`.
   sur `main`). L'interface web crée un tag **léger** (sans objet tag annoté) : `git ls-remote --tags origin` montre
   `refs/tags/v1.7` → `0d06bca`. Un tag annoté `v1.7` créé localement dans une session cloud n'a pas été publié ; avant
   de créer un tag localement, faire `git fetch --tags origin` pour partir de celui de GitHub.
+- La release **v1.8** se crée de la même façon (interface web), sur le dernier commit de la v1.8, celui qui inscrit
+  la note « v1.8 — décisions implémentées » dans `docs/DECISIONS.md`.

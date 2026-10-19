@@ -49,21 +49,28 @@ export async function actionCreerAction(_etat: EtatAction, formulaire: FormData)
   });
 }
 
+/**
+ * Faire avancer une action (décision n° 5 du 19/10/2026) : le droit actions.gerer, OU être le responsable de
+ * l'action (vérifié par le service, qui lit l'action) ; le responsable ne la clôt ni ne l'abandonne jamais.
+ */
 export async function actionModifierAction(_etat: EtatAction, formulaire: FormData): Promise<EtatAction> {
   const ctx = await exigerContexte();
   return executer(ctx.langue, async () => {
-    const org = autoriser(ctx, formulaire, "actions.gerer");
+    const org = autoriser(ctx, formulaire, "documents.lire");
     const id = valider(identifiant, champ(formulaire, "actionId"));
     const version = champ(formulaire, "version");
     if (!/^\d{1,9}$/.test(version)) throw new ErreurMetier("erreur.saisie_invalide");
     const efficace = champ(formulaire, "efficace");
+    // Formulaire réduit du responsable (« avancement ») : intitulé, description, origine, responsable et échéance ne
+    // sont pas envoyés et restent inchangés. Sinon, tous sont lus (un champ vide efface l'échéance ou le responsable).
+    const avancementSeul = champ(formulaire, "avancement") === "1";
     await modifierAction(poolApplication(), org, id, {
-      ...saisieAction(formulaire),
+      ...(avancementSeul ? {} : saisieAction(formulaire)),
       version: Number(version),
       statut: champ(formulaire, "statut"),
       resultat: champ(formulaire, "resultat"),
       efficace: efficace === "oui" ? true : efficace === "non" ? false : null,
-    }, ctx.acteur);
+    }, ctx.acteur, ctx.organisation?.roles ?? []);
     return { cle: "actions.enregistree" };
   });
 }

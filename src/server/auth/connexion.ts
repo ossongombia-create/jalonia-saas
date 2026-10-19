@@ -13,12 +13,14 @@
 // connexion à la base n'est retenue pendant ce temps), puis une écriture courte (résultat, session, journal) qui
 // revérifie que le compte n'a pas changé entre-temps (désactivation, nouveau mot de passe, verrouillage).
 //
-// Second facteur (second-facteur.ts) : pour un superadmin, ou un compte qui l'a activé, la session ouverte par le
-// mot de passe est « en attente » : inutilisable tant que le code n'a pas été donné.
+// Second facteur (second-facteur.ts) : pour un superadmin, un approbateur d'une organisation active (obligation.ts), ou
+// un compte qui l'a activé, la session ouverte par le mot de passe est « en attente » : inutilisable tant que le code
+// n'a pas été donné (ou, s'il n'est pas encore activé, tant que la personne ne l'a pas enrôlé).
 import type { Pool, PoolClient } from "pg";
 import { enTransaction } from "../db/transactions";
 import { ipValide, journaliserPlateforme, type EntreeJournal } from "../audit/journal";
 import { ErreurOccupe, verifierContreLeurre, verifierMotDePasse } from "./motdepasse";
+import { sqlSecondFacteurObligatoire } from "./obligation";
 
 export const FENETRE_MINUTES = 15;
 /** Échecs d'un même compte depuis une même adresse avant refus (pour cette adresse). */
@@ -51,6 +53,8 @@ interface LigneUtilisateur {
   statut: "actif" | "desactive";
   verrouille: boolean;
   mfa_actif: boolean;
+  /** Superadmin, ou approbateur d'une organisation active (obligation.ts). */
+  mfa_obligatoire: boolean;
 }
 
 // ---------- Refus tracés une fois par fenêtre ----------
@@ -121,9 +125,10 @@ export async function authentifier(pool: Pool, d: DemandeConnexion): Promise<Res
   const lu = await enTransaction(pool, async (client) => {
     const compteurs = await compter(client, ip, d.email);
     const u = await client.query<LigneUtilisateur>(
-      `SELECT id, email, nom, mot_de_passe_hash, est_superadmin, statut, mfa_active_le IS NOT NULL AS mfa_actif,
-              (verrouille_jusqua IS NOT NULL AND verrouille_jusqua > now()) AS verrouille
-         FROM platform.utilisateurs WHERE email = $1`,
+      `SELECT u.id, u.email, u.nom, u.mot_de_passe_hash, u.est_superadmin, u.statut, u.mfa_active_le IS NOT NULL AS mfa_actif,
+              ${sqlSecondFacteurObligatoire("u")} AS mfa_obligatoire,
+              (u.verrouille_jusqua IS NOT NULL AND u.verrouille_jusqua > now()) AS verrouille
+         FROM platform.utilisateurs u WHERE u.email = $1`,
       [d.email],
     );
     return { compteurs, utilisateur: u.rows[0] };
@@ -205,7 +210,7 @@ export async function authentifier(pool: Pool, d: DemandeConnexion): Promise<Res
       return { ok: false, raison: "identifiants" };
     }
     await enregistrerTentative(client, ip, d.email, true);
-    const secondFacteur = u.est_superadmin || u.mfa_actif;
+    const secondFacteur = u.mfa_obligatoire || u.mfa_actif;
     const session = await client.query<{ id: string }>(
       "INSERT INTO platform.sessions (utilisateur_id, ip, agent, en_attente_mfa) VALUES ($1, $2::inet, $3, $4) RETURNING id",
       [u.id, ip, d.agent ? d.agent.slice(0, 500) : null, secondFacteur],
