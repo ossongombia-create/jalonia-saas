@@ -357,6 +357,8 @@ export const fr = {
   "journal.action.ORGANISATION_CREEE": "Organisation créée",
   "journal.action.ORGANISATION_SUSPENDUE": "Organisation suspendue",
   "journal.action.ORGANISATION_REACTIVEE": "Organisation réactivée",
+  "journal.action.ORGANISATION_EXPORTEE": "Organisation exportée (fin de contrat)",
+  "journal.action.ORGANISATION_SUPPRIMEE": "Organisation supprimée (fin de contrat)",
   "journal.action.MODE_VALIDATION_MODIFIE": "Mode de validation modifié",
   "journal.action.MAINTENANCE_MODIFIEE": "Mode maintenance modifié",
   "journal.action.UTILISATEUR_CREE": "Compte créé",

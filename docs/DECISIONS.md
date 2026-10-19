@@ -104,6 +104,15 @@ Restent hors de l'incrément : géolocalisation des sessions (ligne du 11/10), o
 
 ## Décisions du 19/10/2026 (mise en service v1.8)
 
+> **v1.8 — décisions implémentées** (branche `claude/sharp-newton-3c039w`) :
+> - n° 1 (accès de l'exploitant, réinitialisation par lien) : commit `3fe29c2` ;
+> - correctif : clé du second facteur obligatoire au démarrage : commit `2aa046e` ;
+> - n° 4 et n° 2 (second facteur des approbateurs, mode « petite organisation ») : commit `c45b3d8` ;
+> - n° 5 (séparation dans le plan d'actions) : commit `de67a85` ;
+> - n° 3 et n° 6 (fin de contrat : export et suppression d'une organisation, procédure dans `deploy/INSTALL-VPS.md`) : commit de la session 4 (renseigné au commit de release).
+>
+> Migrations : plateforme 0008 et 0009, organisation 0009 et 0010. Le tag `v1.8` se crée sur le commit qui inscrit cette note.
+
 Décisions de Brice sur les six points ouverts avant la mise en service (document de décision « Jalonia — six décisions avant la mise en service »). Elles remplacent ou confirment les lignes annotées plus haut. Les décisions 1, 2, 4 et 5 demandent du code (v1.8) ; 3 et 6 une procédure et un script de fin de contrat.
 
 | N° | Décision | Raison | Points techniques |

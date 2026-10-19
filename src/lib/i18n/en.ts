@@ -357,6 +357,8 @@ export const en: Record<Cle, string> = {
   "journal.action.ORGANISATION_CREEE": "Organisation created",
   "journal.action.ORGANISATION_SUSPENDUE": "Organisation suspended",
   "journal.action.ORGANISATION_REACTIVEE": "Organisation reactivated",
+  "journal.action.ORGANISATION_EXPORTEE": "Organisation exported (end of contract)",
+  "journal.action.ORGANISATION_SUPPRIMEE": "Organisation deleted (end of contract)",
   "journal.action.MODE_VALIDATION_MODIFIE": "Approval mode changed",
   "journal.action.MAINTENANCE_MODIFIEE": "Maintenance mode changed",
   "journal.action.UTILISATEUR_CREE": "Account created",
