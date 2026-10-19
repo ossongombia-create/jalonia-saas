@@ -1,4 +1,4 @@
-// Tests automatiques du moteur de règles. Lancer avec :  node --test tests/
+// Tests automatiques du moteur de règles. Lancer avec :  node --test "tests/*.test.mjs"
 import test from "node:test";
 import assert from "node:assert/strict";
 import { exempleValiderCommande, nouvelleEtape } from "../js/model.js";

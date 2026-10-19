@@ -1,4 +1,4 @@
-// mentions.js — la fenêtre « Mentions et licences » : version d'essai non commerciale, titulaire des droits (si renseigné dans config.js),
+// mentions.js — la fenêtre « Mentions et licences » : licence propriétaire, titulaire des droits (si renseigné dans config.js),
 // « aide à la rédaction, sans garantie », rapport à la méthode, données de l'utilisateur, composants de tiers et leurs licences.
 // Les textes viennent de t() ; tout est posé en texte (jamais de HTML injecté).
 
@@ -19,7 +19,7 @@ export const anneeDroits = () => {
   return /^\d{4}$/.test(brute) ? brute : String(new Date().getFullYear());
 };
 
-// La ligne complète des droits (« © 2026 Prénom Nom — tous droits réservés — version d'essai »), ou "" s'il n'y a pas de titulaire.
+// La ligne complète des droits (« © 2026 Prénom Nom — tous droits réservés. Utilisation soumise à contrat. »), ou "" s'il n'y a pas de titulaire.
 export const droitsAffiches = () => {
   const titulaire = titulaireAffiche();
   return titulaire ? t("mentions.droits", { annee: anneeDroits(), titulaire }) : "";

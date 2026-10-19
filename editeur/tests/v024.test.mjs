@@ -1,4 +1,5 @@
-// Tests v0.24 — le titulaire des droits (décision D3 du 30/09/2026) : « © 2026 Brice Ossongombia — tous droits réservés — version d'essai ».
+// Tests v0.24 — le titulaire des droits (décision D3 du 30/09/2026) ; ligne mise à jour en v1.7 (licence propriétaire) :
+// « © 2026 Brice Ossongombia — tous droits réservés. Utilisation soumise à contrat. »
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -23,9 +24,9 @@ test("le titulaire est réglé dans config.js : Brice Ossongombia, 2026", () => 
 
 test("la ligne des droits est exactement celle décidée, en français et en anglais", () => {
   definirLangue("fr");
-  assert.equal(droitsAffiches(), "© 2026 Brice Ossongombia — tous droits réservés — version d'essai");
+  assert.equal(droitsAffiches(), "© 2026 Brice Ossongombia — tous droits réservés. Utilisation soumise à contrat.");
   definirLangue("en");
-  assert.equal(droitsAffiches(), "© 2026 Brice Ossongombia — all rights reserved — trial version");
+  assert.equal(droitsAffiches(), "© 2026 Brice Ossongombia — all rights reserved. Use subject to contract.");
   definirLangue("fr");
 });
 

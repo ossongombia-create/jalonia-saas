@@ -2,9 +2,10 @@
   "name": "jalonia-saas",
   "version": "0.1.0",
   "private": true,
+  "license": "UNLICENSED",
   "description": "Jalonia — application multi-organisations de documentation selon le langage Qualigramme",
   "engines": {
-    "node": ">=22.12.0"
+    "node": ">=22.22.0"
   },
   "scripts": {
     "predev": "node scripts/copier-editeur.mjs",

@@ -1,14 +1,23 @@
 # Historique des versions
 
-Règle : la version la plus récente est toujours à la racine du dossier. Avant chaque évolution,
-l'état précédent est copié dans `versions/` (un dossier par version). Pour revenir en arrière ou
-comparer, ouvre le dossier de la version voulue. (Au Module 6, Git prendra le relais.)
+Depuis le Module 6, Git remplace `versions/` : chaque release est un tag annoté `vX.Y` sur `main`.
+
+*(Règle d'avant le Module 6, gardée pour lire les anciennes entrées : la version la plus récente était à la racine du
+dossier et, avant chaque évolution, l'état précédent était copié dans `versions/`, un dossier par version.)*
+
+## v1.7 — Licence propriétaire, contrat de l'agent, documentation à jour (19/10/2026)
+Phase A de stabilisation avant la mise en service de l'application web complète en production.
+- **Licence propriétaire** : la « version d'essai non commerciale » disparaît. Mention : « © 2026 Brice Ossongombia — tous droits réservés. Utilisation soumise à contrat. » (EN : « … — all rights reserved. Use subject to contract. »). Textes FR / EN (`js/locales/fr.js`, `en.js` : `apropos.essai`, `retour.mention`, `accueil.aide.titre`, `accueil.essai_court`, `mentions.essai.*`, `mentions.droits`, clés inchangées), commentaires de `js/config.js` et `js/mentions.js`, guides FR / EN (en-tête et pied), `LICENCES-TIERS.md`, `README.md`. Nouveau fichier `LICENSE` à la racine du dépôt.
+- **Contrat de l'agent** : nouveau `AGENTS.md` (règles vérifiées par les tests, état, prérequis, commandes, recette de la CI, stratégie de release par tag annoté).
+- **Documentation** : note Git en tête de ce fichier ; nombre de tests de la v1.6 et de la v1.1 corrigés ; commande de `tests/rules.test.mjs` corrigée ; `docs/DECISIONS.md` de l'application web mis à jour (chiffres des tests et de la matrice, lignes remplacées annotées, section « Incrément 5 »). Node.js ≥ 22.22 exigé (`package.json`).
+- **Application web (même release)** : migration 0008 et matrice des autorisations (action `actionEnregistrerMaintenance`) remises au vert ; nodemailer 10.1.7 (`npm audit --omit=dev` = 0 vulnérabilité) avec un test d'intégration de l'envoi SMTP.
+- **Vérifié** : 486 tests Node au vert (dont `tests/v170.test.mjs`, 9 nouveaux) ; 5 vérifications de `v021`, `v022` et `v024` mises à jour pour le nouveau texte ; parité FR / EN.
 
 ## v1.6 — Circuit de validation : lecture seule selon l'état du document (13/10/2026)
 Plan de l'audit technique (W1) : dans l'application web, un document passe par vérification, approbation, publication et archivage ; seul un brouillon se modifie.
 - **Ouverture** (`js/en-ligne-ui.js`) : un document en vérification, en approbation, publié ou archivé s'ouvre **en lecture seule** pour tout le monde, avec un bandeau qui dit pourquoi (l'état du document, et où se prennent les décisions : page « Validation ») ; l'en-tête indique « Lecture seule » même quand la cartographie, enregistrée à part, reste modifiable. Comme pour un rôle en lecture : aperçus, synthèse, Word et PDF restent disponibles.
 - **Enregistrement** (`js/synchro.js`) : si le document est soumis au circuit pendant qu'il est ouvert, le serveur refuse l'enregistrement (`403`, `circuit`) ; l'enregistrement s'arrête et une fenêtre l'explique (nouvelle raison `circuit`), le travail reste dans la page et peut être téléchargé en .json.
-- **Vérifié** : voir l'entrée « W1/W3 » de `docs/DECISIONS.md` de l'application web (tests Node, parcours navigateur partie 11).
+- **Vérifié** : 477 tests Node au vert (aucun nouveau fichier de test dans l'éditeur) ; voir les entrées « Circuit de validation » (W1) et « Trace d'approbation » (W3) de `docs/DECISIONS.md` de l'application web (parcours navigateur, partie 11).
 
 ## v1.5 — Échange BPMN 2.0 d'une procédure (13/10/2026)
 Plan de l'audit technique (D3) : exporter un sous-ensemble défini du BPMN 2.0, l'importer avec un rapport de ce qui n'est pas repris, sans revendiquer une compatibilité BPMN générale.
@@ -52,7 +61,7 @@ Demande de Brice (04/10) : quand on n'utilise pas un modèle pré-rempli, le doc
 - **Formulaire de saisie** (écran Cartographie, `js/cartographie-ui.js`) : nouvelle carte **« Fiches des processus »** — une fiche repliable par processus à code valide, avec un **exemple** dans chaque champ (placeholder, selon le bloc pour la finalité), un repère ✓ quand la fiche est renseignée, et un bouton **« Insérer les exemples »** qui remplit les champs vides avec des exemples génériques à adapter (option 3). `store.modifierFiche(code, champ, valeur)`.
 - **Document Word niveau 1** (`js/exportDocx.js`) : chaque section qualitative (pilote, finalité, ressources, risques, exigences) reprend désormais **le texte saisi** (rendu en paragraphes, sauts de ligne respectés) ; ce qui reste vide garde le repère « à compléter » / le rappel de cotation. Rien n'est inventé automatiquement.
 - **Principe** : l'outil pré-remplit ce qu'il **déduit** (cartographie, interfaces d'après les flux) ; le contenu propre à l'organisation reste **saisi par l'utilisateur**, guidé par des exemples clairement génériques.
-- **Vérifié** : `tests/v110.test.mjs` (8 nouveaux : nettoyage par code, sauts de ligne, `ficheProcessus`, round-trip JSON, reprise dans le .docx, repères « à compléter », fiches vides) ; parité FR/EN des nouvelles clés.
+- **Vérifié** : `tests/v110.test.mjs` (7 nouveaux — corrigé en v1.7, il était écrit 8 ; le total de 439 de la v1.2 suppose 431 + 8 : l'écart de 1 n'est pas expliqué par l'historique — nettoyage par code, sauts de ligne, `ficheProcessus`, round-trip JSON, reprise dans le .docx, repères « à compléter », fiches vides) ; parité FR/EN des nouvelles clés.
 
 ## v1.0.1 — correction issue de la campagne de qualification (04/10/2026)
 Campagne de qualification de Jalonia (banc d'essai : génération niveaux 1/2/3, transformation, négatifs, limites, déterminisme, intégrité, complexité C1–C8).

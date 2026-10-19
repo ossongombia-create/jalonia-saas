@@ -46,7 +46,7 @@ tests/            tests unitaires et d'intégration (vraie base PostgreSQL)
 
 ## Développement local
 
-Prérequis : Node.js ≥ 22.12, PostgreSQL ≥ 16.
+Prérequis : Node.js ≥ 22.22, PostgreSQL ≥ 16, openssl (tests d'intégration).
 
 ```bash
 npm ci

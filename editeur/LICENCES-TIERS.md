@@ -19,8 +19,8 @@ le dossier du composant, et une ligne dans `js/locales/fr.js` et `en.js` (`menti
   éventuelles versions modifiées ne doivent pas reprendre le nom réservé.
 
 ## Ce que ce fichier ne couvre pas
-- Le code et les textes de l'application elle-même : son statut (version d'essai non commerciale), son titulaire des droits (© 2026 Brice Ossongombia — tous droits réservés — version d'essai) et sa licence sont
-  donnés par l'application (**Mentions et licences**) et par la décision prise sur le nom et les droits (voir l'analyse juridique du projet).
+- Le code et les textes de l'application elle-même : logiciel **propriétaire** — © 2026 Brice Ossongombia — tous droits réservés. Utilisation soumise à contrat.
+  Le texte de la licence est dans le fichier `LICENSE` à la racine du dépôt ; l'application le résume dans **Mentions et licences**.
 - La méthode Qualigramme et son livre (S. Guillard et C. Berger) : l'application s'en inspire, elle n'en reproduit aucun passage ; elle n'est ni éditée,
   ni approuvée, ni recommandée par les auteurs de la méthode ni par leurs éditeurs.
 
