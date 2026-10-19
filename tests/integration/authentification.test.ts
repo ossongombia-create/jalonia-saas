@@ -8,7 +8,8 @@ import {
   changerMotDePasse,
   desactiverUtilisateur,
   reactiverUtilisateur,
-  reinitialiserMotDePasse,
+  creerReinitialisation,
+  reinitialiserParLien,
   revoquerSessionsUtilisateur,
 } from "../../src/server/utilisateurs/service";
 import type { Acteur } from "../../src/server/acteur";
@@ -142,19 +143,27 @@ describe("gestion des comptes par le superadmin", () => {
     expect((await connexion(u.email, MDP_TEST)).ok).toBe(true);
   });
 
-  it("réinitialisation : nouveau mot de passe provisoire, ancien refusé, sessions fermées", async () => {
+  it("réinitialisation par lien : la personne choisit son mot de passe, l'ancien est refusé, ses sessions sont fermées", async () => {
     const u = await nouvelUtilisateur();
-    const nouveau = "reinitialise-par-admin-1";
-    await reinitialiserMotDePasse(app, u.id, nouveau, superadmin);
+    const avant = await connexion(u.email, MDP_TEST);
+    if (!avant.ok) throw new Error("connexion attendue");
+    const lien = await creerReinitialisation(app, u.id, superadmin);
+    // Tant que le lien n'est pas utilisé, rien ne change : l'ancien mot de passe reste valable.
+    expect((await connexion(u.email, MDP_TEST)).ok).toBe(true);
+    const nouveau = "choisi-par-la-personne-1";
+    await reinitialiserParLien(app, lien.jeton, nouveau, { ip: "203.0.113.7", agent: "vitest" });
+    expect(await validerSession(app, { utilisateurId: u.id, sessionId: avant.sessionId }, REGLES)).toBeNull();
     expect((await connexion(u.email, MDP_TEST)).ok).toBe(false);
     const r = await connexion(u.email, nouveau);
     expect(r.ok).toBe(true);
+    if (r.ok) expect((await validerSession(app, { utilisateurId: u.id, sessionId: r.sessionId }, REGLES))?.utilisateur.doitChangerMdp).toBe(false);
   });
 
   it("les comptes superadmin et son propre compte sont protégés", async () => {
     const autre = await creerSuperadmin(proprietaire);
     expect(await cleErreur(desactiverUtilisateur(app, autre.id, superadmin))).toBe("erreur.superadmin_protege");
-    expect(await cleErreur(reinitialiserMotDePasse(app, autre.id, "un-mot-de-passe-long", superadmin))).toBe("erreur.superadmin_protege");
+    expect(await cleErreur(creerReinitialisation(app, autre.id, superadmin))).toBe("erreur.superadmin_protege");
+    expect(await cleErreur(creerReinitialisation(app, superadmin.id, superadmin))).toBe("erreur.soi_meme");
     expect(await cleErreur(desactiverUtilisateur(app, superadmin.id, superadmin))).toBe("erreur.soi_meme");
   });
 });

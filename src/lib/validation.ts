@@ -38,6 +38,15 @@ export const schemaCompteInvitation = z
   })
   .refine((d) => d.nouveau === d.confirmation, { message: "erreur.mdp_confirmation", path: ["confirmation"] });
 
+/** Lien de réinitialisation du mot de passe (même forme que le lien d'invitation). */
+export const schemaReinitialisation = z
+  .object({
+    jeton: z.string().regex(/^[A-Za-z0-9_-]{43}$/, "reinit.invalide"),
+    nouveau: z.string().max(200, "erreur.mdp_trop_long"),
+    confirmation: z.string(),
+  })
+  .refine((d) => d.nouveau === d.confirmation, { message: "erreur.mdp_confirmation", path: ["confirmation"] });
+
 export const schemaChangementMotDePasse = z
   .object({
     actuel: motDePasseSaisi,

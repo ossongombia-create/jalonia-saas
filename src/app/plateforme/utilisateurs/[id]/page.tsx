@@ -15,6 +15,7 @@ import { identifiant } from "@/lib/validation";
 import { poolApplication } from "@/server/db/pools";
 import { lireJournalPlateforme, listerSessionsOuvertes, listerSessionsTerminees } from "@/server/consultation/service";
 import { lireUtilisateur } from "@/server/utilisateurs/service";
+import { courrielConfigure } from "@/server/notifications/courriel";
 import { exigerSuperadmin, reglesSession } from "@/server/web/contexte";
 import { titrePage } from "@/server/web/metadonnees";
 
@@ -83,14 +84,14 @@ export default async function PageUtilisateur({ params }: { params: Promise<{ id
           <div className="pied-carte">
             <h3>{t("users.reinitialiser")}</h3>
             <p className="discret petit">{t("users.reinitialiser_aide")}</p>
-            <FormulaireAction action={actionReinitialiserMotDePasse} libelle={t("users.reinitialiser")} libelleEnCours={t("commun.en_cours")} variante="ligne" vider={false}>
-              <input type="hidden" name="utilisateurId" value={u.id} />
-              <label className="champ">
-                <span>{t("orgs.mdp_provisoire")}</span>
-                <input type="text" name="motDePasse" required minLength={12} maxLength={200} autoComplete="new-password" spellCheck={false} />
-                <small>{t("mdp.regle")}</small>
-              </label>
-            </FormulaireAction>
+            {courrielConfigure() ? (
+              <FormulaireAction action={actionReinitialiserMotDePasse} libelle={t("users.reinitialiser")} libelleEnCours={t("commun.en_cours")} variante="ligne"
+                confirmation={t("users.reinit_confirmation", { email: u.email })}>
+                <input type="hidden" name="utilisateurId" value={u.id} />
+              </FormulaireAction>
+            ) : (
+              <p className="bandeau bandeau-alerte">{t("users.reinit_smtp_requis")}</p>
+            )}
           </div>
         ) : null}
         {gerable && u.mfaActif ? (

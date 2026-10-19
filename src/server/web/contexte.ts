@@ -16,6 +16,7 @@ import { poolApplication } from "../db/pools";
 import { lireSessionEnAttente, noterOrganisationDeSession, validerSession, type SessionEnAttente, type UtilisateurSession } from "../auth/sessions";
 import { MINUTES_SESSION_EN_ATTENTE } from "../auth/second-facteur";
 import type { Acteur } from "../acteur";
+import { lireAccesActifs } from "../acces-urgence/service";
 import type { OrganisationCible } from "../membres/service";
 import { agentDepuisEntetes, ipDepuisEntetes } from "./reseau";
 
@@ -27,6 +28,8 @@ export interface AdhesionActive extends OrganisationCible {
   slug: string;
   statut: "active" | "suspendue";
   roles: RoleOrganisation[];
+  /** Accès d'urgence de l'exploitant (superadmin) : adhésion temporaire, jusqu'à cette échéance. */
+  urgence?: { expireLe: Date };
 }
 
 export interface Contexte {
@@ -62,7 +65,21 @@ async function lireAdhesions(utilisateurId: string): Promise<AdhesionActive[]> {
         ORDER BY o.nom`,
       [utilisateurId],
     );
-    return r.rows.map((o) => ({ id: o.id, nom: o.nom, slug: o.slug, statut: o.statut, schemaName: o.schema_name, roleName: o.role_name, roles: o.roles }));
+    const adhesions: AdhesionActive[] = r.rows.map((o) => ({ id: o.id, nom: o.nom, slug: o.slug, statut: o.statut, schemaName: o.schema_name, roleName: o.role_name, roles: o.roles }));
+    // Un superadmin n'est membre d'aucune organisation : il n'y entre que par un accès d'urgence encore valable.
+    const acces = await lireAccesActifs(client, utilisateurId);
+    if (acces.length > 0) {
+      const o = await client.query<{ id: string; nom: string; slug: string; statut: "active" | "suspendue"; schema_name: string; role_name: string }>(
+        "SELECT id, nom, slug, statut, schema_name, role_name FROM platform.organisations WHERE id = ANY ($1::uuid[]) ORDER BY nom",
+        [acces.map((a) => a.organisationId)],
+      );
+      for (const org of o.rows) {
+        const a = acces.find((x) => x.organisationId === org.id)!;
+        if (adhesions.some((x) => x.id === org.id)) continue;
+        adhesions.push({ id: org.id, nom: org.nom, slug: org.slug, statut: org.statut, schemaName: org.schema_name, roleName: org.role_name, roles: [a.role], urgence: { expireLe: a.expireLe } });
+      }
+    }
+    return adhesions;
   });
 }
 

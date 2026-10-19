@@ -17,7 +17,7 @@ function texte(t: Traducteur, langue: Langue, n: Notification): string {
   const doc = d.reference && d.titre ? `${d.reference} — ${d.titre}` : d.reference || d.titre || t("docs.sans_titre");
   return t(`notifications.n.${n.nature}`, {
     doc, titre: d.titre ?? "", par: d.par ?? "—", version: d.version ?? "", motif: d.motif ?? "—",
-    echeance: formaterJour(langue, d.echeance), jours: d.jours ?? "",
+    echeance: formaterJour(langue, d.echeance), jours: d.jours ?? "", heures: d.heures ?? "",
   });
 }
 

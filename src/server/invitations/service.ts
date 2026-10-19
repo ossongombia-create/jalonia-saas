@@ -6,6 +6,10 @@
 //   - Avec un compte, elle se connecte (avec CETTE adresse) et accepte : aucun compte n'est plus rattaché d'office.
 // La réponse à l'administrateur est la même que l'adresse ait déjà un compte ou non.
 //
+// Un compte superadmin n'est jamais membre d'une organisation (décision n° 1 du 19/10/2026) : personne ne s'invite
+// soi-même, et un compte superadmin ne peut pas accepter d'invitation (la base le refuse aussi). Pour intervenir
+// dans une organisation, le superadmin ouvre un accès d'urgence (acces-urgence/service.ts).
+//
 // Seule l'empreinte SHA-256 du jeton est rangée en base. Un lien inconnu, déjà utilisé, annulé ou expiré (ou dont
 // l'organisation est suspendue) reçoit toujours la même réponse : « lien non valable ».
 import { createHash, randomBytes } from "node:crypto";
@@ -53,6 +57,7 @@ export interface InvitationCreee {
  * encore en attente pour la même adresse est annulée : seul le dernier lien fonctionne.
  */
 export async function creerInvitation(client: PoolClient, org: OrganisationCible, entree: NouvelleInvitation, acteur: Acteur): Promise<InvitationCreee> {
+  if (entree.email === acteur.email.toLowerCase()) throw new ErreurMetier("invitation.soi_meme");
   const membre = await client.query(
     `SELECT 1 FROM platform.adhesions a JOIN platform.utilisateurs u ON u.id = a.utilisateur_id
       WHERE a.organisation_id = $1 AND u.email = $2`,
@@ -240,6 +245,8 @@ export async function accepterAvecCompte(pool: Pool, jeton: string, personne: Ac
   return enTransaction(pool, async (client) => {
     const inv = await verrouiller(client, jeton);
     if (inv.email !== personne.email) throw new ErreurMetier("invitation.autre_compte");
+    const compte = await client.query<{ est_superadmin: boolean }>("SELECT est_superadmin FROM platform.utilisateurs WHERE id = $1", [personne.id]);
+    if (compte.rows[0]?.est_superadmin) throw new ErreurMetier("invitation.superadmin");
     await rattacher(client, inv, personne);
     return { organisationId: inv.org.id };
   });

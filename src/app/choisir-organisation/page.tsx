@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { formaterDate } from "@/lib/format";
 import { actionChoisirOrganisation, actionDeconnexion } from "@/actions/compte";
 import { exigerContexte } from "@/server/web/contexte";
 import { titrePage } from "@/server/web/metadonnees";
@@ -28,6 +29,12 @@ export default async function PageChoisirOrganisation() {
                     <strong>{a.nom}</strong>
                     <br />
                     <span className="discret petit">{a.roles.map((r) => t(`role.${r}`)).join(", ")}</span>
+                    {a.urgence ? (
+                      <>
+                        <br />
+                        <span className="etiquette etiquette-alerte">{t("acces.etiquette", { date: formaterDate(ctx.langue, a.urgence.expireLe, ctx.fuseau) })}</span>
+                      </>
+                    ) : null}
                   </span>
                   {a.statut === "active" ? (
                     <form action={actionChoisirOrganisation}>

@@ -1,6 +1,7 @@
 // Comptes utilisateurs : consultation et gestion par le superadmin, mot de passe et langue par l'utilisateur.
 // Les comptes superadministrateurs ne se gèrent PAS depuis l'interface (ligne de commande sur le serveur) :
 // un compte superadmin compromis ne peut pas désactiver ou reprendre les autres.
+import { randomBytes } from "node:crypto";
 import type { Pool, PoolClient } from "pg";
 import type { Langue } from "@/lib/i18n";
 import type { RoleOrganisation } from "@/lib/rbac";
@@ -11,6 +12,7 @@ import { ECHECS_AVANT_VERROU, MINUTES_DE_VERROU } from "../auth/connexion";
 import { revoquerSessionsDe, type ReglesSession } from "../auth/sessions";
 import { ErreurMetier } from "../erreurs";
 import { traceActeur, type Acteur } from "../acteur";
+import { empreinteJeton, jetonBienForme } from "../invitations/service";
 
 export interface UtilisateurResume {
   id: string;
@@ -145,38 +147,132 @@ export async function revoquerSessionsUtilisateur(pool: Pool, cibleId: string, a
   });
 }
 
+/** Ce que la personne voit sur la page du lien : son adresse et l'échéance du lien. */
+export interface ReinitialisationOuverte {
+  email: string;
+  nom: string;
+  expireLe: Date;
+}
+
+export interface ReinitialisationCreee {
+  id: string;
+  jeton: string;
+  email: string;
+  nom: string;
+  langue: Langue;
+  expireLe: Date;
+}
+
+export const DUREE_REINITIALISATION_MINUTES = 60;
+
+/** Chemin du lien de réinitialisation (relatif au site). */
+export function cheminReinitialisation(jeton: string): string {
+  return `/reinitialisation/${jeton}`;
+}
+
+/** Inscrit l'opération dans le journal de CHAQUE organisation dont la personne est membre (audit S9). */
+async function journaliserDansSesOrganisations(client: PoolClient, utilisateurId: string, e: Parameters<typeof journaliserOrganisation>[1]): Promise<void> {
+  const orgs = await client.query<{ schema_name: string; role_name: string }>(
+    `SELECT o.schema_name, o.role_name FROM platform.adhesions a JOIN platform.organisations o ON o.id = a.organisation_id
+      WHERE a.utilisateur_id = $1 ORDER BY o.id`,
+    [utilisateurId],
+  );
+  for (const o of orgs.rows) {
+    await dansOrganisation(client, { schemaName: o.schema_name, roleName: o.role_name }, () => journaliserOrganisation(client, e));
+  }
+}
+
 /**
- * Le superadmin attribue un mot de passe PROVISOIRE (à changer à la prochaine connexion) et ferme les sessions.
- * Il pourrait ensuite se connecter sous le nom de la personne : la réinitialisation est donc tracée AUSSI dans le
- * journal de chaque organisation dont la personne est membre (audit S9) — l'organisation le voit.
+ * Le superadmin demande la réinitialisation du mot de passe d'un compte (décision n° 1 du 19/10/2026) : un lien à
+ * usage unique, valable 1 heure, est créé pour être ENVOYÉ PAR COURRIEL à la personne (l'action refuse sans SMTP).
+ * Le superadmin ne choisit ni ne connaît le nouveau mot de passe. Seule l'empreinte du jeton est rangée ; un lien
+ * encore en attente pour ce compte est annulé. La demande est tracée dans le journal de la plateforme et dans celui
+ * de chaque organisation de la personne.
  */
-export async function reinitialiserMotDePasse(pool: Pool, cibleId: string, motDePasseProvisoire: string, acteur: Acteur): Promise<void> {
+export async function creerReinitialisation(pool: Pool, cibleId: string, acteur: Acteur): Promise<ReinitialisationCreee> {
   const { email } = await cibleGerable(pool, cibleId, acteur);
-  const refus = controlerMotDePasse(motDePasseProvisoire, email);
-  if (refus) throw new ErreurMetier(refus);
-  const empreinte = await hacherMotDePasse(motDePasseProvisoire);
-  await enTransaction(pool, async (client) => {
-    const r = await client.query(
-      `UPDATE platform.utilisateurs
-          SET mot_de_passe_hash = $2, doit_changer_mdp = true, echecs_connexion = 0, verrouille_jusqua = NULL
-        WHERE id = $1 AND NOT est_superadmin`,
-      [cibleId, empreinte],
-    );
-    if (!r.rowCount) throw new ErreurMetier("erreur.introuvable");
-    const fermees = await revoquerSessionsDe(client, cibleId);
-    await journaliserPlateforme(client, { action: "MOT_DE_PASSE_REINITIALISE", ...traceActeur(acteur), cibleType: "utilisateur", cibleId, details: { sessionsFermees: fermees } });
-    const orgs = await client.query<{ schema_name: string; role_name: string }>(
-      `SELECT o.schema_name, o.role_name FROM platform.adhesions a JOIN platform.organisations o ON o.id = a.organisation_id
-        WHERE a.utilisateur_id = $1 ORDER BY o.id`,
+  return enTransaction(pool, async (client) => {
+    const u = await client.query<{ nom: string; langue: Langue }>(
+      "SELECT nom, coalesce(langue, 'fr') AS langue FROM platform.utilisateurs WHERE id = $1 AND NOT est_superadmin",
       [cibleId],
     );
-    for (const o of orgs.rows) {
-      await dansOrganisation(client, { schemaName: o.schema_name, roleName: o.role_name }, () =>
-        journaliserOrganisation(client, {
-          action: "MOT_DE_PASSE_REINITIALISE", ...traceActeur(acteur), cibleType: "utilisateur", cibleId, details: { email, parSuperadmin: true, sessionsFermees: fermees },
-        }),
-      );
-    }
+    const personne = u.rows[0];
+    if (!personne) throw new ErreurMetier("erreur.introuvable");
+    await client.query(
+      "UPDATE platform.reinitialisations SET annulee_le = now() WHERE utilisateur_id = $1 AND utilisee_le IS NULL AND annulee_le IS NULL",
+      [cibleId],
+    );
+    const jeton = randomBytes(32).toString("base64url");
+    const r = await client.query<{ id: string; expire_le: Date }>(
+      `INSERT INTO platform.reinitialisations (utilisateur_id, jeton_empreinte, cree_par, expire_le)
+       VALUES ($1, $2, $3, now() + make_interval(mins => $4)) RETURNING id, expire_le`,
+      [cibleId, empreinteJeton(jeton), acteur.id, DUREE_REINITIALISATION_MINUTES],
+    );
+    const id = r.rows[0]!.id;
+    await journaliserPlateforme(client, { action: "REINITIALISATION_DEMANDEE", ...traceActeur(acteur), cibleType: "utilisateur", cibleId, details: { email } });
+    await journaliserDansSesOrganisations(client, cibleId, {
+      action: "REINITIALISATION_DEMANDEE", ...traceActeur(acteur), cibleType: "utilisateur", cibleId, details: { email, parSuperadmin: true },
+    });
+    return { id, jeton, email, nom: personne.nom, langue: personne.langue, expireLe: r.rows[0]!.expire_le };
+  });
+}
+
+/** Annule un lien (le courriel n'a pas pu partir : le lien ne doit pas rester valable). */
+export async function annulerReinitialisation(pool: Pool, id: string): Promise<void> {
+  await enTransaction(pool, (client) =>
+    client.query("UPDATE platform.reinitialisations SET annulee_le = now() WHERE id = $1 AND utilisee_le IS NULL AND annulee_le IS NULL", [id]),
+  );
+}
+
+const CONDITIONS_LIEN = "r.utilisee_le IS NULL AND r.annulee_le IS NULL AND r.expire_le > now() AND u.statut = 'actif' AND NOT u.est_superadmin";
+
+/** Le compte d'un lien, ou null s'il n'est pas (ou plus) valable — même réponse quelle qu'en soit la raison. */
+export async function lireReinitialisation(pool: Pool, jeton: string): Promise<ReinitialisationOuverte | null> {
+  if (!jetonBienForme(jeton)) return null;
+  return enTransaction(pool, async (client) => {
+    const r = await client.query<{ email: string; nom: string; expire_le: Date }>(
+      `SELECT u.email, u.nom, r.expire_le FROM platform.reinitialisations r JOIN platform.utilisateurs u ON u.id = r.utilisateur_id
+        WHERE r.jeton_empreinte = $1 AND ${CONDITIONS_LIEN}`,
+      [empreinteJeton(jeton)],
+    );
+    const l = r.rows[0];
+    return l ? { email: l.email, nom: l.nom, expireLe: l.expire_le } : null;
+  });
+}
+
+/**
+ * La personne choisit SON nouveau mot de passe avec le lien. Le lien ne sert qu'une fois ; toutes les sessions du
+ * compte sont fermées, le verrouillage levé. Tracé (la personne en est l'auteur) dans le journal de la plateforme et
+ * dans celui de chacune de ses organisations.
+ */
+export async function reinitialiserParLien(pool: Pool, jeton: string, motDePasse: string, reseau: { ip: string | null; agent: string | null }): Promise<{ email: string }> {
+  const lu = await lireReinitialisation(pool, jeton);
+  if (!lu) throw new ErreurMetier("reinit.invalide");
+  const refus = controlerMotDePasse(motDePasse, lu.email);
+  if (refus) throw new ErreurMetier(refus);
+  const empreinte = await hacherMotDePasse(motDePasse); // calcul lent : hors transaction
+  return enTransaction(pool, async (client) => {
+    const r = await client.query<{ id: string; utilisateur_id: string; email: string }>(
+      `SELECT r.id, r.utilisateur_id, u.email FROM platform.reinitialisations r JOIN platform.utilisateurs u ON u.id = r.utilisateur_id
+        WHERE r.jeton_empreinte = $1 AND ${CONDITIONS_LIEN}
+        FOR UPDATE OF r`,
+      [empreinteJeton(jeton)],
+    );
+    const l = r.rows[0];
+    if (!l) throw new ErreurMetier("reinit.invalide");
+    await client.query(
+      `UPDATE platform.utilisateurs
+          SET mot_de_passe_hash = $2, doit_changer_mdp = false, echecs_connexion = 0, verrouille_jusqua = NULL
+        WHERE id = $1 AND NOT est_superadmin`,
+      [l.utilisateur_id, empreinte],
+    );
+    await client.query("UPDATE platform.reinitialisations SET utilisee_le = now() WHERE id = $1", [l.id]);
+    const fermees = await revoquerSessionsDe(client, l.utilisateur_id);
+    const personne: Acteur = { id: l.utilisateur_id, email: l.email, ip: reseau.ip, agent: reseau.agent };
+    const details = { email: l.email, parLien: true, sessionsFermees: fermees };
+    await journaliserPlateforme(client, { action: "MOT_DE_PASSE_REINITIALISE", ...traceActeur(personne), cibleType: "utilisateur", cibleId: l.utilisateur_id, details });
+    await journaliserDansSesOrganisations(client, l.utilisateur_id, { action: "MOT_DE_PASSE_REINITIALISE", ...traceActeur(personne), cibleType: "utilisateur", cibleId: l.utilisateur_id, details });
+    return { email: l.email };
   });
 }
 

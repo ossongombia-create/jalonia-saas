@@ -14,7 +14,7 @@ import { listerMembres } from "../../src/server/membres/service";
 import { changerStatutOrganisation } from "../../src/server/organisations/service";
 import { creerOrganisation } from "../../src/server/organisations/provisionnement";
 import { authentifier } from "../../src/server/auth/connexion";
-import { reinitialiserMotDePasse } from "../../src/server/utilisateurs/service";
+import { creerReinitialisation, reinitialiserParLien } from "../../src/server/utilisateurs/service";
 import { lireJournalOrganisation } from "../../src/server/consultation/service";
 import { enTransaction } from "../../src/server/db/transactions";
 import type { Acteur } from "../../src/server/acteur";
@@ -261,8 +261,8 @@ describe("protections en base", () => {
   });
 });
 
-describe("réinitialisation d'un mot de passe par le superadmin (audit S9)", () => {
-  it("tracée dans le journal de CHAQUE organisation de la personne, et seulement là", async () => {
+describe("réinitialisation d'un mot de passe par le superadmin (audit S9, décision n° 1 du 19/10/2026)", () => {
+  it("demande et utilisation du lien tracées dans le journal de CHAQUE organisation de la personne, et seulement là", async () => {
     const a = await creerOrgDeTest(app, proprietaire, superadmin);
     const b = await creerOrgDeTest(app, proprietaire, superadmin);
     const c = await creerOrgDeTest(app, proprietaire, superadmin);
@@ -271,15 +271,20 @@ describe("réinitialisation d'un mot de passe par le superadmin (audit S9)", () 
     const invB = await inviter(app, b.cible, { email, nom: "X", roles: ["LECTEUR"] }, superadmin);
     await accepterAvecCompte(app, invB.jeton, { id, email });
 
-    await reinitialiserMotDePasse(app, id, "provisoire-par-superadmin-1", superadmin);
+    const lien = await creerReinitialisation(app, id, superadmin);
+    await reinitialiserParLien(app, lien.jeton, "choisi-par-la-personne-1", RESEAU_TEST);
     for (const org of [a, b]) {
-      const ligne = (await lireJournalOrganisation(app, org.cible, { page: 1 })).lignes.find((l) => l.action === "MOT_DE_PASSE_REINITIALISE");
-      expect(ligne?.cibleId).toBe(id);
-      expect(ligne?.acteurEmail).toBe(superadmin.email);
-      expect(ligne?.details).toMatchObject({ email, parSuperadmin: true });
+      const lignes = (await lireJournalOrganisation(app, org.cible, { page: 1 })).lignes;
+      const demande = lignes.find((l) => l.action === "REINITIALISATION_DEMANDEE");
+      expect(demande?.cibleId).toBe(id);
+      expect(demande?.acteurEmail).toBe(superadmin.email);
+      expect(demande?.details).toMatchObject({ email, parSuperadmin: true });
+      const faite = lignes.find((l) => l.action === "MOT_DE_PASSE_REINITIALISE");
+      expect(faite?.acteurEmail).toBe(email); // la personne elle-même, pas le superadmin
+      expect(faite?.details).toMatchObject({ email, parLien: true });
     }
-    expect((await actionsJournal(c)).includes("MOT_DE_PASSE_REINITIALISE")).toBe(false);
+    for (const action of ["REINITIALISATION_DEMANDEE", "MOT_DE_PASSE_REINITIALISE"]) expect((await actionsJournal(c)).includes(action)).toBe(false);
     const compte = await enTransaction(app, (cl) => cl.query<{ doit_changer_mdp: boolean }>("SELECT doit_changer_mdp FROM platform.utilisateurs WHERE id = $1", [id]));
-    expect(compte.rows[0]!.doit_changer_mdp).toBe(true);
+    expect(compte.rows[0]!.doit_changer_mdp).toBe(false);
   });
 });

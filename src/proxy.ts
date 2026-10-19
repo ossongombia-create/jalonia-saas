@@ -8,7 +8,8 @@ import { NextResponse, type NextRequest } from "next/server";
 import { nouveauNonce, politiquePages, POLITIQUE_EDITEUR } from "./lib/csp";
 
 const COOKIE_SESSION = /^(__Secure-)?authjs\.session-token(\.\d+)?$/;
-// Pages accessibles sans session : la connexion, et les invitations (/invitation/<jeton>, voir plus bas).
+// Pages accessibles sans session : la connexion, les invitations (/invitation/<jeton>) et les liens de
+// réinitialisation du mot de passe (/reinitialisation/<jeton>), voir plus bas.
 const PAGES_PUBLIQUES = new Set(["/connexion", "/maintenance"]);
 const CSP = "Content-Security-Policy";
 
@@ -18,7 +19,7 @@ export function proxy(requete: NextRequest) {
   // dossier de cache dans le code en service, qui est en lecture seule (erreur au journal à chaque requête).
   if (pathname === "/_next/image") return new NextResponse(null, { status: 404, headers: { "Cache-Control": "no-store" } });
   const aUnCookie = requete.cookies.getAll().some((c) => COOKIE_SESSION.test(c.name));
-  if (!aUnCookie && !PAGES_PUBLIQUES.has(pathname) && !pathname.startsWith("/invitation/")) {
+  if (!aUnCookie && !PAGES_PUBLIQUES.has(pathname) && !pathname.startsWith("/invitation/") && !pathname.startsWith("/reinitialisation/")) {
     // Les routes JSON (éditeur) répondent 401 : une redirection vers la page de connexion ne leur servirait à rien.
     if (pathname.startsWith("/api/")) return NextResponse.json({ erreur: "session" }, { status: 401, headers: { "Cache-Control": "no-store" } });
     return NextResponse.redirect(new URL("/connexion", requete.url));
