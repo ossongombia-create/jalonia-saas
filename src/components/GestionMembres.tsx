@@ -1,6 +1,8 @@
-// Liste et gestion des membres d'une organisation (utilisée par l'administrateur de l'organisation et
-// par le superadmin) : membres, invitations en attente, nouvelle invitation. Les droits sont revérifiés côté
-// serveur par chaque action.
+// Liste et gestion des membres d'une organisation : membres, invitations en attente, nouvelle invitation.
+// - Administrateur de l'organisation (/app/membres) : gestion complète ; les droits sont revérifiés côté serveur par
+//   chaque action (src/actions/membres.ts).
+// - Superadmin (/plateforme/organisations/[id]) : LECTURE SEULE (`lectureSeule`), aucun formulaire (chantier 1 du
+//   20/10/2026) ; le serveur le refuse de toute façon.
 import { actionAnnulerInvitation, actionInviterMembre, actionModifierRoles, actionRetirerMembre } from "@/actions/membres";
 import { formaterDate } from "@/lib/format";
 import { ROLES_ORGANISATION } from "@/lib/rbac";
@@ -14,15 +16,18 @@ interface Props {
   organisationId: string;
   membres: Membre[];
   invitations: InvitationEnAttente[];
+  /** Superadmin : listes seulement, aucun bouton. */
+  lectureSeule?: boolean;
 }
 
-export function GestionMembres({ ctx, organisationId, membres, invitations }: Props) {
+export function GestionMembres({ ctx, organisationId, membres, invitations, lectureSeule = false }: Props) {
   const { t, langue, fuseau } = ctx;
   const libellesLien = { lien: t("invitation.lien"), copier: t("commun.copier"), copie: t("commun.copie") };
   return (
     <>
       <section className="carte">
         <h2>{t("membres.titre")}</h2>
+        {lectureSeule ? <p className="discret" id="membres-lecture-seule">{t("membres.lecture_seule_superadmin")}</p> : null}
         {membres.length === 0 ? (
           <p className="vide">{t("commun.aucun")}</p>
         ) : (
@@ -33,7 +38,7 @@ export function GestionMembres({ ctx, organisationId, membres, invitations }: Pr
                   <th>{t("commun.nom")}</th>
                   <th>{t("membres.roles")}</th>
                   <th>{t("membres.derniere_action")}</th>
-                  <th>{t("commun.actions")}</th>
+                  {lectureSeule ? null : <th>{t("commun.actions")}</th>}
                 </tr>
               </thead>
               <tbody>
@@ -51,6 +56,7 @@ export function GestionMembres({ ctx, organisationId, membres, invitations }: Pr
                       ) : null}
                     </td>
                     <td>
+                      {lectureSeule ? m.roles.map((r) => t(`role.${r}`)).join(", ") : (
                       <FormulaireAction
                         key={m.roles.join(",")}
                         action={actionModifierRoles}
@@ -71,14 +77,17 @@ export function GestionMembres({ ctx, organisationId, membres, invitations }: Pr
                           ))}
                         </fieldset>
                       </FormulaireAction>
+                      )}
                     </td>
                     <td className="nowrap">{m.derniereAction ? formaterDate(langue, m.derniereAction, fuseau) : t("commun.jamais")}</td>
-                    <td>
-                      <FormulaireAction action={actionRetirerMembre} libelle={t("membres.retirer")} libelleEnCours={t("commun.en_cours")} variante="danger">
-                        <input type="hidden" name="organisationId" value={organisationId} />
-                        <input type="hidden" name="utilisateurId" value={m.utilisateurId} />
-                      </FormulaireAction>
-                    </td>
+                    {lectureSeule ? null : (
+                      <td>
+                        <FormulaireAction action={actionRetirerMembre} libelle={t("membres.retirer")} libelleEnCours={t("commun.en_cours")} variante="danger">
+                          <input type="hidden" name="organisationId" value={organisationId} />
+                          <input type="hidden" name="utilisateurId" value={m.utilisateurId} />
+                        </FormulaireAction>
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>
@@ -98,7 +107,7 @@ export function GestionMembres({ ctx, organisationId, membres, invitations }: Pr
                   <th>{t("commun.nom")}</th>
                   <th>{t("membres.roles")}</th>
                   <th>{t("invitation.valable_jusqua")}</th>
-                  <th>{t("commun.actions")}</th>
+                  {lectureSeule ? null : <th>{t("commun.actions")}</th>}
                 </tr>
               </thead>
               <tbody>
@@ -113,12 +122,14 @@ export function GestionMembres({ ctx, organisationId, membres, invitations }: Pr
                     <td className="nowrap">
                       {i.expiree ? <span className="etiquette etiquette-erreur">{t("invitation.expiree")}</span> : formaterDate(langue, i.expireLe, fuseau)}
                     </td>
-                    <td>
-                      <FormulaireAction action={actionAnnulerInvitation} libelle={t("invitation.annuler")} libelleEnCours={t("commun.en_cours")} variante="danger">
-                        <input type="hidden" name="organisationId" value={organisationId} />
-                        <input type="hidden" name="invitationId" value={i.id} />
-                      </FormulaireAction>
-                    </td>
+                    {lectureSeule ? null : (
+                      <td>
+                        <FormulaireAction action={actionAnnulerInvitation} libelle={t("invitation.annuler")} libelleEnCours={t("commun.en_cours")} variante="danger">
+                          <input type="hidden" name="organisationId" value={organisationId} />
+                          <input type="hidden" name="invitationId" value={i.id} />
+                        </FormulaireAction>
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>
@@ -127,6 +138,7 @@ export function GestionMembres({ ctx, organisationId, membres, invitations }: Pr
         </section>
       ) : null}
 
+      {lectureSeule ? null : (
       <section className="carte">
         <h2>{t("invitation.inviter_titre")}</h2>
         <p className="discret">{t("invitation.inviter_aide")}</p>
@@ -153,6 +165,7 @@ export function GestionMembres({ ctx, organisationId, membres, invitations }: Pr
           </fieldset>
         </FormulaireAction>
       </section>
+      )}
     </>
   );
 }

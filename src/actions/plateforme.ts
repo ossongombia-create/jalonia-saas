@@ -2,10 +2,11 @@
 // Actions de l'espace superadministrateur. CHAQUE action revérifie le rôle (exigerSuperadmin) :
 // une action serveur est appelable directement, sans passer par la page qui l'affiche.
 import { z } from "zod";
-import { identifiant, schemaNouvelleOrganisation } from "@/lib/validation";
+import { email as schemaEmail, identifiant, nomPersonne, schemaNouvelleOrganisation } from "@/lib/validation";
 import type { EtatAction } from "@/lib/etat-action";
 import { poolApplication } from "@/server/db/pools";
 import { creerOrganisation } from "@/server/organisations/provisionnement";
+import { reemettreInvitationAdmin } from "@/server/organisations/reemission";
 import { cheminInvitation, DUREE_INVITATION_HEURES } from "@/server/invitations/service";
 import { changerModeValidation, changerStatutOrganisation } from "@/server/organisations/service";
 import { MODES_VALIDATION } from "@/server/documents/circuit";
@@ -28,8 +29,8 @@ import { courrielConfigure, envoyerCourriel, envoyerInvitationCourriel } from "@
 
 /**
  * Crée une organisation et invite son premier administrateur. Le lien d'invitation est affiché UNE fois (seule son
- * empreinte est rangée) : la page reste ouverte pour le copier. Pour un nouveau lien : inviter à nouveau depuis la
- * page de l'organisation.
+ * empreinte est rangée) : la page reste ouverte pour le copier. Pour un nouveau lien : réémettre l'invitation
+ * d'administrateur depuis la page de l'organisation (actionReemettreInvitationAdmin).
  */
 export async function actionCreerOrganisation(_etat: EtatAction, formulaire: FormData): Promise<EtatAction> {
   const ctx = await exigerSuperadmin();
@@ -47,6 +48,27 @@ export async function actionCreerOrganisation(_etat: EtatAction, formulaire: For
       console.error(JSON.stringify({ evenement: "courriel_invitation_echec", organisationId: creee.organisationId }));
     }
     return { cle: "orgs.creee_invitation", variables: { heures: DUREE_INVITATION_HEURES }, lien: cheminInvitation(creee.invitation.jeton) };
+  });
+}
+
+const schemaReemission = z.object({ organisationId: identifiant, email: schemaEmail, nom: nomPersonne });
+
+/**
+ * Réémet l'invitation d'administrateur d'une organisation ACTIVE qui n'a AUCUN administrateur actif (chantier 1 du
+ * 20/10/2026) : le seul membre que le superadmin peut faire entrer dans une organisation après sa création. Lien
+ * affiché une fois (et envoyé par courriel si le SMTP est configuré).
+ */
+export async function actionReemettreInvitationAdmin(_etat: EtatAction, formulaire: FormData): Promise<EtatAction> {
+  const ctx = await exigerSuperadmin();
+  return executer(ctx.langue, async () => {
+    const s = valider(schemaReemission, { organisationId: champ(formulaire, "organisationId"), email: champ(formulaire, "email"), nom: champ(formulaire, "nom") });
+    const invitation = await reemettreInvitationAdmin(poolApplication(), s.organisationId, { email: s.email, nom: s.nom }, ctx.acteur);
+    try {
+      await envoyerInvitationCourriel({ a: s.email, nom: s.nom, organisation: invitation.organisation, lien: cheminInvitation(invitation.jeton), heures: DUREE_INVITATION_HEURES });
+    } catch {
+      console.error(JSON.stringify({ evenement: "courriel_invitation_echec", organisationId: s.organisationId }));
+    }
+    return { cle: "orgs.admin_reemise", variables: { heures: DUREE_INVITATION_HEURES }, lien: cheminInvitation(invitation.jeton) };
   });
 }
 

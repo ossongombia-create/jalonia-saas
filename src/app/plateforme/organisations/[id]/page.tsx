@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { actionChangerModeValidation, actionChangerStatutOrganisation } from "@/actions/plateforme";
+import { actionChangerModeValidation, actionChangerStatutOrganisation, actionReemettreInvitationAdmin } from "@/actions/plateforme";
 import { FormulaireAction } from "@/components/FormulaireAction";
 import { AccesUrgence } from "@/components/AccesUrgence";
 import { GestionMembres } from "@/components/GestionMembres";
@@ -16,7 +16,13 @@ import { titrePage } from "@/server/web/metadonnees";
 
 export const generateMetadata = titrePage("orgs.titre");
 
-export default async function PageOrganisation({ params }: { params: Promise<{ id: string }> }) {
+// Page d'une organisation pour le superadmin (chantier 1 du 20/10/2026) : membres et invitations en LECTURE SEULE ;
+// seules actions sur les membres : réémettre l'invitation d'administrateur quand l'organisation (active) n'a aucun
+// administrateur actif, et l'accès d'urgence (Rédacteur ou Lecteur).
+export default async function PageOrganisation({ params, searchParams }: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const ctx = await exigerSuperadmin();
   const { t } = ctx;
   const lu = identifiant.safeParse((await params).id);
@@ -26,6 +32,9 @@ export default async function PageOrganisation({ params }: { params: Promise<{ i
   if (!org) notFound();
   const [membres, invitations, acces] = await Promise.all([listerMembres(pool, org.id), listerInvitations(pool, org.id), listerAccesUrgence(pool, org.id)]);
   const suspendue = org.statut === "suspendue";
+  // Même définition que la règle du dernier administrateur : rôle Administrateur ET compte actif.
+  const adminsActifs = membres.filter((m) => m.statut === "actif" && m.roles.includes("ADMIN_ORGANISATION"));
+  const refus = (await searchParams).refus === "role_invalide";
 
   return (
     <>
@@ -53,6 +62,38 @@ export default async function PageOrganisation({ params }: { params: Promise<{ i
         </FormulaireAction>
       </header>
       {suspendue ? <p className="bandeau bandeau-alerte">{t("orgs.suspendue_info")}</p> : null}
+      {refus ? <p className="bandeau bandeau-alerte" role="alert" id="refus-acces">{t("erreur.role_invalide")} {t("acces.role_retire")}</p> : null}
+      <section className="carte" id="administrateur" data-admins={adminsActifs.length}>
+        <h2>{t("orgs.admin_bloc_titre")}</h2>
+        {adminsActifs.length > 0 ? (
+          <p>{t("orgs.admin_actifs", { noms: adminsActifs.map((m) => m.nom || m.email).join(", ") })}</p>
+        ) : suspendue ? (
+          <p>{t("orgs.admin_suspendue")}</p>
+        ) : (
+          <>
+            <p>{t("orgs.admin_aucun")}</p>
+            <p className="discret petit">{t("orgs.admin_reactiver_aide")}</p>
+            <FormulaireAction
+              action={actionReemettreInvitationAdmin}
+              libelle={t("orgs.admin_reemettre")}
+              libelleEnCours={t("commun.en_cours")}
+              libellesLien={{ lien: t("invitation.lien"), copier: t("commun.copier"), copie: t("commun.copie") }}
+            >
+              <input type="hidden" name="organisationId" value={org.id} />
+              <div className="grille-champs">
+                <label className="champ">
+                  <span>{t("orgs.admin_email")}</span>
+                  <input type="email" name="email" required maxLength={254} autoComplete="off" />
+                </label>
+                <label className="champ">
+                  <span>{t("orgs.admin_nom")}</span>
+                  <input type="text" name="nom" required maxLength={200} autoComplete="off" />
+                </label>
+              </div>
+            </FormulaireAction>
+          </>
+        )}
+      </section>
       <section className="carte" id="mode-validation" data-mode={org.modeValidation}>
         <h2>{t("orgs.mode_titre")}</h2>
         <p>
@@ -72,7 +113,7 @@ export default async function PageOrganisation({ params }: { params: Promise<{ i
         </FormulaireAction>
       </section>
       <AccesUrgence ctx={ctx} organisationId={org.id} acces={acces} gestion suspendue={suspendue} />
-      <GestionMembres ctx={ctx} organisationId={org.id} membres={membres} invitations={invitations} />
+      <GestionMembres ctx={ctx} organisationId={org.id} membres={membres} invitations={invitations} lectureSeule />
     </>
   );
 }

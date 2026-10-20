@@ -26,7 +26,7 @@ afterAll(async () => {
   await proprietaire.end();
 });
 
-const DEMANDE: DemandeAccesUrgence = { role: "ADMIN_ORGANISATION", dureeHeures: 4, motif: "Dépannage demandé par le client (ticket 42)" };
+const DEMANDE: DemandeAccesUrgence = { role: "REDACTEUR", dureeHeures: 4, motif: "Dépannage demandé par le client (ticket 42)" };
 const adminDe = (org: OrgDeTest): Acteur => ({ id: org.adminId, email: org.adminEmail, ip: "127.0.0.1", agent: "vitest" });
 const actifs = (id: string) => enTransaction(app, (c) => lireAccesActifs(c, id));
 const actionsJournalPlateforme = async (organisationId: string) =>
@@ -65,6 +65,8 @@ describe("ouverture d'un accès d'urgence", () => {
     expect(await cleErreur(ouvrirAccesUrgence(app, org.organisationId, { ...DEMANDE, motif: "  court  " }, superadmin))).toBe("acces.motif_requis");
     expect(await cleErreur(ouvrirAccesUrgence(app, org.organisationId, { ...DEMANDE, dureeHeures: 48 as never }, superadmin))).toBe("acces.duree_invalide");
     expect(await cleErreur(ouvrirAccesUrgence(app, org.organisationId, { ...DEMANDE, role: "APPROBATEUR" as never }, superadmin))).toBe("erreur.role_invalide");
+    // Chantier 1 du 20/10/2026 : plus de rôle Administrateur en accès d'urgence.
+    expect(await cleErreur(ouvrirAccesUrgence(app, org.organisationId, { ...DEMANDE, role: "ADMIN_ORGANISATION" as never }, superadmin))).toBe("erreur.role_invalide");
     await changerStatutOrganisation(app, org.organisationId, "suspendue", superadmin);
     expect(await cleErreur(ouvrirAccesUrgence(app, org.organisationId, DEMANDE, superadmin))).toBe("acces.organisation_suspendue");
     expect(await actifs(superadmin.id)).toEqual([]);
@@ -92,10 +94,10 @@ describe("ouverture d'un accès d'urgence", () => {
 
     const ligne = (await lireJournalOrganisation(app, org.cible, { page: 1 })).lignes.find((l) => l.action === "ACCES_URGENCE_OUVERT");
     expect(ligne?.acteurEmail).toBe(superadmin.email);
-    expect(ligne?.details).toMatchObject({ role: "ADMIN_ORGANISATION", dureeHeures: 4, motif: DEMANDE.motif });
+    expect(ligne?.details).toMatchObject({ role: "REDACTEUR", dureeHeures: 4, motif: DEMANDE.motif });
     expect(await actionsJournalPlateforme(org.organisationId)).toContain("ACCES_URGENCE_OUVERT");
 
-    expect(await actifs(superadmin.id)).toEqual([expect.objectContaining({ organisationId: org.organisationId, role: "ADMIN_ORGANISATION" })]);
+    expect(await actifs(superadmin.id)).toEqual([expect.objectContaining({ organisationId: org.organisationId, role: "REDACTEUR" })]);
     expect(await cleErreur(ouvrirAccesUrgence(app, org.organisationId, DEMANDE, superadmin))).toBe("acces.deja_ouvert");
   });
 });

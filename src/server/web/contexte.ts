@@ -16,7 +16,7 @@ import { poolApplication } from "../db/pools";
 import { lireSessionEnAttente, noterOrganisationDeSession, validerSession, type SessionEnAttente, type UtilisateurSession } from "../auth/sessions";
 import { MINUTES_SESSION_EN_ATTENTE } from "../auth/second-facteur";
 import type { Acteur } from "../acteur";
-import { lireAccesActifs } from "../acces-urgence/service";
+import { estRoleAccesUrgence, lireAccesActifs } from "../acces-urgence/service";
 import type { ModeValidation } from "../documents/circuit";
 import type { OrganisationCible } from "../membres/service";
 import { agentDepuisEntetes, ipDepuisEntetes } from "./reseau";
@@ -71,8 +71,10 @@ async function lireAdhesions(utilisateurId: string): Promise<AdhesionActive[]> {
     const adhesions: AdhesionActive[] = r.rows.map((o) => ({
       id: o.id, nom: o.nom, slug: o.slug, statut: o.statut, schemaName: o.schema_name, roleName: o.role_name, roles: o.roles, modeValidation: o.mode_validation,
     }));
-    // Un superadmin n'est membre d'aucune organisation : il n'y entre que par un accès d'urgence encore valable.
-    const acces = await lireAccesActifs(client, utilisateurId);
+    // Un superadmin n'est membre d'aucune organisation : il n'y entre que par un accès d'urgence encore valable, et
+    // dont le rôle est encore permis. Un accès ouvert avec un rôle retiré depuis (« Administrateur », chantier 1 du
+    // 20/10/2026) est écarté ICI, seul filtre : il reste lisible et fermable ailleurs (listerAccesUrgence).
+    const acces = (await lireAccesActifs(client, utilisateurId)).filter((a) => estRoleAccesUrgence(a.role));
     if (acces.length > 0) {
       const o = await client.query<{ id: string; nom: string; slug: string; statut: "active" | "suspendue"; schema_name: string; role_name: string; mode_validation: ModeValidation }>(
         "SELECT id, nom, slug, statut, schema_name, role_name, mode_validation FROM platform.organisations WHERE id = ANY ($1::uuid[]) ORDER BY nom",
