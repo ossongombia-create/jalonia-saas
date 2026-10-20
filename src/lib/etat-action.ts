@@ -7,6 +7,8 @@ export interface EtatAction {
   jeton: number;
   /** Lien à transmettre (chemin du site, ex. invitation), affiché avec un bouton « Copier ». */
   lien?: string;
+  /** Second lien (création d'une organisation : celui du suppléant). */
+  lien2?: string;
   /** Codes de secours à noter, montrés une seule fois. */
   codes?: string[];
 }

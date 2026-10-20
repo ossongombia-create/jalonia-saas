@@ -1,4 +1,5 @@
-// Rappels et escalades des revues périodiques et des actions, ménage des notifications lues.
+// Rappels et escalades des revues périodiques et des actions, ménage des notifications lues, alerte des titulaires
+// absents depuis 60 jours (binôme d'administration, chantier 2).
 import type { Pool } from "pg";
 import { ecartJours, jourLocal } from "@/lib/dates";
 import { dansOrganisation, enTransaction } from "../db/transactions";
@@ -6,6 +7,7 @@ import { verifierOrganisationTechnique } from "../db/identifiants";
 import { lireParametres, revueDe } from "../documents/revues";
 import { ayantRole, membresDestinataires, notifier, purgerNotificationsLues, type NouvelleNotification } from "../notifications/service";
 import { echeancesActions } from "../qse/actions";
+import { notifierAbsences, type AlerteAbsence } from "../organisations/absences";
 
 export const CONSERVATION_NOTIFICATIONS_LUES_JOURS = 180;
 
@@ -14,6 +16,8 @@ export interface BilanTaches {
   organisations: number;
   notifications: number;
   purgees: number;
+  /** Titulaires absents depuis 60 jours : alertes NOUVELLES de ce passage (courriel aux superadmins : le script). */
+  absences: AlerteAbsence[];
   erreurs: { organisationId: string; message: string }[];
 }
 
@@ -22,7 +26,7 @@ export async function executerTachesQuotidiennes(pool: Pool, options: { fuseau: 
   const orgs = await enTransaction(pool, (c) =>
     c.query<{ id: string; schema_name: string; role_name: string }>("SELECT id, schema_name, role_name FROM platform.organisations WHERE statut = 'active' ORDER BY id"),
   );
-  const bilan: BilanTaches = { aujourdhui, organisations: 0, notifications: 0, purgees: 0, erreurs: [] };
+  const bilan: BilanTaches = { aujourdhui, organisations: 0, notifications: 0, purgees: 0, absences: [], erreurs: [] };
   for (const o of orgs.rows) {
     const org = { id: o.id, schemaName: o.schema_name, roleName: o.role_name };
     try {
@@ -63,6 +67,14 @@ export async function executerTachesQuotidiennes(pool: Pool, options: { fuseau: 
     } catch (erreur) {
       bilan.erreurs.push({ organisationId: org.id, message: erreur instanceof Error ? erreur.message : String(erreur) });
     }
+  }
+  // Binôme d'administration (chantier 2) : titulaires absents depuis 60 jours (aucun changement d'état).
+  try {
+    const r = await notifierAbsences(pool, options.fuseau, aujourdhui);
+    bilan.notifications += r.notifications;
+    bilan.absences = r.nouvelles;
+  } catch (erreur) {
+    bilan.erreurs.push({ organisationId: "absences", message: erreur instanceof Error ? erreur.message : String(erreur) });
   }
   return bilan;
 }

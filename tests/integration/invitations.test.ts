@@ -38,6 +38,8 @@ const adresse = () => `inv-${suffixe()}@test.local`;
 const MDP_CHOISI = "mot-de-passe-choisi-1";
 const nouveauCompte = (jeton: string, motDePasse = MDP_CHOISI) => accepterAvecNouveauCompte(app, jeton, { nom: "Personne Invitée", motDePasse, langue: "fr" }, RESEAU_TEST);
 const estMembre = async (org: OrgDeTest, email: string) => (await listerMembres(app, org.organisationId)).some((m) => m.email === email);
+/** Invitations en attente, hors celle du suppléant créée avec l'organisation (chantier 2). */
+const horsSuppleant = async (org: OrgDeTest) => (await listerInvitations(app, org.organisationId)).filter((i) => i.id !== org.invitationSuppleant.id);
 const adminDe = (org: OrgDeTest): Acteur => ({ id: org.adminId, email: org.adminEmail, ip: "127.0.0.1", agent: "vitest" });
 
 async function idDe(email: string): Promise<string | undefined> {
@@ -60,13 +62,13 @@ describe("invitation d'une personne sans compte", () => {
     expect(inv.expireLe.getTime() - Date.now()).toBeLessThan(72.1 * 3600_000);
     expect(await estMembre(org, email)).toBe(false);
     expect(await idDe(email)).toBeUndefined(); // pas de compte créé à l'avance
-    expect((await listerInvitations(app, org.organisationId)).map((i) => [i.email, i.roles, i.expiree])).toEqual([[email, ["REDACTEUR"], false]]);
+    expect((await horsSuppleant(org)).map((i) => [i.email, i.roles, i.expiree])).toEqual([[email, ["REDACTEUR"], false]]);
     expect(await lireInvitation(app, inv.jeton)).toMatchObject({ organisationId: org.organisationId, email, roles: ["REDACTEUR"], compteExiste: false });
 
     expect(await nouveauCompte(inv.jeton)).toEqual({ organisationId: org.organisationId, email });
     const membre = (await listerMembres(app, org.organisationId)).find((m) => m.email === email);
     expect(membre?.roles).toEqual(["REDACTEUR"]);
-    expect(await listerInvitations(app, org.organisationId)).toEqual([]);
+    expect(await horsSuppleant(org)).toEqual([]);
 
     // Le mot de passe est celui choisi par la personne ; aucun changement imposé.
     const connexion = await authentifier(app, { email, motDePasse: MDP_CHOISI, ip: "192.0.2.10", agent: "vitest" });
@@ -107,7 +109,7 @@ describe("invitation d'une personne sans compte", () => {
     const premiere = await inviter(app, org.cible, { email, nom: "X", roles: ["LECTEUR"] }, superadmin);
     const seconde = await inviter(app, org.cible, { email, nom: "X", roles: ["REDACTEUR"] }, superadmin);
     expect(await lireInvitation(app, premiere.jeton)).toBeNull();
-    expect((await listerInvitations(app, org.organisationId)).map((i) => i.id)).toEqual([seconde.id]);
+    expect((await horsSuppleant(org)).map((i) => i.id)).toEqual([seconde.id]);
     await nouveauCompte(seconde.jeton);
     expect((await listerMembres(app, org.organisationId)).find((m) => m.email === email)?.roles).toEqual(["REDACTEUR"]);
   });
@@ -227,7 +229,7 @@ describe("création d'une organisation : le premier administrateur est invité",
   it("compte existant : rien n'est rattaché avant son acceptation", async () => {
     const premiere = await creerOrgDeTest(app, proprietaire, superadmin);
     const s = suffixe();
-    const seconde = await creerOrganisation(app, { nom: `Seconde ${s}`, slug: `sec-${s}`, admin: { email: premiere.adminEmail, nom: "Ignoré" } }, superadmin);
+    const seconde = await creerOrganisation(app, { nom: `Seconde ${s}`, slug: `sec-${s}`, admin: { email: premiere.adminEmail, nom: "Ignoré" }, suppleant: { email: `sup-${s}@test.local`, nom: "Sup" } }, superadmin);
     expect(await listerMembres(app, seconde.organisationId)).toEqual([]);
     expect(await lireInvitation(app, seconde.invitation.jeton)).toMatchObject({ email: premiere.adminEmail, roles: ["ADMIN_ORGANISATION"], compteExiste: true });
     await accepterAvecCompte(app, seconde.invitation.jeton, adminDe(premiere));

@@ -54,8 +54,8 @@ describe("chaînage", () => {
     const org = await creerOrgDeTest(app, proprietaire, superadmin);
     const r = await verifierOrg(org);
     expect(chaineIntacte(r)).toBe(true);
-    expect(r.lignes).toBe(3); // création, invitation, acceptation
-    expect(r.rang).toBe(3);
+    expect(r.lignes).toBe(4); // création, invitations (titulaire, suppléant), acceptation
+    expect(r.rang).toBe(4);
     const premiere = await enTransaction(proprietaire, (c) => c.query<{ chaine_empreinte: string; canonique: string }>(
       `SELECT chaine_empreinte, ${expressionCanonique("j.", false)} AS canonique FROM ${tableOrg(org)} j WHERE chaine_rang = 1`,
     ));
@@ -70,7 +70,7 @@ describe("chaînage", () => {
     );
     const r = await verifierOrg(org);
     expect(chaineIntacte(r)).toBe(true);
-    expect(r.rang).toBe(4);
+    expect(r.rang).toBe(5);
   });
 
   it("écritures concurrentes (document : organisation puis plateforme ; invitation : plateforme puis organisation) : ni bifurcation, ni trou, ni blocage", async () => {
@@ -85,7 +85,7 @@ describe("chaînage", () => {
     expect(resultats.filter((r) => r.status === "rejected")).toEqual([]);
     const r = await verifierOrg(org);
     expect(chaineIntacte(r)).toBe(true);
-    expect(r.lignes).toBe(3 + 12);
+    expect(r.lignes).toBe(4 + 12);
     expect(chaineIntacte(await verifierPlateforme())).toBe(true);
   });
 
@@ -100,7 +100,7 @@ describe("chaînage", () => {
     await avecOrganisation(app, org.cible, (c) => journaliserOrganisation(c, { action: "DOCUMENT_SUPPRIME" }));
     const r = await verifierOrg(org);
     expect(chaineIntacte(r)).toBe(true);
-    expect(r.rang).toBe(4);
+    expect(r.rang).toBe(5);
   });
 });
 

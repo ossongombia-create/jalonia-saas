@@ -54,6 +54,14 @@ export function GestionMembres({ ctx, organisationId, membres, invitations, lect
                           <span className="etiquette etiquette-erreur">{t("statut.desactive")}</span>
                         </>
                       ) : null}
+                      {m.fonction ? (
+                        <>
+                          {" "}
+                          <span className="etiquette" data-fonction={m.fonction}>
+                            {t(m.fonction === "titulaire" ? "membres.fonction_titulaire" : m.statutSuppleant === "actif" ? "membres.fonction_suppleant_actif" : "membres.fonction_suppleant_inactif")}
+                          </span>
+                        </>
+                      ) : null}
                     </td>
                     <td>
                       {lectureSeule ? m.roles.map((r) => t(`role.${r}`)).join(", ") : (

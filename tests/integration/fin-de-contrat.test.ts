@@ -119,7 +119,7 @@ describe("export d'une organisation", () => {
     expect((e.tables.actions![0] as { titre: string }).titre).toBe("Exportée — action");
     expect(e.organisation).toMatchObject({ id: org.organisationId, schema_name: org.cible.schemaName, statut: "active" });
     expect(e.plateforme.membres).toHaveLength(2);
-    expect(e.plateforme.invitations).toHaveLength(3); // administrateur et rédacteur (acceptées), invité (en attente)
+    expect(e.plateforme.invitations).toHaveLength(4); // administrateur et rédacteur (acceptées), suppléant et invité (en attente)
     expect(e.plateforme.accesUrgence).toHaveLength(1);
     expect(e.plateforme.journal.length).toBeGreaterThan(0);
     expect(e.plateforme.migrations).toHaveLength(readdirSync("db/migrations/organisation").length);

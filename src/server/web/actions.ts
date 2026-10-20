@@ -14,6 +14,8 @@ export interface Reussite {
   variables?: Variables;
   /** Chemin d'un lien à transmettre (voir EtatAction.lien). */
   lien?: string;
+  /** Second lien (voir EtatAction.lien2). */
+  lien2?: string;
   /** Codes à noter (voir EtatAction.codes). */
   codes?: string[];
 }
@@ -27,7 +29,7 @@ export async function executer(langue: Langue, travail: () => Promise<Reussite>,
     const r = await travail();
     if (options.rafraichir !== false) refresh();
     return {
-      ok: true, message: traduireMessage(langue, r.cle, r.variables), jeton: Date.now(), ...(r.lien ? { lien: r.lien } : {}), ...(r.codes ? { codes: r.codes } : {}),
+      ok: true, message: traduireMessage(langue, r.cle, r.variables), jeton: Date.now(), ...(r.lien ? { lien: r.lien } : {}), ...(r.lien2 ? { lien2: r.lien2 } : {}), ...(r.codes ? { codes: r.codes } : {}),
     };
   } catch (erreur) {
     unstable_rethrow(erreur); // redirect(), notFound()… doivent remonter à Next.js

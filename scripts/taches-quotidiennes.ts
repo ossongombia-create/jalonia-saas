@@ -7,13 +7,16 @@
 import { Pool } from "pg";
 import { config } from "../src/server/config";
 import { executerTachesQuotidiennes } from "../src/server/taches/quotidiennes";
+import { envoyerAlertesSuperadmins } from "../src/server/organisations/absences";
 
 async function principal(): Promise<number> {
   const c = config();
   const pool = new Pool({ connectionString: c.DATABASE_URL, max: 2, application_name: "jalonia-taches" });
   try {
     const bilan = await executerTachesQuotidiennes(pool, { fuseau: c.FUSEAU_HORAIRE });
-    console.log(JSON.stringify({ evenement: "taches_quotidiennes", ...bilan }));
+    // Nouvelles alertes d'absence (titulaire absent depuis 60 jours) : courriel aux superadmins si le SMTP est configuré.
+    const courrielsAlertes = await envoyerAlertesSuperadmins(pool, bilan.absences);
+    console.log(JSON.stringify({ evenement: "taches_quotidiennes", ...bilan, absences: bilan.absences.length, courrielsAlertes }));
     return bilan.erreurs.length > 0 ? 1 : 0;
   } finally {
     await pool.end();

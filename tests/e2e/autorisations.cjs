@@ -77,6 +77,12 @@ const REGLES = {
   actionFermerAccesUrgence: { regle: "superadmin ; accès encore valable" },
   actionReinitialiserParLien: { regle: "publique : lien de réinitialisation valable, personne connectée" },
   actionChangerModeValidation: { regle: "superadmin (mode « petite organisation » ou standard), tracé" },
+  // Binôme d'administration (chantier 2 du 20/10/2026) : superadmin seulement, organisation active.
+  actionInviterSuppleant: { regle: "superadmin ; aucun suppléant utilisable (B5) ; titulaire désigné s'il manque (B8)" },
+  actionActiverSuppleant: { regle: "superadmin ; suppléant membre, compte actif, inactif" },
+  actionMarquerTitulaireAbsent: { regle: "superadmin ; titulaire présent ; motif facultatif (journal de la plateforme)" },
+  actionMarquerTitulaireRetour: { regle: "superadmin ; titulaire absent ou suppléant actif ; le suppléant redevient lecteur" },
+  actionDepartTitulaire: { regle: "superadmin ; suppléant membre : il devient titulaire, l'ancien perd le rôle Administrateur" },
 };
 
 /** Chemin de page d'un « worker » du manifeste (app/app/documents/page → /app/documents). */
@@ -107,8 +113,8 @@ const EMPREINTE = `SELECT md5(concat_ws('#',
   (SELECT string_agg(row(id, nom, slug, statut, mode_validation)::text, ',' ORDER BY id) FROM platform.organisations),
   (SELECT string_agg(row(id, email, nom, mot_de_passe_hash, est_superadmin, statut, doit_changer_mdp, langue, verrouille_jusqua,
                          mfa_secret_chiffre, mfa_active_le, mfa_dernier_pas, echecs_mfa)::text, ',' ORDER BY id) FROM platform.utilisateurs),
-  (SELECT string_agg(row(utilisateur_id, organisation_id, roles)::text, ',' ORDER BY utilisateur_id, organisation_id) FROM platform.adhesions),
-  (SELECT string_agg(row(id, organisation_id, email, roles, acceptee_le, annulee_le)::text, ',' ORDER BY id) FROM platform.invitations),
+  (SELECT string_agg(row(utilisateur_id, organisation_id, roles, fonction_org, statut_suppleant, date_absence_debut, motif_absence)::text, ',' ORDER BY utilisateur_id, organisation_id) FROM platform.adhesions),
+  (SELECT string_agg(row(id, organisation_id, email, roles, fonction_org, acceptee_le, annulee_le)::text, ',' ORDER BY id) FROM platform.invitations),
   (SELECT string_agg(row(utilisateur_id, empreinte, utilise_le)::text, ',' ORDER BY utilisateur_id, empreinte) FROM platform.codes_secours),
   (SELECT string_agg(row(id, utilisateur_id, fin, motif_fin, en_attente_mfa, echecs_mfa)::text, ',' ORDER BY id) FROM platform.sessions),
   (SELECT count(*)::text FROM platform.journal),
@@ -274,8 +280,8 @@ let ACTIONS;
   const SCHEMA_A = sql("SELECT schema_name FROM platform.organisations WHERE slug = 'droits-a'");
   const SCHEMA_B = sql("SELECT schema_name FROM platform.organisations WHERE slug = 'droits-b'");
   const idDe = (email) => sql(`SELECT id FROM platform.utilisateurs WHERE email = '${email}'`);
-  const [CIBLE_A, RETRAIT_A, JETABLE, MFA_A, LECT_A] = ["cible-a", "retrait-a", "jetable", "mfa-a", "lect-a"].map((n) => idDe(`${n}@droits.test`));
-  for (const v of [ORG_A, ORG_B, CIBLE_A, RETRAIT_A, JETABLE, MFA_A, LECT_A]) assert.match(v, /^[0-9a-f-]{36}$/, "données de départ absentes (tests/e2e/preparer.ts)");
+  const [CIBLE_A, RETRAIT_A, JETABLE, MFA_A, LECT_A, SUPPLEANT_A, ADMIN_A] = ["cible-a", "retrait-a", "jetable", "mfa-a", "lect-a", "suppleant-a", "admin-a"].map((n) => idDe(`${n}@droits.test`));
+  for (const v of [ORG_A, ORG_B, CIBLE_A, RETRAIT_A, JETABLE, MFA_A, LECT_A, SUPPLEANT_A, ADMIN_A]) assert.match(v, /^[0-9a-f-]{36}$/, "données de départ absentes (tests/e2e/preparer.ts)");
   const ORG_DE = { lecteurA: ORG_A, redacA: ORG_A, verifA: ORG_A, approA: ORG_A, adminA: ORG_A, adminB: ORG_B };
 
   etape("profils : cookie forgé, connexion en attente du second facteur, sept comptes connectés");
@@ -642,7 +648,7 @@ let ACTIONS;
   // non par PostgreSQL — voir docs/EVALUATION-RLS.md) : chaque administrateur ne voit que SON organisation.
   const pageMembres = async (qui) => (await ctx[qui].request.get(`${BASE}/app/membres`)).text();
   const [membresA, membresB] = [await pageMembres("adminA"), await pageMembres("adminB")];
-  const deA = ["admin-a", "redac-a", "lect-a", "verif-a", "appro-a", "mfa-a", "cible-a", "retrait-a", "invite-a", "invite-sa"].map((n) => `${n}@droits.test`);
+  const deA = ["admin-a", "suppleant-a", "redac-a", "lect-a", "verif-a", "appro-a", "mfa-a", "cible-a", "retrait-a", "invite-a", "invite-sa"].map((n) => `${n}@droits.test`);
   const deB = ["admin-b", "jetable"].map((n) => `${n}@droits.test`);
   for (const e of deA) assert.ok(membresA.includes(e) && !membresB.includes(e), `${e} : visible dans A seulement`);
   for (const e of deB) assert.ok(membresB.includes(e) && !membresA.includes(e), `${e} : visible dans B seulement`);
@@ -663,6 +669,13 @@ let ACTIONS;
   await cas("adminB", "actionModifierRoles", { ...roles, organisationId: ORG_B }, "erreur.introuvable", { note: "membre de A depuis B" });
   await cas("adminA", "actionModifierRoles", roles, "succes", { effet: () => rolesDe(CIBLE_A) === "{VERIFICATEUR,LECTEUR}" || rolesDe(CIBLE_A) === "{LECTEUR,VERIFICATEUR}" });
   await cas("superadmin", "actionModifierRoles", { ...roles, roles: ["LECTEUR"] }, "erreur.interdit", { page: `/plateforme/organisations/${ORG_A}`, note: "superadmin : aucun droit sur les membres" });
+  // Binôme (chantier 2) : l'administrateur ne touche ni au rôle Administrateur du suppléant (G1) ni à celui du
+  // titulaire (G2), et ne retire aucun des deux (G3). (MFA_A, co-administrateur, laisse un autre administrateur actif.)
+  await cas("adminA", "actionModifierRoles", { organisationId: ORG_A, utilisateurId: SUPPLEANT_A, roles: ["LECTEUR", "ADMIN_ORGANISATION"] }, "membres.suppleant_reserve_superadmin", { note: "G1" });
+  await cas("adminA", "actionModifierRoles", { organisationId: ORG_A, utilisateurId: ADMIN_A, roles: ["LECTEUR"] }, "membres.titulaire_reserve_superadmin", { note: "G2" });
+  await cas("adminA", "actionRetirerMembre", { organisationId: ORG_A, utilisateurId: SUPPLEANT_A }, "membres.binome_reserve_superadmin", { note: "G3" });
+  await cas("adminA", "actionModifierRoles", { organisationId: ORG_A, utilisateurId: SUPPLEANT_A, roles: ["LECTEUR", "REDACTEUR"] }, "succes",
+    { note: "suppléant : autres rôles libres", effet: () => rolesDe(SUPPLEANT_A).includes("REDACTEUR") });
 
   const retrait = { organisationId: ORG_A, utilisateurId: RETRAIT_A };
   for (const qui of ["faux", "attente"]) await cas(qui, "actionRetirerMembre", retrait, "session");
@@ -747,14 +760,20 @@ let ACTIONS;
     for (const qui of NON_SUPERADMINS) await cas(qui, action, champs, "404");
     await cas("superadmin", action, champs, "succes", { effet, note });
   }
-  await plateforme("actionCreerOrganisation", { nom: "Droits C", slug: "droits-c", adminEmail: "admin-c@droits.test", adminNom: "Admin C" },
-    () => sql("SELECT count(*) FROM platform.organisations WHERE slug = 'droits-c'") === "1");
+  const creationC = { nom: "Droits C", slug: "droits-c", adminEmail: "admin-c@droits.test", adminNom: "Admin C", suppleantEmail: "suppleant-c@droits.test", suppleantNom: "Suppléant C" };
+  await cas("superadmin", "actionCreerOrganisation", { ...creationC, suppleantEmail: "" }, "erreur.email_invalide", { note: "suppléant obligatoire (B9)" });
+  await cas("superadmin", "actionCreerOrganisation", { ...creationC, suppleantEmail: "ADMIN-C@droits.test" }, "orgs.suppleant_meme_adresse", { note: "même adresse" });
+  await plateforme("actionCreerOrganisation", creationC,
+    () => sql("SELECT count(*) FROM platform.organisations WHERE slug = 'droits-c'") === "1"
+      && sql("SELECT string_agg(fonction_org || ':' || roles::text, ',' ORDER BY fonction_org) FROM platform.invitations i JOIN platform.organisations o ON o.id = i.organisation_id WHERE o.slug = 'droits-c'") === "suppleant:{LECTEUR},titulaire:{ADMIN_ORGANISATION}");
   const statutB = () => sql(`SELECT statut FROM platform.organisations WHERE id = '${ORG_B}'`);
   await plateforme("actionChangerStatutOrganisation", { organisationId: ORG_B, statut: "suspendue" }, () => statutB() === "suspendue");
   await cas("superadmin", "actionReemettreInvitationAdmin", { organisationId: ORG_B, email: "admin-b2@droits.test", nom: "Admin B2" }, "erreur.organisation_suspendue",
     { page: `/plateforme/organisations/${ORG_B}`, note: "organisation suspendue" });
   await cas("superadmin", "actionChangerStatutOrganisation", { organisationId: ORG_B, statut: "active" }, "succes", { effet: () => statutB() === "active", note: "remise en service" });
   const statutJ = () => sql(`SELECT statut FROM platform.utilisateurs WHERE id = '${JETABLE}'`);
+  // Q8 (chantier 2) : désactiver le compte du DERNIER administrateur actif d'une organisation est refusé.
+  await cas("superadmin", "actionDesactiverUtilisateur", { utilisateurId: idDe("admin-b@droits.test") }, "erreur.dernier_admin", { note: "dernier administrateur de B" });
   await plateforme("actionDesactiverUtilisateur", { utilisateurId: JETABLE }, () => statutJ() === "desactive");
   await plateforme("actionReactiverUtilisateur", { utilisateurId: JETABLE }, () => statutJ() === "actif");
   const ouvertes = () => sql(`SELECT count(*) FROM platform.sessions WHERE utilisateur_id = '${JETABLE}' AND fin IS NULL`);
@@ -848,9 +867,51 @@ let ACTIONS;
   for (const qui of ["faux", "attente"]) await cas(qui, "actionReemettreInvitationAdmin", reemission, "session", { page: PAGE_ORG_C });
   for (const qui of NON_SUPERADMINS) await cas(qui, "actionReemettreInvitationAdmin", reemission, "404", { page: PAGE_ORG_C });
   await cas("superadmin", "actionReemettreInvitationAdmin", { ...reemission, organisationId: ORG_A }, "orgs.admin_present", { page: PAGE_ORG_A, note: "A a un administrateur actif" });
+  // B5 : C a une invitation de suppléant en attente (suppléant utilisable) : la réémission est refusée ; elle est
+  // permise une fois cette invitation expirée.
+  await cas("superadmin", "actionReemettreInvitationAdmin", reemission, "orgs.suppleant_a_activer", { page: PAGE_ORG_C, note: "suppléant utilisable (B5)" });
+  sql(`UPDATE platform.invitations SET cree_le = now() - interval '4 days', expire_le = now() - interval '1 day' WHERE organisation_id = '${ORG_C}' AND fonction_org = 'suppleant'`);
   const avantC = Number(invitationsAdminC());
   await cas("superadmin", "actionReemettreInvitationAdmin", reemission, "succes", {
     page: PAGE_ORG_C, effet: (r) => Boolean(r.lien) && Number(invitationsAdminC()) === avantC + 1,
+  });
+
+  // Binôme d'administration (chantier 2) : sur A, dont le suppléant (suppleant-a) est membre et inactif.
+  const fonctionDe = (u) => sql(`SELECT coalesce(fonction_org, '-') || '|' || coalesce(statut_suppleant, '-') || '|' || ('ADMIN_ORGANISATION' = ANY (roles))::text
+    || '|' || (date_absence_debut IS NOT NULL)::text FROM platform.adhesions WHERE utilisateur_id = '${u}' AND organisation_id = '${ORG_A}'`);
+  assert.equal(fonctionDe(ADMIN_A), "titulaire|-|true|false", "A : admin-a titulaire");
+  assert.equal(fonctionDe(SUPPLEANT_A), "suppleant|inactif|false|false", "A : suppléant inactif, sans le rôle Administrateur");
+  const pageBinome = await (await ctx.superadmin.request.get(BASE + PAGE_ORG_A)).text();
+  assert.ok(pageBinome.includes('id="binome"') && pageBinome.includes('data-suppleant="inactif"'), "page de A : bloc du binôme");
+  const surA = { organisationId: ORG_A };
+  const BINOME = ["actionInviterSuppleant", "actionActiverSuppleant", "actionMarquerTitulaireAbsent", "actionMarquerTitulaireRetour", "actionDepartTitulaire"];
+  const inviteSup = { organisationId: ORG_A, email: "suppleant-a2@droits.test", nom: "Suppléant A2" };
+  for (const action of BINOME) {
+    const champs = action === "actionInviterSuppleant" ? inviteSup : action === "actionMarquerTitulaireAbsent" ? { ...surA, motif: "Congé" } : surA;
+    for (const qui of ["faux", "attente"]) await cas(qui, action, champs, "session", { page: PAGE_ORG_A });
+    for (const qui of NON_SUPERADMINS) await cas(qui, action, champs, "404", { page: PAGE_ORG_A });
+  }
+  await cas("superadmin", "actionInviterSuppleant", inviteSup, "orgs.suppleant_existe", { page: PAGE_ORG_A, note: "A a un suppléant (B5)" });
+  await cas("superadmin", "actionMarquerTitulaireRetour", surA, "orgs.rien_a_retablir", { page: PAGE_ORG_A, note: "rien à rétablir" });
+  await cas("superadmin", "actionMarquerTitulaireAbsent", { ...surA, motif: "Congé maladie (e2e)" }, "succes", { page: PAGE_ORG_A, effet: () => fonctionDe(ADMIN_A) === "titulaire|-|true|true" });
+  await cas("superadmin", "actionMarquerTitulaireAbsent", surA, "orgs.titulaire_deja_absent", { page: PAGE_ORG_A, note: "déjà absent" });
+  assert.equal(sql(`SELECT count(*) FROM "${SCHEMA_A}".journal WHERE details::text LIKE '%Congé maladie%'`), "0", "motif d'absence : jamais dans le journal de l'organisation (B12)");
+  await cas("superadmin", "actionActiverSuppleant", surA, "succes", { page: PAGE_ORG_A, effet: () => fonctionDe(SUPPLEANT_A) === "suppleant|actif|true|false" });
+  await cas("superadmin", "actionActiverSuppleant", surA, "orgs.suppleant_deja_actif", { page: PAGE_ORG_A, note: "déjà actif" });
+  await cas("adminA", "actionModifierRoles", { organisationId: ORG_A, utilisateurId: SUPPLEANT_A, roles: ["LECTEUR"] }, "membres.suppleant_reserve_superadmin", { note: "G1 : suppléant actif" });
+  await cas("superadmin", "actionMarquerTitulaireRetour", surA, "succes", {
+    page: PAGE_ORG_A, effet: () => fonctionDe(ADMIN_A) === "titulaire|-|true|false" && fonctionDe(SUPPLEANT_A) === "suppleant|inactif|false|false",
+  });
+  await cas("superadmin", "actionDepartTitulaire", surA, "succes", {
+    page: PAGE_ORG_A, effet: () => fonctionDe(SUPPLEANT_A) === "titulaire|-|true|false" && fonctionDe(ADMIN_A) === "-|-|false|false"
+      && sql(`SELECT statut FROM platform.utilisateurs WHERE id = '${ADMIN_A}'`) === "actif",
+  });
+  await cas("superadmin", "actionDepartTitulaire", surA, "orgs.suppleant_absent", { page: PAGE_ORG_A, note: "plus de suppléant" });
+  await cas("superadmin", "actionActiverSuppleant", surA, "orgs.suppleant_absent", { page: PAGE_ORG_A, note: "plus de suppléant" });
+  await cas("superadmin", "actionInviterSuppleant", { ...inviteSup, email: "SUPPLEANT-A@droits.test" }, "erreur.deja_membre", { page: PAGE_ORG_A, note: "le titulaire lui-même" });
+  await cas("superadmin", "actionInviterSuppleant", inviteSup, "succes", {
+    page: PAGE_ORG_A, effet: (r) => Boolean(r.lien)
+      && sql(`SELECT count(*) FROM platform.invitations WHERE organisation_id = '${ORG_A}' AND fonction_org = 'suppleant' AND acceptee_le IS NULL AND annulee_le IS NULL`) === "1",
   });
 
   // Lien de réinitialisation (page publique) : la personne choisit SON mot de passe ; à usage unique ; refusé à une

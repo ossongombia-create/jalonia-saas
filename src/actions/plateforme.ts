@@ -7,6 +7,7 @@ import type { EtatAction } from "@/lib/etat-action";
 import { poolApplication } from "@/server/db/pools";
 import { creerOrganisation } from "@/server/organisations/provisionnement";
 import { reemettreInvitationAdmin } from "@/server/organisations/reemission";
+import { activerSuppleant, departTitulaire, inviterSuppleant, marquerTitulaireAbsent, marquerTitulaireRetour } from "@/server/organisations/binome";
 import { cheminInvitation, DUREE_INVITATION_HEURES } from "@/server/invitations/service";
 import { changerModeValidation, changerStatutOrganisation } from "@/server/organisations/service";
 import { MODES_VALIDATION } from "@/server/documents/circuit";
@@ -40,14 +41,25 @@ export async function actionCreerOrganisation(_etat: EtatAction, formulaire: For
       slug: champ(formulaire, "slug"),
       adminEmail: champ(formulaire, "adminEmail"),
       adminNom: champ(formulaire, "adminNom"),
+      suppleantEmail: champ(formulaire, "suppleantEmail"),
+      suppleantNom: champ(formulaire, "suppleantNom"),
     });
-    const creee = await creerOrganisation(poolApplication(), { nom: saisie.nom, slug: saisie.slug, admin: { email: saisie.adminEmail, nom: saisie.adminNom } }, ctx.acteur);
-    try {
-      await envoyerInvitationCourriel({ a: saisie.adminEmail, nom: saisie.adminNom, organisation: saisie.nom, lien: cheminInvitation(creee.invitation.jeton), heures: DUREE_INVITATION_HEURES });
-    } catch {
-      console.error(JSON.stringify({ evenement: "courriel_invitation_echec", organisationId: creee.organisationId }));
+    const creee = await creerOrganisation(poolApplication(), {
+      nom: saisie.nom, slug: saisie.slug,
+      admin: { email: saisie.adminEmail, nom: saisie.adminNom },
+      suppleant: { email: saisie.suppleantEmail, nom: saisie.suppleantNom },
+    }, ctx.acteur);
+    for (const [a, nom, jeton] of [[saisie.adminEmail, saisie.adminNom, creee.invitation.jeton], [saisie.suppleantEmail, saisie.suppleantNom, creee.invitationSuppleant.jeton]] as const) {
+      try {
+        await envoyerInvitationCourriel({ a, nom, organisation: saisie.nom, lien: cheminInvitation(jeton), heures: DUREE_INVITATION_HEURES });
+      } catch {
+        console.error(JSON.stringify({ evenement: "courriel_invitation_echec", organisationId: creee.organisationId }));
+      }
     }
-    return { cle: "orgs.creee_invitation", variables: { heures: DUREE_INVITATION_HEURES }, lien: cheminInvitation(creee.invitation.jeton) };
+    return {
+      cle: "orgs.creee_deux_invitations", variables: { heures: DUREE_INVITATION_HEURES },
+      lien: cheminInvitation(creee.invitation.jeton), lien2: cheminInvitation(creee.invitationSuppleant.jeton),
+    };
   });
 }
 
@@ -69,6 +81,66 @@ export async function actionReemettreInvitationAdmin(_etat: EtatAction, formulai
       console.error(JSON.stringify({ evenement: "courriel_invitation_echec", organisationId: s.organisationId }));
     }
     return { cle: "orgs.admin_reemise", variables: { heures: DUREE_INVITATION_HEURES }, lien: cheminInvitation(invitation.jeton) };
+  });
+}
+
+// ---------- Binôme d'administration titulaire / suppléant (chantier 2 du 20/10/2026) ----------
+// Seules exceptions, bornées au binôme, au principe « le superadmin ne gère pas les membres » (chantier 1).
+
+const schemaOrganisation = z.object({ organisationId: identifiant });
+
+/** Invite un suppléant (organisation existante, ou après un départ définitif). Lien affiché une fois. */
+export async function actionInviterSuppleant(_etat: EtatAction, formulaire: FormData): Promise<EtatAction> {
+  const ctx = await exigerSuperadmin();
+  return executer(ctx.langue, async () => {
+    const s = valider(schemaReemission, { organisationId: champ(formulaire, "organisationId"), email: champ(formulaire, "email"), nom: champ(formulaire, "nom") });
+    const invitation = await inviterSuppleant(poolApplication(), s.organisationId, { email: s.email, nom: s.nom }, ctx.acteur);
+    try {
+      await envoyerInvitationCourriel({ a: s.email, nom: s.nom, organisation: invitation.organisation, lien: cheminInvitation(invitation.jeton), heures: DUREE_INVITATION_HEURES });
+    } catch {
+      console.error(JSON.stringify({ evenement: "courriel_invitation_echec", organisationId: s.organisationId }));
+    }
+    return { cle: "orgs.suppleant_invite", variables: { heures: DUREE_INVITATION_HEURES }, lien: cheminInvitation(invitation.jeton) };
+  });
+}
+
+/** Active le suppléant : il reçoit le rôle Administrateur. */
+export async function actionActiverSuppleant(_etat: EtatAction, formulaire: FormData): Promise<EtatAction> {
+  const ctx = await exigerSuperadmin();
+  return executer(ctx.langue, async () => {
+    const { organisationId } = valider(schemaOrganisation, { organisationId: champ(formulaire, "organisationId") });
+    await activerSuppleant(poolApplication(), organisationId, ctx.acteur);
+    return { cle: "orgs.suppleant_active" };
+  });
+}
+
+/** Marque le titulaire absent (motif facultatif, visible du superadmin seulement) : déclenche le compte des 60 jours. */
+export async function actionMarquerTitulaireAbsent(_etat: EtatAction, formulaire: FormData): Promise<EtatAction> {
+  const ctx = await exigerSuperadmin();
+  return executer(ctx.langue, async () => {
+    const { organisationId } = valider(schemaOrganisation, { organisationId: champ(formulaire, "organisationId") });
+    await marquerTitulaireAbsent(poolApplication(), organisationId, champ(formulaire, "motif"), ctx.acteur);
+    return { cle: "orgs.marque_absent" };
+  });
+}
+
+/** Retour du titulaire : son absence est effacée et le suppléant redevient inactif. */
+export async function actionMarquerTitulaireRetour(_etat: EtatAction, formulaire: FormData): Promise<EtatAction> {
+  const ctx = await exigerSuperadmin();
+  return executer(ctx.langue, async () => {
+    const { organisationId } = valider(schemaOrganisation, { organisationId: champ(formulaire, "organisationId") });
+    await marquerTitulaireRetour(poolApplication(), organisationId, ctx.acteur);
+    return { cle: "orgs.retour_fait" };
+  });
+}
+
+/** Départ définitif du titulaire : le suppléant devient titulaire (inviter ensuite un nouveau suppléant). */
+export async function actionDepartTitulaire(_etat: EtatAction, formulaire: FormData): Promise<EtatAction> {
+  const ctx = await exigerSuperadmin();
+  return executer(ctx.langue, async () => {
+    const { organisationId } = valider(schemaOrganisation, { organisationId: champ(formulaire, "organisationId") });
+    await departTitulaire(poolApplication(), organisationId, ctx.acteur);
+    return { cle: "orgs.depart_fait" };
   });
 }
 

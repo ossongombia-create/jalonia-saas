@@ -18,6 +18,7 @@ function texte(t: Traducteur, langue: Langue, n: Notification): string {
   return t(`notifications.n.${n.nature}`, {
     doc, titre: d.titre ?? "", par: d.par ?? "—", version: d.version ?? "", motif: d.motif ?? "—",
     echeance: formaterJour(langue, d.echeance), jours: d.jours ?? "", heures: d.heures ?? "",
+    titulaire: d.titulaire ?? "", debut: formaterJour(langue, d.debut),
   });
 }
 

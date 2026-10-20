@@ -19,17 +19,23 @@ import { creerInvitation, type InvitationCreee } from "../invitations/service";
 export interface NouvelleOrganisation {
   nom: string;
   slug: string;
+  /** Administrateur TITULAIRE (rôle Administrateur). */
   admin: { email: string; nom: string };
+  /** SUPPLÉANT, obligatoire (chantier 2) : rejoint l'organisation en lecteur, inactif jusqu'à son activation. */
+  suppleant: { email: string; nom: string };
 }
 
 export interface OrganisationCreee {
   organisationId: string;
   schemaName: string;
-  /** Invitation du premier administrateur : le lien est à lui transmettre. */
+  /** Invitation du premier administrateur (titulaire) : le lien est à lui transmettre. */
   invitation: InvitationCreee;
+  /** Invitation du suppléant : le lien est à lui transmettre. */
+  invitationSuppleant: InvitationCreee;
 }
 
 export async function creerOrganisation(poolApplication: Pool, entree: NouvelleOrganisation, acteur: Acteur): Promise<OrganisationCreee> {
+  if (entree.admin.email.trim().toLowerCase() === entree.suppleant.email.trim().toLowerCase()) throw new ErreurMetier("orgs.suppleant_meme_adresse");
   const ids = nouveauxIdentifiants();
   try {
     return await enTransaction(poolApplication, async (client) => {
@@ -40,10 +46,12 @@ export async function creerOrganisation(poolApplication: Pool, entree: NouvelleO
         acteur.id,
       ]);
       const cible = { id: org.rows[0]!.id, schemaName: ids.schemaName, roleName: ids.roleName };
-      const details = { nom: entree.nom, slug: entree.slug, admin: entree.admin.email };
+      const details = { nom: entree.nom, slug: entree.slug, admin: entree.admin.email, suppleant: entree.suppleant.email };
       await journaliserLesDeux(client, cible, { action: "ORGANISATION_CREEE", ...traceActeur(acteur), cibleType: "organisation", cibleId: cible.id, details });
-      const invitation = await creerInvitation(client, cible, { email: entree.admin.email, nom: entree.admin.nom, roles: ["ADMIN_ORGANISATION"] }, acteur);
-      return { organisationId: cible.id, schemaName: ids.schemaName, invitation };
+      // Les DEUX invitations dans la même transaction : si la seconde échoue, rien n'est créé.
+      const invitation = await creerInvitation(client, cible, { email: entree.admin.email, nom: entree.admin.nom, roles: ["ADMIN_ORGANISATION"], fonction: "titulaire" }, acteur);
+      const invitationSuppleant = await creerInvitation(client, cible, { email: entree.suppleant.email, nom: entree.suppleant.nom, roles: ["LECTEUR"], fonction: "suppleant" }, acteur);
+      return { organisationId: cible.id, schemaName: ids.schemaName, invitation, invitationSuppleant };
     });
   } catch (erreur) {
     if (estErreurPg(erreur, PG_UNICITE)) {

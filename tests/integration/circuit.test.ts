@@ -297,7 +297,7 @@ describe("mise à niveau d'une organisation existante", () => {
     );
     let creee;
     try {
-      creee = await creerOrganisation(app, { nom: `Avant circuit ${s}`, slug: `avant-circuit-${s}`, admin: { email: `adm-${s}@test.local`, nom: "Adm" } }, superadmin);
+      creee = await creerOrganisation(app, { nom: `Avant circuit ${s}`, slug: `avant-circuit-${s}`, admin: { email: `adm-${s}@test.local`, nom: "Adm" }, suppleant: { email: `sup-${s}@test.local`, nom: "Sup" } }, superadmin);
     } finally {
       await enTransaction(proprietaire, async (c) => {
         for (const g of retires.rows) await c.query("INSERT INTO platform.gabarits_organisation (nom, sql, empreinte) VALUES ($1, $2, $3)", [g.nom, g.sql, g.empreinte]);

@@ -58,7 +58,7 @@ async function idDe(app: Pool, email: string): Promise<string> {
 export async function creerOrgDeTest(app: Pool, _proprietaire: Pool, acteur: Acteur, nom = "Organisation"): Promise<OrgDeTest> {
   const s = suffixe();
   const adminEmail = `admin-${s}@test.local`;
-  const creee = await creerOrganisation(app, { nom: `${nom} ${s}`, slug: `org-${s}`, admin: { email: adminEmail, nom: `Admin ${s}` } }, acteur);
+  const creee = await creerOrganisation(app, { nom: `${nom} ${s}`, slug: `org-${s}`, admin: { email: adminEmail, nom: `Admin ${s}` }, suppleant: { email: `suppleant-${s}@test.local`, nom: `Suppléant ${s}` } }, acteur);
   await accepterAvecNouveauCompte(app, creee.invitation.jeton, { nom: `Admin ${s}`, motDePasse: MDP_TEST, langue: "fr" }, RESEAU_TEST);
   const org = await lireOrganisation(app, creee.organisationId);
   if (!org) throw new Error("organisation introuvable après création");

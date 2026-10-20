@@ -1,16 +1,21 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { actionChangerModeValidation, actionChangerStatutOrganisation, actionReemettreInvitationAdmin } from "@/actions/plateforme";
+import {
+  actionActiverSuppleant, actionChangerModeValidation, actionChangerStatutOrganisation, actionDepartTitulaire, actionInviterSuppleant,
+  actionMarquerTitulaireAbsent, actionMarquerTitulaireRetour, actionReemettreInvitationAdmin,
+} from "@/actions/plateforme";
 import { FormulaireAction } from "@/components/FormulaireAction";
 import { AccesUrgence } from "@/components/AccesUrgence";
 import { GestionMembres } from "@/components/GestionMembres";
-import { formaterDate } from "@/lib/format";
+import { formaterDate, formaterJour } from "@/lib/format";
+import { ecartJours, jourLocal } from "@/lib/dates";
 import { identifiant } from "@/lib/validation";
 import { poolApplication } from "@/server/db/pools";
 import { listerMembres } from "@/server/membres/service";
 import { listerInvitations } from "@/server/invitations/service";
 import { listerAccesUrgence } from "@/server/acces-urgence/service";
 import { lireOrganisation } from "@/server/organisations/service";
+import { lireBinome } from "@/server/organisations/binome";
 import { exigerSuperadmin } from "@/server/web/contexte";
 import { titrePage } from "@/server/web/metadonnees";
 
@@ -18,7 +23,8 @@ export const generateMetadata = titrePage("orgs.titre");
 
 // Page d'une organisation pour le superadmin (chantier 1 du 20/10/2026) : membres et invitations en LECTURE SEULE ;
 // seules actions sur les membres : réémettre l'invitation d'administrateur quand l'organisation (active) n'a aucun
-// administrateur actif, et l'accès d'urgence (Rédacteur ou Lecteur).
+// administrateur actif, et l'accès d'urgence (Rédacteur ou Lecteur). Chantier 2 : le binôme d'administration
+// (titulaire / suppléant), seule autre exception, bornée au binôme (src/server/organisations/binome.ts).
 export default async function PageOrganisation({ params, searchParams }: {
   params: Promise<{ id: string }>;
   searchParams: Promise<Record<string, string | string[] | undefined>>;
@@ -30,7 +36,14 @@ export default async function PageOrganisation({ params, searchParams }: {
   const pool = poolApplication();
   const org = await lireOrganisation(pool, lu.data);
   if (!org) notFound();
-  const [membres, invitations, acces] = await Promise.all([listerMembres(pool, org.id), listerInvitations(pool, org.id), listerAccesUrgence(pool, org.id)]);
+  const [membres, invitations, acces, binome] = await Promise.all([
+    listerMembres(pool, org.id), listerInvitations(pool, org.id), listerAccesUrgence(pool, org.id), lireBinome(pool, org.id),
+  ]);
+  const aujourdhui = jourLocal(new Date(), ctx.fuseau);
+  const { titulaire, suppleant, invitationSuppleant } = binome;
+  const debutAbsence = titulaire?.absentDepuis ? jourLocal(titulaire.absentDepuis, ctx.fuseau) : null;
+  // Un suppléant UTILISABLE (même définition que le serveur) : on ne propose pas d'en inviter un autre.
+  const suppleantUtilisable = (suppleant !== null && suppleant.compteActif) || (invitationSuppleant !== null && !invitationSuppleant.expiree);
   const suspendue = org.statut === "suspendue";
   // Même définition que la règle du dernier administrateur : rôle Administrateur ET compte actif.
   const adminsActifs = membres.filter((m) => m.statut === "actif" && m.roles.includes("ADMIN_ORGANISATION"));
@@ -92,6 +105,87 @@ export default async function PageOrganisation({ params, searchParams }: {
               </div>
             </FormulaireAction>
           </>
+        )}
+      </section>
+      <section className="carte" id="binome" data-titulaire={titulaire ? "oui" : "non"} data-suppleant={suppleant ? (suppleant.actif ? "actif" : "inactif") : "aucun"}>
+        <h2>{t("orgs.binome_titre")}</h2>
+        <p className="discret petit">{t("orgs.binome_aide")}</p>
+        <dl className="fiche">
+          <dt>{t("orgs.titulaire")}</dt>
+          <dd>
+            {titulaire ? `${titulaire.nom || titulaire.email} (${titulaire.email})` : t("orgs.aucun")}
+            {debutAbsence ? (
+              <>
+                {" "}
+                <span className="etiquette etiquette-alerte" id="titulaire-absent">
+                  {t("orgs.absent_depuis", { date: formaterJour(ctx.langue, debutAbsence), jours: ecartJours(debutAbsence, aujourdhui) })}
+                </span>
+                {titulaire?.motifAbsence ? <><br /><span className="discret">{titulaire.motifAbsence}</span></> : null}
+              </>
+            ) : null}
+          </dd>
+          <dt>{t("orgs.suppleant")}</dt>
+          <dd>
+            {suppleant ? (
+              <>
+                {suppleant.nom || suppleant.email} ({suppleant.email}) — {t(suppleant.actif ? "orgs.etat_actif" : "orgs.etat_inactif")}
+                {!suppleant.compteActif ? <> <span className="etiquette etiquette-erreur">{t("statut.desactive")}</span></> : null}
+              </>
+            ) : invitationSuppleant ? (
+              t("orgs.suppleant_invite_en_attente", { email: invitationSuppleant.email, date: formaterDate(ctx.langue, invitationSuppleant.expireLe, ctx.fuseau) })
+            ) : (
+              t("orgs.aucun")
+            )}
+          </dd>
+        </dl>
+        {suspendue ? null : (
+          <div className="actions-ligne">
+            {titulaire && !debutAbsence ? (
+              <FormulaireAction action={actionMarquerTitulaireAbsent} libelle={t("orgs.marquer_absent")} libelleEnCours={t("commun.en_cours")} variante="ligne">
+                <input type="hidden" name="organisationId" value={org.id} />
+                <label className="champ">
+                  <span>{t("orgs.motif_absence")}</span>
+                  <textarea name="motif" maxLength={2000} rows={2} />
+                </label>
+              </FormulaireAction>
+            ) : null}
+            {suppleant && !suppleant.actif ? (
+              <FormulaireAction action={actionActiverSuppleant} libelle={t("orgs.activer_suppleant")} libelleEnCours={t("commun.en_cours")} confirmation={t("orgs.confirmation_activer")}>
+                <input type="hidden" name="organisationId" value={org.id} />
+              </FormulaireAction>
+            ) : null}
+            {titulaire && (debutAbsence || suppleant?.actif) ? (
+              <FormulaireAction action={actionMarquerTitulaireRetour} libelle={t("orgs.marquer_retour")} libelleEnCours={t("commun.en_cours")} variante="ligne">
+                <input type="hidden" name="organisationId" value={org.id} />
+              </FormulaireAction>
+            ) : null}
+            {titulaire && suppleant ? (
+              <FormulaireAction action={actionDepartTitulaire} libelle={t("orgs.depart_titulaire")} libelleEnCours={t("commun.en_cours")} variante="danger" confirmation={t("orgs.confirmation_depart")}>
+                <input type="hidden" name="organisationId" value={org.id} />
+              </FormulaireAction>
+            ) : null}
+            {!suppleantUtilisable ? (
+              <FormulaireAction
+                action={actionInviterSuppleant}
+                libelle={t("orgs.inviter_suppleant")}
+                libelleEnCours={t("commun.en_cours")}
+                libellesLien={{ lien: t("orgs.lien_suppleant"), copier: t("commun.copier"), copie: t("commun.copie") }}
+              >
+                <input type="hidden" name="organisationId" value={org.id} />
+                {titulaire ? null : <p className="discret petit">{t("orgs.titulaire_designe_info")}</p>}
+                <div className="grille-champs">
+                  <label className="champ">
+                    <span>{t("orgs.suppleant_email")}</span>
+                    <input type="email" name="email" required maxLength={254} autoComplete="off" />
+                  </label>
+                  <label className="champ">
+                    <span>{t("orgs.suppleant_nom")}</span>
+                    <input type="text" name="nom" required maxLength={200} autoComplete="off" />
+                  </label>
+                </div>
+              </FormulaireAction>
+            ) : null}
+          </div>
         )}
       </section>
       <section className="carte" id="mode-validation" data-mode={org.modeValidation}>
