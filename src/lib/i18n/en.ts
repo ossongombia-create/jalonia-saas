@@ -199,6 +199,7 @@ export const en: Record<Cle, string> = {
   "invitation.lien": "Invitation link",
   "invitation.en_attente": "Pending invitations",
   "invitation.en_attente_aide": "A link is shown only once, when the invitation is created. To get a new one, invite the same address again: the old link then stops working.",
+  "invitation.en_attente_aide_superadmin": "A link is shown only once. Only the organisation administrator can invite again; if there is no active administrator, use the \"Administrator\" block above.",
   "invitation.valable_jusqua": "Valid until",
   "invitation.expiree": "Expired",
   "invitation.annuler": "Cancel",

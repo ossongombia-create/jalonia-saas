@@ -837,6 +837,12 @@ let ACTIONS;
   // Réémission de l'invitation d'administrateur : C (créée plus haut) n'a encore aucun administrateur actif.
   const ORG_C = sql("SELECT id FROM platform.organisations WHERE slug = 'droits-c'");
   const PAGE_ORG_C = `/plateforme/organisations/${ORG_C}`;
+  // Invitations en attente vues par le superadmin (page de C, qui en a une) : plus le conseil « invitez à nouveau »,
+  // réservé à l'administrateur, mais le texte propre au superadmin (HTML : apostrophes échappées).
+  const pageC = (await (await ctx.superadmin.request.get(BASE + PAGE_ORG_C)).text()).replaceAll("&#x27;", "'");
+  assert.ok(pageC.includes(texte("invitation.en_attente")), "page de C : invitations en attente affichées");
+  assert.ok(!pageC.includes("invitez à nouveau la même adresse"), "page superadmin : plus de conseil « invitez à nouveau »");
+  assert.ok(pageC.includes(texte("invitation.en_attente_aide_superadmin")), "page superadmin : aide propre au superadmin");
   const reemission = { organisationId: ORG_C, email: "admin-c2@droits.test", nom: "Admin C2" };
   const invitationsAdminC = () => sql(`SELECT count(*) FROM platform.invitations WHERE organisation_id = '${ORG_C}' AND roles = '{ADMIN_ORGANISATION}' AND acceptee_le IS NULL AND annulee_le IS NULL`);
   for (const qui of ["faux", "attente"]) await cas(qui, "actionReemettreInvitationAdmin", reemission, "session", { page: PAGE_ORG_C });

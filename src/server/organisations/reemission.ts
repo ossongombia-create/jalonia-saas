@@ -27,7 +27,9 @@ export async function reemettreInvitationAdmin(pool: Pool, organisationId: strin
     const o = r.rows[0];
     if (!o) throw new ErreurMetier("erreur.introuvable");
     if (o.statut !== "active") throw new ErreurMetier("erreur.organisation_suspendue");
-    // Même définition qu'autresAdministrateursActifs (src/server/membres/service.ts) : rôle Administrateur ET compte actif.
+    // Même définition qu'autresAdministrateursActifs (src/server/membres/service.ts) : rôle Administrateur ET compte actif
+    // (copie volontaire : la couche service des membres n'est pas modifiée, Q7 ; à fusionner avec le chantier défense
+    // en profondeur).
     const admins = await client.query<{ n: number }>(
       `SELECT count(*)::int AS n
          FROM platform.adhesions a JOIN platform.utilisateurs u ON u.id = a.utilisateur_id

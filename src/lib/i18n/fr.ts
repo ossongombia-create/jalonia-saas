@@ -199,6 +199,7 @@ export const fr = {
   "invitation.lien": "Lien d'invitation",
   "invitation.en_attente": "Invitations en attente",
   "invitation.en_attente_aide": "Un lien n'est affiché qu'une fois, au moment de l'invitation. Pour en obtenir un nouveau, invitez à nouveau la même adresse : l'ancien lien cesse alors de fonctionner.",
+  "invitation.en_attente_aide_superadmin": "Un lien n'est affiché qu'une fois. Seul l'administrateur de l'organisation peut inviter à nouveau ; s'il n'y a aucun administrateur actif, utilisez le bloc « Administrateur » ci-dessus.",
   "invitation.valable_jusqua": "Valable jusqu'au",
   "invitation.expiree": "Expirée",
   "invitation.annuler": "Annuler",

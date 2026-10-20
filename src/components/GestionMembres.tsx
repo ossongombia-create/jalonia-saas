@@ -99,7 +99,7 @@ export function GestionMembres({ ctx, organisationId, membres, invitations, lect
       {invitations.length > 0 ? (
         <section className="carte">
           <h2>{t("invitation.en_attente")}</h2>
-          <p className="discret">{t("invitation.en_attente_aide")}</p>
+          <p className="discret">{t(lectureSeule ? "invitation.en_attente_aide_superadmin" : "invitation.en_attente_aide")}</p>
           <div className="tableau-defilant">
             <table className="tableau">
               <thead>
