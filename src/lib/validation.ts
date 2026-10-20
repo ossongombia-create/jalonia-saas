@@ -22,6 +22,9 @@ export const schemaNouvelleOrganisation = z.object({
   slug: z.string().trim().toLowerCase().regex(MOTIF_SLUG, "erreur.slug_invalide"),
   adminEmail: email,
   adminNom: nomPersonne,
+  // Suppléant obligatoire (chantier 2 du 20/10/2026).
+  suppleantEmail: email,
+  suppleantNom: nomPersonne,
 });
 
 export const schemaInvitation = z.object({ email, nom: nomPersonne, roles });

@@ -7,11 +7,15 @@
 //   erreur.deja_membre (cas de l'administrateur seulement désactivé : réactiver son compte).
 // Rôles forcés à Administrateur. Une invitation en attente pour la MÊME adresse est remplacée (creerInvitation) ; les
 // autres invitations en attente ne sont pas touchées. Journal : INVITATION_CREEE (acteur = superadmin), deux journaux.
+// Chantier 2 (B5) : refusée s'il existe un SUPPLÉANT UTILISABLE (orgs.suppleant_a_activer) — la voie de secours est de
+// l'activer, pas de créer un troisième administrateur. L'invitation porte la fonction « titulaire » : à son
+// acceptation, l'ancien titulaire (compte désactivé) perd sa fonction et son rôle Administrateur.
 import type { Pool } from "pg";
 import { enTransaction } from "../db/transactions";
 import { ErreurMetier } from "../erreurs";
 import type { Acteur } from "../acteur";
 import { creerInvitation, type InvitationCreee } from "../invitations/service";
+import { suppleantUtilisable } from "./binome";
 
 export interface ReemissionAdmin {
   email: string;
@@ -37,10 +41,11 @@ export async function reemettreInvitationAdmin(pool: Pool, organisationId: strin
       [o.id],
     );
     if ((admins.rows[0]?.n ?? 0) > 0) throw new ErreurMetier("orgs.admin_present");
+    if (await suppleantUtilisable(client, o.id)) throw new ErreurMetier("orgs.suppleant_a_activer");
     const invitation = await creerInvitation(
       client,
       { id: o.id, schemaName: o.schema_name, roleName: o.role_name },
-      { email: entree.email, nom: entree.nom, roles: ["ADMIN_ORGANISATION"] },
+      { email: entree.email, nom: entree.nom, roles: ["ADMIN_ORGANISATION"], fonction: "titulaire" },
       acteur,
     );
     return { ...invitation, organisation: o.nom };

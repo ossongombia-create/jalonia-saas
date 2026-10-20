@@ -2,6 +2,9 @@ import Link from "next/link";
 import { Journal } from "@/components/Journal";
 import { poolApplication } from "@/server/db/pools";
 import { lireJournalPlateforme, statistiquesPlateforme } from "@/server/consultation/service";
+import { alertesAbsence } from "@/server/organisations/absences";
+import { jourLocal } from "@/lib/dates";
+import { formaterJour } from "@/lib/format";
 import { exigerSuperadmin, reglesSession } from "@/server/web/contexte";
 import { titrePage } from "@/server/web/metadonnees";
 
@@ -11,7 +14,11 @@ export default async function TableauDeBord() {
   const ctx = await exigerSuperadmin();
   const { t } = ctx;
   const pool = poolApplication();
-  const [stats, journal] = await Promise.all([statistiquesPlateforme(pool, reglesSession()), lireJournalPlateforme(pool, { page: 1 })]);
+  const [stats, journal, alertes] = await Promise.all([
+    statistiquesPlateforme(pool, reglesSession()),
+    lireJournalPlateforme(pool, { page: 1 }),
+    alertesAbsence(pool, ctx.fuseau, jourLocal(new Date(), ctx.fuseau)),
+  ]);
   journal.lignes = journal.lignes.slice(0, 15);
   journal.aSuite = false;
 
@@ -45,6 +52,25 @@ export default async function TableauDeBord() {
           <span>{t("tdb.echecs_24h")}</span>
         </Link>
       </div>
+      <section className="carte" id="alertes" data-alertes={alertes.length}>
+        <h2>{t("alertes.titre")}</h2>
+        {alertes.length === 0 ? (
+          <p className="discret">{t("alertes.aucune")}</p>
+        ) : (
+          <ul>
+            {alertes.map((a) => (
+              <li key={a.organisationId}>
+                <Link href={`/plateforme/organisations/${a.organisationId}`}>
+                  {t("alertes.absence", {
+                    organisation: a.organisation, titulaire: a.titulaire, debut: formaterJour(ctx.langue, a.debut), jours: a.jours,
+                    suppleant: a.suppleant ? `${a.suppleant} (${t(a.suppleantActif ? "orgs.etat_actif" : "orgs.etat_inactif")})` : t("orgs.aucun"),
+                  })}
+                </Link>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
       <section className="carte">
         <h2>{t("tdb.activite_recente")}</h2>
         <Journal t={t} langue={ctx.langue} fuseau={ctx.fuseau} journal={journal} afficherOrganisation />

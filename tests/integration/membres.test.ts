@@ -34,11 +34,11 @@ describe("règle du dernier administrateur", () => {
     expect(await cleErreur(modifierRoles(app, org.cible, org.adminId, ["LECTEUR"], superadmin))).toBe("erreur.dernier_admin");
   });
 
-  it("avec un second administrateur actif, c'est possible", async () => {
+  it("avec un second administrateur actif, c'est possible (pour un co-administrateur : le titulaire garde le rôle, G2)", async () => {
     const org = await creerOrgDeTest(app, proprietaire, superadmin);
-    await membre(org, ["ADMIN_ORGANISATION"]);
-    await modifierRoles(app, org.cible, org.adminId, ["LECTEUR"], superadmin);
-    const roles = (await listerMembres(app, org.organisationId)).find((m) => m.utilisateurId === org.adminId)?.roles;
+    const second = await membre(org, ["ADMIN_ORGANISATION"]);
+    await modifierRoles(app, org.cible, second.id, ["LECTEUR"], superadmin);
+    const roles = (await listerMembres(app, org.organisationId)).find((m) => m.utilisateurId === second.id)?.roles;
     expect(roles).toEqual(["LECTEUR"]);
   });
 
@@ -47,6 +47,7 @@ describe("règle du dernier administrateur", () => {
     const second = await membre(org, ["ADMIN_ORGANISATION"]);
     await desactiverUtilisateur(app, second.id, superadmin);
     expect(await cleErreur(retirerMembre(app, org.cible, org.adminId, superadmin))).toBe("erreur.dernier_admin");
+    expect(await cleErreur(modifierRoles(app, org.cible, org.adminId, ["LECTEUR"], superadmin))).toBe("erreur.dernier_admin");
   });
 });
 
@@ -71,7 +72,7 @@ describe("traçabilité", () => {
 
     const journalA = await lireJournalOrganisation(app, a.cible, { page: 1 });
     const actionsA = journalA.lignes.map((l) => l.action).reverse();
-    expect(actionsA).toEqual(["ORGANISATION_CREEE", "INVITATION_CREEE", "MEMBRE_AJOUTE", "INVITATION_CREEE", "MEMBRE_AJOUTE", "DROITS_MODIFIES", "MEMBRE_RETIRE"]);
+    expect(actionsA).toEqual(["ORGANISATION_CREEE", "INVITATION_CREEE", "INVITATION_CREEE", "MEMBRE_AJOUTE", "INVITATION_CREEE", "MEMBRE_AJOUTE", "DROITS_MODIFIES", "MEMBRE_RETIRE"]);
     const droits = journalA.lignes.find((l) => l.action === "DROITS_MODIFIES");
     expect(droits?.details).toEqual({ avant: ["LECTEUR"], apres: ["REDACTEUR", "VERIFICATEUR"] });
     // Rien de l'organisation B dans le journal de A.

@@ -109,10 +109,37 @@ async function cibleGerable(pool: Pool, cibleId: string, acteur: Acteur): Promis
   return { email: u.email };
 }
 
-/** Désactive un compte et ferme ses sessions. Renvoie le nombre de sessions fermées. */
+/**
+ * Désactive un compte et ferme ses sessions. Renvoie le nombre de sessions fermées.
+ * Refusé (erreur.dernier_admin, rien n'est changé) si le compte est le DERNIER administrateur actif d'une
+ * organisation active (décision Q8, chantier 2 du 20/10/2026) : même définition que la règle du dernier
+ * administrateur (rôle Administrateur ET compte actif). Un suppléant inactif n'a pas ce rôle : il ne compte pas ;
+ * un suppléant activé l'a : il compte.
+ */
 export async function desactiverUtilisateur(pool: Pool, cibleId: string, acteur: Acteur): Promise<number> {
   await cibleGerable(pool, cibleId, acteur);
   return enTransaction(pool, async (client) => {
+    const orgs = await client.query<{ organisation_id: string }>(
+      `SELECT a.organisation_id
+         FROM platform.adhesions a
+         JOIN platform.organisations o ON o.id = a.organisation_id
+         JOIN platform.utilisateurs u ON u.id = a.utilisateur_id
+        WHERE a.utilisateur_id = $1 AND u.statut = 'actif' AND o.statut = 'active' AND 'ADMIN_ORGANISATION' = ANY (a.roles)
+        ORDER BY a.organisation_id`,
+      [cibleId],
+    );
+    for (const { organisation_id } of orgs.rows) {
+      // Verrou des adhésions de l'organisation (comme le service des membres) : pas de course avec un retrait de rôle.
+      await client.query("SELECT 1 FROM platform.adhesions WHERE organisation_id = $1 FOR UPDATE", [organisation_id]);
+      const autres = await client.query<{ n: number }>(
+        `SELECT count(*)::int AS n
+           FROM platform.adhesions a JOIN platform.utilisateurs u ON u.id = a.utilisateur_id
+          WHERE a.organisation_id = $1 AND a.utilisateur_id <> $2
+            AND 'ADMIN_ORGANISATION' = ANY (a.roles) AND u.statut = 'actif'`,
+        [organisation_id, cibleId],
+      );
+      if ((autres.rows[0]?.n ?? 0) === 0) throw new ErreurMetier("erreur.dernier_admin");
+    }
     const r = await client.query("UPDATE platform.utilisateurs SET statut = 'desactive' WHERE id = $1 AND statut = 'actif' AND NOT est_superadmin", [cibleId]);
     const fermees = await revoquerSessionsDe(client, cibleId);
     if (r.rowCount) {

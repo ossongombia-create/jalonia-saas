@@ -18,6 +18,8 @@ interface Props {
   confirmation?: string;
   /** Libellés du lien renvoyé par l'action (ex. lien d'invitation), affiché avec un bouton « Copier ». */
   libellesLien?: LibellesLien;
+  /** Libellés d'un second lien renvoyé par l'action (création d'une organisation : lien du suppléant). */
+  libellesLien2?: LibellesLien;
   /** Libellés des codes de secours renvoyés par l'action (affichés une fois, à la place du formulaire). */
   libellesCodes?: LibellesCodes;
 }
@@ -38,7 +40,7 @@ export interface LibellesLien {
   copie: string;
 }
 
-export function FormulaireAction({ action, libelle, libelleEnCours, children, vider = true, variante = "normal", className, confirmation, libellesLien, libellesCodes }: Props) {
+export function FormulaireAction({ action, libelle, libelleEnCours, children, vider = true, variante = "normal", className, confirmation, libellesLien, libellesLien2, libellesCodes }: Props) {
   const [etat, envoyer, enCours] = useActionState(action, ETAT_INITIAL);
   const formulaire = useRef<HTMLFormElement>(null);
 
@@ -73,6 +75,7 @@ export function FormulaireAction({ action, libelle, libelleEnCours, children, vi
         ) : null}
       </div>
       {etat.ok && etat.lien && libellesLien ? <LienACopier key={etat.jeton} chemin={etat.lien} libelles={libellesLien} /> : null}
+      {etat.ok && etat.lien2 && libellesLien2 ? <LienACopier key={`${etat.jeton}-2`} chemin={etat.lien2} libelles={libellesLien2} /> : null}
     </form>
   );
 }

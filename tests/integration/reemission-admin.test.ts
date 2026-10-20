@@ -1,7 +1,8 @@
 // Réémission de l'invitation d'administrateur par le superadmin (chantier 1 du 20/10/2026) : seulement pour une
 // organisation ACTIVE sans AUCUN administrateur actif (invitation initiale jamais acceptée ou expirée, administrateur
 // désactivé) ; rôles forcés à Administrateur ; tracée dans les deux journaux ; les autres invitations en attente ne
-// sont pas touchées ; refus clairs sinon.
+// sont pas touchées ; refus clairs sinon. Chantier 2 : refusée aussi tant qu'un suppléant est utilisable (B5,
+// éprouvé dans suppleant.test.ts) ; ces tests annulent donc l'invitation de suppléant créée avec l'organisation.
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { Pool } from "pg";
 import { reemettreInvitationAdmin } from "../../src/server/organisations/reemission";
@@ -9,7 +10,6 @@ import { creerOrganisation } from "../../src/server/organisations/provisionnemen
 import { changerStatutOrganisation, lireOrganisation } from "../../src/server/organisations/service";
 import { accepterAvecNouveauCompte, inviter, lireInvitation } from "../../src/server/invitations/service";
 import { modifierRoles, type OrganisationCible } from "../../src/server/membres/service";
-import { desactiverUtilisateur } from "../../src/server/utilisateurs/service";
 import { lireJournalOrganisation, lireJournalPlateforme } from "../../src/server/consultation/service";
 import { enTransaction } from "../../src/server/db/transactions";
 import type { Acteur } from "../../src/server/acteur";
@@ -30,11 +30,27 @@ afterAll(async () => {
 });
 
 const adresse = () => `admin-${suffixe()}@test.local`;
+const suppleant = () => ({ email: `sup-${suffixe()}@test.local`, nom: "Suppléant" });
+
+/** Annule l'invitation de suppléant en attente : sans suppléant utilisable, la réémission est permise (B5). */
+async function sansSuppleant(organisationId: string): Promise<void> {
+  await enTransaction(proprietaire, (c) =>
+    c.query("UPDATE platform.invitations SET annulee_le = now() WHERE organisation_id = $1 AND fonction_org = 'suppleant' AND annulee_le IS NULL", [organisationId]));
+}
+
+/**
+ * Compte de l'administrateur désactivé EN BASE : depuis le chantier 2 (Q8), desactiverUtilisateur refuse de désactiver
+ * le dernier administrateur actif ; on reproduit ici l'état hérité d'avant cette règle.
+ */
+async function desactiverEnBase(utilisateurId: string): Promise<void> {
+  await enTransaction(proprietaire, (c) => c.query("UPDATE platform.utilisateurs SET statut = 'desactive' WHERE id = $1", [utilisateurId]));
+}
 
 /** Une organisation dont l'invitation d'administrateur n'a JAMAIS été acceptée (aucun membre). */
 async function orgSansAdmin(): Promise<{ id: string; cible: OrganisationCible; invitationId: string }> {
   const s = suffixe();
-  const creee = await creerOrganisation(app, { nom: `Sans admin ${s}`, slug: `sans-${s}`, admin: { email: adresse(), nom: "Premier" } }, superadmin);
+  const creee = await creerOrganisation(app, { nom: `Sans admin ${s}`, slug: `sans-${s}`, admin: { email: adresse(), nom: "Premier" }, suppleant: suppleant() }, superadmin);
+  await sansSuppleant(creee.organisationId);
   const org = (await lireOrganisation(app, creee.organisationId))!;
   return { id: org.id, cible: { id: org.id, schemaName: org.schemaName, roleName: org.roleName }, invitationId: creee.invitation.id };
 }
@@ -62,7 +78,8 @@ describe("réémission permise : organisation active sans administrateur actif",
   it("même adresse qu'une invitation en attente : elle est remplacée (tracé « remplace ») ; l'ancien lien ne vaut plus rien", async () => {
     const s = suffixe();
     const email = adresse();
-    const creee = await creerOrganisation(app, { nom: `Remplacee ${s}`, slug: `remp-${s}`, admin: { email, nom: "Premier" } }, superadmin);
+    const creee = await creerOrganisation(app, { nom: `Remplacee ${s}`, slug: `remp-${s}`, admin: { email, nom: "Premier" }, suppleant: suppleant() }, superadmin);
+    await sansSuppleant(creee.organisationId);
     const r = await reemettreInvitationAdmin(app, creee.organisationId, { email, nom: "Premier" }, superadmin);
     expect((await invitation(creee.invitation.id)).annulee_le).toBeInstanceOf(Date);
     expect(await lireInvitation(app, creee.invitation.jeton)).toBeNull();
@@ -76,7 +93,8 @@ describe("réémission permise : organisation active sans administrateur actif",
     const org = await creerOrgDeTest(app, proprietaire, superadmin);
     const admin: Acteur = { id: org.adminId, email: org.adminEmail, ...RESEAU_TEST };
     const autre = await inviter(app, org.cible, { email: adresse(), nom: "Lecteur invité", roles: ["LECTEUR"] }, admin);
-    await desactiverUtilisateur(app, org.adminId, superadmin);
+    await sansSuppleant(org.organisationId);
+    await desactiverEnBase(org.adminId);
     const r = await reemettreInvitationAdmin(app, org.organisationId, { email: adresse(), nom: "Remplaçant" }, superadmin);
     expect((await invitation(r.id)).roles).toEqual(["ADMIN_ORGANISATION"]);
     expect((await invitation(autre.id)).annulee_le).toBeNull();
@@ -124,7 +142,8 @@ describe("réémission refusée (rien n'est écrit)", () => {
 
   it("administrateur désactivé, MÊME adresse → erreur.deja_membre (il faut réactiver son compte)", async () => {
     const org = await creerOrgDeTest(app, proprietaire, superadmin);
-    await desactiverUtilisateur(app, org.adminId, superadmin);
+    await sansSuppleant(org.organisationId);
+    await desactiverEnBase(org.adminId);
     const avant = await nbInvitations(org.organisationId);
     expect(await cleErreur(reemettreInvitationAdmin(app, org.organisationId, { email: org.adminEmail, nom: "Ancien" }, superadmin))).toBe("erreur.deja_membre");
     expect(await nbInvitations(org.organisationId)).toBe(avant);

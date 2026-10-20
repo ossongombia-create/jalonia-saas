@@ -142,8 +142,57 @@ est **active** et n'a **aucun administrateur actif** (jamais accepté, invitatio
 | 2026-10-20 | **Réémission de l'invitation d'administrateur** (`actionReemettreInvitationAdmin`, `src/server/organisations/reemission.ts`) : organisation inconnue → `erreur.introuvable` ; suspendue → `erreur.organisation_suspendue` (la réactivation est une action distincte, préalable) ; administrateur actif présent → `orgs.admin_present` ; adresse du superadmin → `invitation.soi_meme` ; déjà membre → `erreur.deja_membre` (administrateur seulement désactivé : réactiver son compte). Rôle Administrateur forcé ; codes de journal existants (`INVITATION_CREEE`, acteur = superadmin) ; les autres invitations en attente ne sont pas touchées | Seule voie de secours conforme au principe : le superadmin ne fait entrer que l'administrateur |
 | 2026-10-20 | **Accès d'urgence sans le rôle Administrateur** : rôles Rédacteur ou Lecteur, Lecteur présélectionné. **Contrainte en base reportée (V2)** : la restriction est **applicative** (`ROLES_ACCES_URGENCE`) ; la contrainte de la migration plateforme 0008 accepte encore `ADMIN_ORGANISATION`. Une migration V2 la resserrera en traitant explicitement l'historique des accès enregistrés avec ce rôle | Le superadmin n'a plus aucun droit d'administrateur, y compris le journal et les paramètres de l'organisation (perte acceptée ; un droit de lecture propre au support, par exemple `support.journal.lire`, sera étudié en V2 — sans élargir les rôles de l'accès d'urgence) |
 | 2026-10-20 | **Procédure de déploiement et garde** : avant de déployer, **fermer tout accès d'urgence « Administrateur » encore ouvert** (page de l'organisation, « Fermer »). Garde applicative : un tel accès est écarté du contexte (`src/server/web/contexte.ts`, seul filtre), affiché « rôle retiré » sans bouton « Entrer », toute tentative d'entrée est refusée (`erreur.role_invalide`) et tracée dans les deux journaux (`ACCES_URGENCE_REFUSE`) ; il reste fermable | Un accès ouvert avant le déploiement resterait valable jusqu'à 24 h |
-| 2026-10-20 | **Trou connu (chantier 2)** : `desactiverUtilisateur` (`src/server/utilisateurs/service.ts`) ne vérifie pas le dernier administrateur actif ; le superadmin peut rendre une organisation orpheline. Décision D2 = A (refus) ; correction prévue au chantier 2 (suppléant), liée à `autresAdministrateursActifs`. En attendant, la réémission de l'invitation d'administrateur permet de rétablir un administrateur | — |
+| 2026-10-20 | ~~**Trou connu (chantier 2)**~~ **Corrigé au chantier 2 (Q8)** : `desactiverUtilisateur` (`src/server/utilisateurs/service.ts`) ne vérifiait pas le dernier administrateur actif ; le superadmin pouvait rendre une organisation orpheline. Décision D2 = A (refus) : la désactivation est désormais refusée (`erreur.dernier_admin`) si le compte est le dernier administrateur actif d'une organisation active (verrou sur les adhésions, même transaction) | — |
 
 Reporté en V2 : champ `motif` ou `remplace_invitation_id` dans le journal de la réémission (Q5) ; acteur des tests de
 service et contrôle des droits dans la couche service (Q6, Q7) ; annulation des invitations Administrateur en attente
 lors d'une réémission (R5) ; droit de lecture du journal propre au support (R6).
+
+## Chantier 2 du 20/10/2026 — binôme d'administration titulaire / suppléant
+
+Chaque organisation a un administrateur **titulaire** et un **suppléant**, désignés par le superadmin. Le suppléant
+**inactif** n'a pas le rôle Administrateur (Lecteur) et ne compte nulle part comme administrateur ; le superadmin
+l'**active** (rôle ajouté) en cas d'absence du titulaire, et le **retour** du titulaire le lui retire. Migrations :
+plateforme `0010_suppleant.sql` (colonnes `fonction_org`, `statut_suppleant`, `date_absence_debut`, `motif_absence` sur
+les adhésions, `fonction_org` sur les invitations, contraintes et index uniques) ; organisation
+`0011_notification_absence.sql` (nature de notification `absence_titulaire`). Code : `src/server/organisations/binome.ts`
+(actions du binôme) et `src/server/organisations/absences.ts` (alerte des 60 jours).
+
+**Exceptions au principe du chantier 1** (« le superadmin ne gère pas les membres »), bornées au binôme : inviter un
+suppléant, activer le suppléant, marquer le titulaire absent, enregistrer son retour, enregistrer son départ définitif
+(`actionInviterSuppleant`, `actionActiverSuppleant`, `actionMarquerTitulaireAbsent`, `actionMarquerTitulaireRetour`,
+`actionDepartTitulaire` : superadmin seulement, organisation active, tracées dans les deux journaux). Le superadmin ne
+gère toujours ni les rôles ni les retraits des autres membres.
+
+| Réf. | Décision | Mise en œuvre |
+|------|----------|---------------|
+| B1 | **Co-administrateurs permis**, sans maximum | Les administrateurs sans fonction se gèrent librement par l'administrateur de l'organisation |
+| B2 | Le suppléant **inactif n'a pas** le rôle Administrateur ; l'activer l'ajoute, le désactiver le retire | Contrainte `adhesions_suppleant_role_check` : suppléant actif ⇔ rôle Administrateur |
+| B3 | Colonnes sur `platform.adhesions` et `platform.invitations` | Migration plateforme 0010 |
+| B4 | **Départ définitif** : l'ancien titulaire perd le rôle Administrateur et sa fonction, mais reste membre, compte actif | `departTitulaire` ; journal `ADMIN_TITULAIRE_REMPLACE` |
+| B5 | **Réémission refusée** quand un suppléant est utilisable (membre au compte actif, ou invitation en attente non expirée) | `orgs.suppleant_a_activer` (`src/server/organisations/reemission.ts`) |
+| B6 | Superadmin : section **« Alertes »** du tableau de bord (`/plateforme`), calculée à la lecture (aucune table), plus un **courriel** si le SMTP est configuré | `alertesAbsence` ; courriel envoyé par `scripts/taches-quotidiennes.ts` (`envoyerAlertesSuperadmins`) |
+| B7 | À **60 jours** d'absence : notification au titulaire et au suppléant actif, plus le journal | Tâches quotidiennes (`notifierAbsences`), une seule fois par période d'absence ; journal `ADMIN_ABSENCE_SOIXANTE_JOURS` |
+| B8 | Le superadmin peut ajouter un suppléant à une organisation existante ; à défaut de titulaire, l'**administrateur actif le plus ancien** est désigné | `inviterSuppleant` ; journal `ADMIN_TITULAIRE_DESIGNE` ; aucun administrateur actif → `orgs.aucun_titulaire` |
+| B9 | **Suppléant obligatoire à la création** | Formulaire de création : deux invitations (titulaire : Administrateur ; suppléant : Lecteur), deux liens ; même adresse refusée |
+| B10 | Le suppléant inactif a le rôle **Lecteur** | Invitation de suppléant : `{LECTEUR}` (contrainte `invitations_fonction_roles_check`) |
+| B11 | Le titulaire absent **garde ses droits** | L'absence ne sert qu'au compte des 60 jours |
+| B12 | Motif d'absence **facultatif**, visible du superadmin seulement | Journal de la plateforme seulement ; jamais dans celui de l'organisation |
+| B13 | Activer le suppléant **n'exige pas** de marquer le titulaire absent | `activerSuppleant` |
+| B14 | Bandeau d'information dans l'organisation | **V2** |
+| B15 | Départ définitif et invitation du nouveau suppléant : **deux actions séparées** | Rien d'automatique après le départ |
+| B16 | Erreur générique `erreur.dernier_admin` | Règle du dernier administrateur, retour du titulaire, désactivation (Q8) |
+| B17 | Rappels tous les 30 jours | **V2** |
+
+Gardes de la gestion des membres (`src/server/membres/service.ts`), vérifiées **après** la règle du dernier
+administrateur : **G1** le rôle Administrateur du suppléant ne s'ajoute ni ne se retire (`membres.suppleant_reserve_superadmin`) ;
+**G2** le titulaire garde le rôle Administrateur (`membres.titulaire_reserve_superadmin`) ; **G3** ni le titulaire ni
+le suppléant ne se retirent (`membres.binome_reserve_superadmin`). L'acceptation d'une invitation de **titulaire**
+(réémission) remplace l'ancien titulaire (fonction et rôle Administrateur retirés, `ADMIN_TITULAIRE_REMPLACE`).
+
+Écart de nommage : le code de journal prévu `ADMIN_ABSENCE_60_JOURS` est devenu **`ADMIN_ABSENCE_SOIXANTE_JOURS`** :
+la contrainte des journaux (`action ~ '^[A-Z][A-Z_]{1,63}$'`, migrations 0001) refuse les chiffres, et la modifier
+toucherait les journaux chaînés.
+
+Organisations existantes : aucun remplissage par la migration ; elles reçoivent un titulaire quand le superadmin leur
+ajoute un suppléant (B8). Reporté en V2 : bandeau (B14), rappels tous les 30 jours (B17).

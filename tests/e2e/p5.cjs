@@ -1,6 +1,7 @@
 // Partie 5 : le superadmin crée une organisation depuis l'interface (fonction de création en base, sans le rôle
 // propriétaire) ; son premier administrateur est INVITÉ : il ouvre le lien, crée son compte (mot de passe choisi
-// par lui) et arrive dans son organisation. Le lien ne sert qu'une fois.
+// par lui) et arrive dans son organisation. Le lien ne sert qu'une fois. Chantier 2 : un suppléant est invité en
+// même temps (second lien).
 const { BASE, SUPERADMIN, lancer, connecter, anonyme, capture, etape, assert } = require("./outils.cjs");
 (async () => {
   const b = await lancer();
@@ -14,12 +15,17 @@ const { BASE, SUPERADMIN, lancer, connecter, anonyme, capture, etape, assert } =
   await sa.fill('input[name="slug"]', `creee-${s}`);
   await sa.fill('input[name="adminEmail"]', `admin-${s}@demo.test`);
   await sa.fill('input[name="adminNom"]', `Admin ${s}`);
+  await sa.fill('input[name="suppleantEmail"]', `suppleant-${s}@demo.test`);
+  await sa.fill('input[name="suppleantNom"]', `Suppléant ${s}`);
   await sa.click('button:has-text("Créer l\'organisation")');
   await sa.waitForSelector(".lien-a-copier input", { timeout: 20000 });
-  const lien = await sa.inputValue(".lien-a-copier input");
-  assert.match(lien, new RegExp(`^${BASE}/invitation/[A-Za-z0-9_-]{43}$`));
+  assert.equal(await sa.locator(".lien-a-copier input").count(), 2, "deux liens : titulaire et suppléant");
+  const lien = await sa.locator(".lien-a-copier input").first().inputValue();
+  const lienSuppleant = await sa.locator(".lien-a-copier input").nth(1).inputValue();
+  for (const l of [lien, lienSuppleant]) assert.match(l, new RegExp(`^${BASE}/invitation/[A-Za-z0-9_-]{43}$`));
+  assert.notEqual(lien, lienSuppleant);
   assert.match(await sa.textContent('[role="status"]'), /Organisation créée/);
-  await sa.click('.lien-a-copier button:has-text("Copier")');
+  await sa.locator('.lien-a-copier button:has-text("Copier")').first().click();
   await sa.waitForSelector('.lien-a-copier button:has-text("Copié")');
   assert.equal(await sa.evaluate(() => navigator.clipboard.readText()), lien);
   await capture(sa, "organisation-creee-lien");

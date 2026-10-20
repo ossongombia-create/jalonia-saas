@@ -15,6 +15,7 @@ export const NATURES = [
   "revue_proche", "revue_retard", "revue_escalade",
   "action_confiee", "action_proche", "action_retard", "action_escalade",
   "acces_urgence",
+  "absence_titulaire",
 ] as const;
 export type NatureNotification = (typeof NATURES)[number];
 
@@ -29,6 +30,9 @@ export interface DetailsNotification {
   jours?: number;
   /** Accès d'urgence : durée en heures. */
   heures?: number;
+  /** Absence du titulaire (chantier 2) : nom du titulaire et jour de début. */
+  titulaire?: string;
+  debut?: string;
 }
 
 export interface NouvelleNotification {

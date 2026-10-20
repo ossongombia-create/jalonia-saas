@@ -26,6 +26,7 @@ export default async function PageNouvelleOrganisation() {
           libelle={t("orgs.creer")}
           libelleEnCours={t("commun.en_cours")}
           libellesLien={{ lien: t("invitation.lien"), copier: t("commun.copier"), copie: t("commun.copie") }}
+          libellesLien2={{ lien: t("orgs.lien_suppleant"), copier: t("commun.copier"), copie: t("commun.copie") }}
         >
           <div className="grille-champs">
             <label className="champ">
@@ -48,6 +49,18 @@ export default async function PageNouvelleOrganisation() {
             <label className="champ">
               <span>{t("orgs.admin_nom")}</span>
               <input type="text" name="adminNom" required maxLength={200} autoComplete="off" />
+            </label>
+          </div>
+          <h2>{t("orgs.suppleant_titre")}</h2>
+          <p className="discret">{t("orgs.suppleant_aide")}</p>
+          <div className="grille-champs">
+            <label className="champ">
+              <span>{t("orgs.suppleant_email")}</span>
+              <input type="email" name="suppleantEmail" required maxLength={254} autoComplete="off" />
+            </label>
+            <label className="champ">
+              <span>{t("orgs.suppleant_nom")}</span>
+              <input type="text" name="suppleantNom" required maxLength={200} autoComplete="off" />
             </label>
           </div>
         </FormulaireAction>

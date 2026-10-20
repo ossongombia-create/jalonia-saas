@@ -30,6 +30,8 @@ interface Organisation {
   nom: string;
   slug: string;
   admin: { email: string; nom: string };
+  /** Suppléant (obligatoire depuis le chantier 2) : invitation en attente, ou acceptée (compte créé) si `accepte`. */
+  suppleant?: { email: string; nom: string; accepte?: boolean };
   membres: Personne[];
 }
 
@@ -57,6 +59,8 @@ const AUTORISATIONS: Organisation[] = [
     nom: "Droits A",
     slug: "droits-a",
     admin: { email: "admin-a@droits.test", nom: "Admin A" },
+    // Binôme (chantier 2) : suppléant membre, inactif (lecteur).
+    suppleant: { email: "suppleant-a@droits.test", nom: "Suppléant A", accepte: true },
     membres: [
       { email: "redac-a@droits.test", nom: "Rédacteur A", roles: ["REDACTEUR"] },
       { email: "lect-a@droits.test", nom: "Lecteur A", roles: ["LECTEUR"] },
@@ -87,8 +91,10 @@ async function idDe(pool: Pool, email: string): Promise<string> {
 }
 
 async function creer(pool: Pool, superadmin: Acteur, o: Organisation): Promise<void> {
-  const creee = await creerOrganisation(pool, { nom: o.nom, slug: o.slug, admin: o.admin }, superadmin);
+  const suppleant = o.suppleant ?? { email: `suppleant@${o.slug}.test`, nom: `Suppléant ${o.nom}` };
+  const creee = await creerOrganisation(pool, { nom: o.nom, slug: o.slug, admin: o.admin, suppleant }, superadmin);
   await accepterAvecNouveauCompte(pool, creee.invitation.jeton, { nom: o.admin.nom, motDePasse: MDP, langue: "fr" }, RESEAU);
+  if (suppleant.accepte) await accepterAvecNouveauCompte(pool, creee.invitationSuppleant.jeton, { nom: suppleant.nom, motDePasse: MDP, langue: "fr" }, RESEAU);
   const lue = await lireOrganisation(pool, creee.organisationId);
   if (!lue) throw new Error(`organisation introuvable : ${o.slug}`);
   const cible: OrganisationCible = { id: lue.id, schemaName: lue.schemaName, roleName: lue.roleName };
@@ -97,7 +103,7 @@ async function creer(pool: Pool, superadmin: Acteur, o: Organisation): Promise<v
     const invitation = await inviter(pool, cible, { email: m.email, nom: m.nom, roles: m.roles }, admin);
     await accepterAvecNouveauCompte(pool, invitation.jeton, { nom: m.nom, motDePasse: MDP, langue: m.langue ?? "fr" }, RESEAU);
   }
-  console.log(`✔ ${o.slug} : ${1 + o.membres.length} comptes`);
+  console.log(`✔ ${o.slug} : ${1 + (suppleant.accepte ? 1 : 0) + o.membres.length} comptes`);
 }
 
 async function principal(): Promise<void> {

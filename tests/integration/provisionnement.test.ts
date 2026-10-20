@@ -72,7 +72,7 @@ describe("création d'une organisation", () => {
     expect(verif.role).toEqual({ rolcanlogin: false });
     // L'administrateur a accepté l'invitation en créant son compte : il a choisi son mot de passe.
     expect(verif.admin).toEqual([{ roles: ["ADMIN_ORGANISATION"], doit_changer_mdp: false }]);
-    expect(verif.journal).toEqual(["ORGANISATION_CREEE", "INVITATION_CREEE", "MEMBRE_AJOUTE"]);
+    expect(verif.journal).toEqual(["ORGANISATION_CREEE", "INVITATION_CREEE", "INVITATION_CREEE", "MEMBRE_AJOUTE"]); // invitations : titulaire, suppléant
   });
 
   it("identifiant court déjà pris : refus clair et RIEN n'est créé", async () => {
@@ -80,7 +80,7 @@ describe("création d'une organisation", () => {
     const slug = (await listerOrganisations(app)).find((o) => o.id === org.organisationId)!.slug;
     const avant = await compter();
     const cle = await cleErreur(
-      creerOrganisation(app, { nom: "Doublon", slug, admin: { email: `x-${suffixe()}@test.local`, nom: "X" } }, superadmin),
+      creerOrganisation(app, { nom: "Doublon", slug, admin: { email: `x-${suffixe()}@test.local`, nom: "X" }, suppleant: { email: `sx-${suffixe()}@test.local`, nom: "SX" } }, superadmin),
     );
     expect(cle).toBe("erreur.slug_pris");
     expect(await compter()).toEqual(avant);
@@ -90,7 +90,7 @@ describe("création d'une organisation", () => {
     const avant = await compter();
     // Adresse invalide pour la base (la validation des formulaires l'aurait refusée plus tôt) : l'invitation, créée
     // en dernier, échoue ; tout ce qui précède est annulé.
-    const code = await codeErreur(creerOrganisation(app, { nom: "Incomplète", slug: `inc-${suffixe()}`, admin: { email: "PAS-UNE-ADRESSE", nom: "N" } }, superadmin));
+    const code = await codeErreur(creerOrganisation(app, { nom: "Incomplète", slug: `inc-${suffixe()}`, admin: { email: "PAS-UNE-ADRESSE", nom: "N" }, suppleant: { email: `sn-${suffixe()}@test.local`, nom: "SN" } }, superadmin));
     expect(code).toBe("23514");
     expect(await compter()).toEqual(avant);
   });

@@ -10,6 +10,10 @@
 // soi-même, et un compte superadmin ne peut pas accepter d'invitation (la base le refuse aussi). Pour intervenir
 // dans une organisation, le superadmin ouvre un accès d'urgence (acces-urgence/service.ts).
 //
+// Binôme d'administration (chantier 2 du 20/10/2026) : une invitation peut porter une FONCTION — titulaire (rôle
+// Administrateur) ou suppléant (rôle Lecteur, suppléant inactif). À l'acceptation, l'adhésion la reprend ; un nouveau
+// titulaire (invitation réémise) retire au précédent sa fonction et son rôle Administrateur.
+//
 // Seule l'empreinte SHA-256 du jeton est rangée en base. Un lien inconnu, déjà utilisé, annulé ou expiré (ou dont
 // l'organisation est suspendue) reçoit toujours la même réponse : « lien non valable ».
 import { createHash, randomBytes } from "node:crypto";
@@ -40,10 +44,14 @@ export function cheminInvitation(jeton: string): string {
   return `/invitation/${jeton}`;
 }
 
+export type FonctionOrg = "titulaire" | "suppleant";
+
 export interface NouvelleInvitation {
   email: string; // déjà normalisé (minuscules)
   nom: string;
   roles: RoleOrganisation[];
+  /** Binôme d'administration : titulaire ({ADMIN_ORGANISATION}) ou suppléant ({LECTEUR}) — vérifié par la base. */
+  fonction?: FonctionOrg;
 }
 
 export interface InvitationCreee {
@@ -71,13 +79,13 @@ export async function creerInvitation(client: PoolClient, org: OrganisationCible
   );
   const jeton = randomBytes(32).toString("base64url");
   const r = await client.query<{ id: string; expire_le: Date }>(
-    `INSERT INTO platform.invitations (organisation_id, email, nom, roles, jeton_empreinte, cree_par, expire_le)
-     VALUES ($1, $2, $3, $4, $5, $6, now() + ($7::int * interval '1 hour'))
+    `INSERT INTO platform.invitations (organisation_id, email, nom, roles, jeton_empreinte, cree_par, expire_le, fonction_org)
+     VALUES ($1, $2, $3, $4, $5, $6, now() + ($7::int * interval '1 hour'), $8)
      RETURNING id, expire_le`,
-    [org.id, entree.email, entree.nom, entree.roles, empreinteJeton(jeton), acteur.id, DUREE_INVITATION_HEURES],
+    [org.id, entree.email, entree.nom, entree.roles, empreinteJeton(jeton), acteur.id, DUREE_INVITATION_HEURES, entree.fonction ?? null],
   );
   const id = r.rows[0]!.id;
-  const details: Record<string, unknown> = { email: entree.email, roles: entree.roles };
+  const details: Record<string, unknown> = { email: entree.email, roles: entree.roles, ...(entree.fonction ? { fonction: entree.fonction } : {}) };
   if (remplacees.rowCount) details.remplace = true;
   await journaliserLesDeux(client, org, { action: "INVITATION_CREEE", ...traceActeur(acteur), cibleType: "invitation", cibleId: id, details });
   return { id, jeton, expireLe: r.rows[0]!.expire_le };
@@ -166,14 +174,15 @@ interface InvitationVerrouillee {
   id: string;
   email: string;
   roles: RoleOrganisation[];
+  fonction: FonctionOrg | null;
   org: OrganisationCible;
 }
 
 /** Relit et VERROUILLE l'invitation (deux acceptations simultanées : la seconde trouve le lien déjà utilisé). */
 async function verrouiller(client: PoolClient, jeton: string): Promise<InvitationVerrouillee> {
   if (!jetonBienForme(jeton)) throw new ErreurMetier("invitation.invalide");
-  const r = await client.query<{ id: string; email: string; roles: RoleOrganisation[]; organisation_id: string; schema_name: string; role_name: string }>(
-    `SELECT i.id, i.email, i.roles, i.organisation_id, o.schema_name, o.role_name
+  const r = await client.query<{ id: string; email: string; roles: RoleOrganisation[]; fonction_org: FonctionOrg | null; organisation_id: string; schema_name: string; role_name: string }>(
+    `SELECT i.id, i.email, i.roles, i.fonction_org, i.organisation_id, o.schema_name, o.role_name
        FROM platform.invitations i JOIN platform.organisations o ON o.id = i.organisation_id
       WHERE i.jeton_empreinte = $1 AND ${CONDITIONS_VALIDE}
       FOR UPDATE OF i`,
@@ -181,19 +190,47 @@ async function verrouiller(client: PoolClient, jeton: string): Promise<Invitatio
   );
   const i = r.rows[0];
   if (!i) throw new ErreurMetier("invitation.invalide");
-  return { id: i.id, email: i.email, roles: i.roles, org: { id: i.organisation_id, schemaName: i.schema_name, roleName: i.role_name } };
+  return { id: i.id, email: i.email, roles: i.roles, fonction: i.fonction_org, org: { id: i.organisation_id, schemaName: i.schema_name, roleName: i.role_name } };
 }
 
 /** Adhésion (si elle n'existe pas déjà), invitation marquée acceptée, journaux. */
 async function rattacher(client: PoolClient, inv: InvitationVerrouillee, personne: Acteur): Promise<void> {
   const deja = await client.query("SELECT 1 FROM platform.adhesions WHERE utilisateur_id = $1 AND organisation_id = $2", [personne.id, inv.org.id]);
   if (!deja.rowCount) {
-    await client.query("INSERT INTO platform.adhesions (utilisateur_id, organisation_id, roles) VALUES ($1, $2, $3)", [personne.id, inv.org.id, inv.roles]);
+    // Nouveau titulaire (invitation réémise après la perte de l'ancien) : l'ancien titulaire perd D'ABORD sa fonction
+    // et son rôle Administrateur (un seul titulaire par organisation ; le titulaire est toujours administrateur).
+    if (inv.fonction === "titulaire") await destituerTitulaire(client, inv.org, personne);
+    await client.query(
+      "INSERT INTO platform.adhesions (utilisateur_id, organisation_id, roles, fonction_org, statut_suppleant) VALUES ($1, $2, $3, $4, $5)",
+      [personne.id, inv.org.id, inv.roles, inv.fonction, inv.fonction === "suppleant" ? "inactif" : null],
+    );
   }
   await client.query("UPDATE platform.invitations SET acceptee_le = now(), acceptee_par = $2 WHERE id = $1", [inv.id, personne.id]);
   if (!deja.rowCount) {
     await journaliserLesDeux(client, inv.org, {
       action: "MEMBRE_AJOUTE", ...traceActeur(personne), cibleType: "utilisateur", cibleId: personne.id, details: { email: inv.email, roles: inv.roles, invitation: inv.id },
+    });
+  }
+}
+
+/**
+ * Retire à l'éventuel titulaire actuel sa fonction, son absence et son rôle Administrateur (Lecteur s'il ne lui reste
+ * aucun rôle), dans la transaction en cours. Tracé dans les deux journaux (ADMIN_TITULAIRE_REMPLACE).
+ */
+async function destituerTitulaire(client: PoolClient, org: OrganisationCible, nouveau: Acteur): Promise<void> {
+  const r = await client.query<{ utilisateur_id: string }>(
+    `UPDATE platform.adhesions
+        SET fonction_org = NULL, date_absence_debut = NULL, motif_absence = NULL,
+            roles = CASE WHEN cardinality(array_remove(roles, 'ADMIN_ORGANISATION')) = 0 THEN '{LECTEUR}'::text[] ELSE array_remove(roles, 'ADMIN_ORGANISATION') END
+      WHERE organisation_id = $1 AND fonction_org = 'titulaire'
+      RETURNING utilisateur_id`,
+    [org.id],
+  );
+  const ancien = r.rows[0]?.utilisateur_id;
+  if (ancien) {
+    await journaliserLesDeux(client, org, {
+      action: "ADMIN_TITULAIRE_REMPLACE", ...traceActeur(nouveau), cibleType: "utilisateur", cibleId: nouveau.id,
+      details: { ancien, nouveau: nouveau.id, raison: "invitation_titulaire" },
     });
   }
 }

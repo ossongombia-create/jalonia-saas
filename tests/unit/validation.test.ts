@@ -14,7 +14,7 @@ describe("validation des formulaires", () => {
   });
 
   it("identifiant court : format strict", () => {
-    const base = { nom: "Site", adminEmail: "a@b.co", adminNom: "A", adminMotDePasse: "" };
+    const base = { nom: "Site", adminEmail: "a@b.co", adminNom: "A", suppleantEmail: "s@b.co", suppleantNom: "S" };
     for (const ok of ["site-port-gentil", "a", "abc123", "x-1"]) expect(schemaNouvelleOrganisation.safeParse({ ...base, slug: ok }).success, ok).toBe(true);
     for (const ko of ["-debut", "fin-", "avec espace", "accentué", "a".repeat(51), "a_b", ""]) {
       expect(schemaNouvelleOrganisation.safeParse({ ...base, slug: ko }).success, ko).toBe(false);
