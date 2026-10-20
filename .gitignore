@@ -19,6 +19,8 @@ npm-debug.log*
 # fichiers d'environnement : JAMAIS dans Git (mots de passe, secrets). Seul le modèle est versionné.
 .env*
 !.env.example
+# … y compris une copie de /etc/jalonia/jalonia.env (ou de tout autre *.env du serveur) posée dans le dépôt.
+*.env
 
 # typescript
 *.tsbuildinfo
