@@ -13,6 +13,7 @@ import type { EtatAction } from "@/lib/etat-action";
 import { poolApplication } from "@/server/db/pools";
 import { abandonnerSessionEnAttente, terminerSession, noterOrganisationDeSession } from "@/server/auth/sessions";
 import { changerLangue, changerMotDePasse } from "@/server/utilisateurs/service";
+import { refuserEntreeRoleRetire } from "@/server/acces-urgence/service";
 import { COOKIE_ORGANISATION, accueilDe, exigerContexte, lireConnexionEnAttente, lireContexte, lireLangue } from "@/server/web/contexte";
 import { poserCookieLangue, poserCookieOrganisation } from "@/server/web/cookies";
 import { champ, executer, valider } from "@/server/web/actions";
@@ -73,7 +74,14 @@ export async function actionChoisirOrganisation(formulaire: FormData): Promise<v
   const ctx = await exigerContexte();
   const lu = identifiant.safeParse(champ(formulaire, "organisationId"));
   const choisie = lu.success ? ctx.adhesions.find((a) => a.id === lu.data && a.statut === "active") : undefined;
-  if (!choisie) redirect("/choisir-organisation");
+  if (!choisie) {
+    // Superadmin dont l'accès d'urgence ouvert porte un rôle retiré depuis (« Administrateur », chantier 1) : le
+    // contexte l'a écarté ; la tentative est refusée (erreur.role_invalide) et tracée dans les deux journaux.
+    if (lu.success && ctx.utilisateur.estSuperadmin && (await refuserEntreeRoleRetire(poolApplication(), lu.data, ctx.acteur))) {
+      redirect(`/plateforme/organisations/${lu.data}?refus=role_invalide`);
+    }
+    redirect("/choisir-organisation");
+  }
   await poserCookieOrganisation(choisie.id);
   await noterOrganisationDeSession(poolApplication(), ctx.sessionId, choisie.id);
   redirect("/app");

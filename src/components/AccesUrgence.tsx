@@ -1,11 +1,13 @@
 // Accès d'urgence de l'exploitant (décision n° 1 du 19/10/2026). Montré au superadmin (page de l'organisation, avec
 // le formulaire d'ouverture et la fermeture) ET à l'administrateur de l'organisation (page « Membres », en lecture
-// seule) : l'organisation voit qui est entré, quand, pourquoi et avec quel rôle.
+// seule) : l'organisation voit qui est entré, quand, pourquoi et avec quel rôle. Rôles permis : Rédacteur ou Lecteur
+// (Lecteur présélectionné). Un accès ouvert avec un rôle retiré depuis (« Administrateur », chantier 1) reste affiché
+// et fermable, mais sans bouton « Entrer ».
 import { actionFermerAccesUrgence, actionOuvrirAccesUrgence } from "@/actions/plateforme";
 import { actionChoisirOrganisation } from "@/actions/compte";
 import { formaterDate } from "@/lib/format";
 import type { Contexte } from "@/server/web/contexte";
-import { DUREES_ACCES_URGENCE, ROLES_ACCES_URGENCE, type LigneAccesUrgence } from "@/server/acces-urgence/service";
+import { DUREES_ACCES_URGENCE, estRoleAccesUrgence, ROLE_ACCES_URGENCE_DEFAUT, ROLES_ACCES_URGENCE, type LigneAccesUrgence } from "@/server/acces-urgence/service";
 import { FormulaireAction } from "./FormulaireAction";
 
 interface Props {
@@ -20,7 +22,8 @@ interface Props {
 
 export function AccesUrgence({ ctx, organisationId, acces, gestion, suspendue = false }: Props) {
   const { t, langue, fuseau } = ctx;
-  const monAcces = gestion ? acces.find((a) => a.etat === "actif" && a.superadminEmail === ctx.utilisateur.email) : undefined;
+  const monAccesOuvert = gestion ? acces.find((a) => a.etat === "actif" && a.superadminEmail === ctx.utilisateur.email) : undefined;
+  const monAcces = monAccesOuvert && estRoleAccesUrgence(monAccesOuvert.role) ? monAccesOuvert : undefined;
   return (
     <section className="carte" id="acces-urgence">
       <h2>{t("acces.titre")}</h2>
@@ -33,12 +36,12 @@ export function AccesUrgence({ ctx, organisationId, acces, gestion, suspendue = 
           </form>
         </div>
       ) : null}
-      {gestion && !monAcces && !suspendue ? (
+      {gestion && !monAccesOuvert && !suspendue ? (
         <FormulaireAction action={actionOuvrirAccesUrgence} libelle={t("acces.ouvrir")} libelleEnCours={t("commun.en_cours")} variante="danger" confirmation={t("acces.confirmation")}>
           <input type="hidden" name="organisationId" value={organisationId} />
           <label className="champ">
             <span>{t("acces.role")}</span>
-            <select name="role" defaultValue="ADMIN_ORGANISATION">
+            <select name="role" defaultValue={ROLE_ACCES_URGENCE_DEFAUT}>
               {ROLES_ACCES_URGENCE.map((r) => (
                 <option key={r} value={r}>{t(`role.${r}`)}</option>
               ))}
@@ -83,6 +86,7 @@ export function AccesUrgence({ ctx, organisationId, acces, gestion, suspendue = 
                   <td>{a.motif}</td>
                   <td>
                     <span className={a.etat === "actif" ? "etiquette etiquette-alerte" : "etiquette"}>{t(`acces.etat_${a.etat}`)}</span>
+                    {a.etat === "actif" && !estRoleAccesUrgence(a.role) ? <><br /><span className="etiquette etiquette-erreur" data-role-retire>{t("acces.role_retire")}</span></> : null}
                     <br />
                     <span className="discret petit">
                       {a.etat === "actif" ? t("acces.jusqua", { date: formaterDate(langue, a.expireLe, fuseau) })

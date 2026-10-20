@@ -1,14 +1,15 @@
 "use server";
-// Gestion des membres d'une organisation (invitations, rôles, retrait). Deux personnes peuvent le faire :
-//   - le superadmin, pour n'importe quelle organisation ;
-//   - l'administrateur d'une organisation, pour l'organisation ACTUELLEMENT OUVERTE uniquement
-//     (l'identifiant envoyé par le formulaire doit être celui de son organisation, sinon refus).
+// Gestion des membres d'une organisation (invitations, rôles, retrait) : réservée à l'administrateur de
+// l'organisation, pour l'organisation ACTUELLEMENT OUVERTE uniquement (l'identifiant envoyé par le formulaire doit
+// être celui de son organisation, sinon refus). Le superadmin n'y a AUCUN droit (chantier 1 du 20/10/2026), même
+// en accès d'urgence (rôles Rédacteur ou Lecteur seulement) : il crée l'organisation et son administrateur initial,
+// et peut seulement réémettre l'invitation d'administrateur quand l'organisation n'en a plus aucun d'actif
+// (actionReemettreInvitationAdmin, src/actions/plateforme.ts).
 import { z } from "zod";
 import { aLeDroit } from "@/lib/rbac";
 import { identifiant, schemaInvitation, roles as schemaRoles } from "@/lib/validation";
 import type { EtatAction } from "@/lib/etat-action";
 import { poolApplication } from "@/server/db/pools";
-import { lireOrganisation } from "@/server/organisations/service";
 import { modifierRoles, retirerMembre, type OrganisationCible } from "@/server/membres/service";
 import { annulerInvitation, cheminInvitation, DUREE_INVITATION_HEURES, inviter } from "@/server/invitations/service";
 import { ErreurMetier } from "@/server/erreurs";
@@ -18,11 +19,6 @@ import { envoyerInvitationCourriel } from "@/server/notifications/courriel";
 
 async function autoriser(ctx: Contexte, formulaire: FormData): Promise<OrganisationCible & { nom: string }> {
   const organisationId = valider(identifiant, champ(formulaire, "organisationId"));
-  if (ctx.utilisateur.estSuperadmin) {
-    const org = await lireOrganisation(poolApplication(), organisationId);
-    if (!org) throw new ErreurMetier("erreur.introuvable");
-    return { id: org.id, nom: org.nom, schemaName: org.schemaName, roleName: org.roleName };
-  }
   const ouverte = ctx.organisation;
   if (!ouverte || ouverte.id !== organisationId || !aLeDroit(ouverte.roles, "organisation.membres.gerer")) {
     throw new ErreurMetier("erreur.interdit");

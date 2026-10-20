@@ -316,8 +316,11 @@ indique le prochain passage.
 
 ## Étape 15 — Courriels transactionnels
 
-Dans Brevo, vérifiez un expéditeur sur votre domaine puis créez/récupérez une **clé SMTP** (pas la clé API). Sur le
-VPS, ajoutez ces valeurs à `/etc/jalonia/jalonia.env` avec `sudoedit` :
+Dans Brevo, **authentifiez le domaine** d'envoi (Expéditeurs, domaines et IP dédiées → Domaines) : ajoutez chez le
+gestionnaire DNS les enregistrements DKIM et DMARC que Brevo affiche, puis attendez qu'il les marque comme vérifiés.
+Sans cela, les courriels risquent de partir en indésirables. Vérifiez ensuite un expéditeur sur ce domaine, puis
+créez/récupérez une **clé SMTP** (pas la clé API). Sur le VPS, ajoutez ces valeurs à `/etc/jalonia/jalonia.env` avec
+`sudoedit` :
 
 ```ini
 SMTP_HOTE=smtp-relay.brevo.com
@@ -345,6 +348,10 @@ journalctl -u jalonia-courriels -n 5 --no-pager
 Les invitations sont envoyées après leur création. Les notifications d'approbation, rappels et escalades sont mises
 en file dans la même transaction que leur événement, puis envoyées par le service isolé dans les cinq minutes.
 Sans SMTP configuré, les notifications de l'application continuent de fonctionner et aucun courriel n'est tenté.
+
+**Envoi de recette** : invitez une adresse de test (interface, page « Membres ») et vérifiez que le courriel arrive
+dans la boîte de réception, pas dans les indésirables. Depuis la v1.8, la réinitialisation d'un mot de passe par le
+superadmin (lien à usage unique) **exige** ce SMTP : sans lui, elle est refusée.
 
 ## Étape 16 — Vérifier une restauration
 

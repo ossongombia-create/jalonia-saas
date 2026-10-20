@@ -36,7 +36,7 @@ const REGLES = {
   actionDeconnexion: { regle: "sa propre session (aucun paramètre)", simple: true },
   actionContinuer: { regle: "session (redirection seulement)", simple: true },
   actionChangerLangue: { regle: "publique ; si connecté : son propre compte", simple: true },
-  actionChoisirOrganisation: { regle: "une organisation dont on est membre", simple: true },
+  actionChoisirOrganisation: { regle: "une organisation dont on est membre (superadmin : accès d'urgence valable, rôle encore permis ; rôle retiré : refusé et tracé)", simple: true },
   actionChangerMotDePasse: { regle: "son propre compte, mot de passe actuel exigé" },
   actionCreerDocument: { regle: "documents.rediger dans l'organisation OUVERTE" },
   actionSupprimerDocument: { regle: "documents.supprimer dans l'organisation OUVERTE (mise à la corbeille)" },
@@ -51,7 +51,7 @@ const REGLES = {
   actionModifierParametres: { regle: "organisation.parametres dans l'organisation OUVERTE" },
   actionToutMarquerLu: { regle: "membre de l'organisation OUVERTE ; seulement SES notifications" },
   actionTransitionDocument: { regle: "droit de la décision dans l'organisation OUVERTE (soumettre, réviser : rédaction ; vérifier : vérificateur ; approuver, archiver : approbateur) ; document de CETTE organisation ; séparation des tâches" },
-  actionInviterMembre: { regle: "superadmin, ou organisation.membres.gerer dans l'organisation OUVERTE" },
+  actionInviterMembre: { regle: "organisation.membres.gerer dans l'organisation OUVERTE ; jamais le superadmin, même en accès d'urgence (chantier 1)" },
   actionAnnulerInvitation: { regle: "idem ; invitation de CETTE organisation" },
   actionModifierRoles: { regle: "idem ; membre de CETTE organisation" },
   actionRetirerMembre: { regle: "idem ; membre de CETTE organisation" },
@@ -72,7 +72,8 @@ const REGLES = {
   actionReinitialiserMotDePasse: { regle: "superadmin" },
   actionReinitialiserSecondFacteur: { regle: "superadmin" },
   actionEnregistrerMaintenance: { regle: "superadmin (activer comme lever la maintenance)" },
-  actionOuvrirAccesUrgence: { regle: "superadmin ; motif, rôle (administrateur, rédacteur, lecteur), durée (1, 4, 8, 24 h) ; notifié aux administrateurs" },
+  actionOuvrirAccesUrgence: { regle: "superadmin ; motif, rôle (rédacteur ou lecteur ; plus administrateur depuis le chantier 1), durée (1, 4, 8, 24 h) ; notifié aux administrateurs" },
+  actionReemettreInvitationAdmin: { regle: "superadmin ; organisation ACTIVE sans AUCUN administrateur actif ; rôle Administrateur forcé (chantier 1)" },
   actionFermerAccesUrgence: { regle: "superadmin ; accès encore valable" },
   actionReinitialiserParLien: { regle: "publique : lien de réinitialisation valable, personne connectée" },
   actionChangerModeValidation: { regle: "superadmin (mode « petite organisation » ou standard), tracé" },
@@ -629,8 +630,12 @@ let ACTIONS;
   const enAttente = (email, org) => sql(`SELECT id FROM platform.invitations WHERE email = '${email}' AND organisation_id = '${org}' AND acceptee_le IS NULL AND annulee_le IS NULL`);
   const invA = await cas("adminA", "actionInviterMembre", invitationA, "succes", { effet: (r) => Boolean(r.lien) && enAttente("invite-a@droits.test", ORG_A) !== "" });
   assert.ok(invA.lien);
-  const invSA = await cas("superadmin", "actionInviterMembre", { ...invitationA, email: "invite-sa@droits.test", nom: "Invité SA" }, "succes",
-    { page: `/plateforme/organisations/${ORG_A}`, effet: (r) => Boolean(r.lien) && enAttente("invite-sa@droits.test", ORG_A) !== "" });
+  // Chantier 1 (20/10/2026) : le superadmin n'a AUCUN droit sur les membres, depuis sa page comme depuis l'organisation.
+  await cas("superadmin", "actionInviterMembre", { ...invitationA, email: "invite-sa@droits.test", nom: "Invité SA" }, "erreur.interdit",
+    { page: `/plateforme/organisations/${ORG_A}`, note: "superadmin : aucun droit sur les membres" });
+  // (« invite-sa » : la 2e invitation de A, faite désormais par l'administrateur ; elle sert aux tests d'acceptation.)
+  const invSA = await cas("adminA", "actionInviterMembre", { ...invitationA, email: "invite-sa@droits.test", nom: "Invité SA" }, "succes",
+    { effet: (r) => Boolean(r.lien) && enAttente("invite-sa@droits.test", ORG_A) !== "" });
   const JETON_SA = invSA.lien.split("/").pop();
 
   // Données communes (adhésions, invitations, journal de la plateforme : tables partagées, filtrées par le code et
@@ -648,6 +653,7 @@ let ACTIONS;
   for (const qui of ["faux", "attente"]) await cas(qui, "actionAnnulerInvitation", annulation, "session");
   for (const qui of ["lecteurA", "redacA", "verifA", "adminB"]) await cas(qui, "actionAnnulerInvitation", annulation, "erreur.interdit");
   await cas("adminB", "actionAnnulerInvitation", { organisationId: ORG_B, invitationId: INV_A }, "erreur.introuvable", { note: "invitation de A depuis B" });
+  await cas("superadmin", "actionAnnulerInvitation", annulation, "erreur.interdit", { page: `/plateforme/organisations/${ORG_A}`, note: "superadmin : aucun droit sur les membres" });
   await cas("adminA", "actionAnnulerInvitation", annulation, "succes", { effet: () => sql(`SELECT annulee_le IS NOT NULL FROM platform.invitations WHERE id = '${INV_A}'`) === "t" });
 
   const rolesDe = (u) => sql(`SELECT roles FROM platform.adhesions WHERE utilisateur_id = '${u}' AND organisation_id = '${ORG_A}'`);
@@ -656,12 +662,13 @@ let ACTIONS;
   for (const qui of ["lecteurA", "redacA", "verifA", "adminB"]) await cas(qui, "actionModifierRoles", roles, "erreur.interdit");
   await cas("adminB", "actionModifierRoles", { ...roles, organisationId: ORG_B }, "erreur.introuvable", { note: "membre de A depuis B" });
   await cas("adminA", "actionModifierRoles", roles, "succes", { effet: () => rolesDe(CIBLE_A) === "{VERIFICATEUR,LECTEUR}" || rolesDe(CIBLE_A) === "{LECTEUR,VERIFICATEUR}" });
-  await cas("superadmin", "actionModifierRoles", { ...roles, roles: ["LECTEUR"] }, "succes", { page: `/plateforme/organisations/${ORG_A}`, effet: () => rolesDe(CIBLE_A) === "{LECTEUR}" });
+  await cas("superadmin", "actionModifierRoles", { ...roles, roles: ["LECTEUR"] }, "erreur.interdit", { page: `/plateforme/organisations/${ORG_A}`, note: "superadmin : aucun droit sur les membres" });
 
   const retrait = { organisationId: ORG_A, utilisateurId: RETRAIT_A };
   for (const qui of ["faux", "attente"]) await cas(qui, "actionRetirerMembre", retrait, "session");
   for (const qui of ["lecteurA", "redacA", "verifA", "adminB"]) await cas(qui, "actionRetirerMembre", retrait, "erreur.interdit");
   await cas("adminB", "actionRetirerMembre", { ...retrait, organisationId: ORG_B }, "erreur.introuvable", { note: "membre de A depuis B" });
+  await cas("superadmin", "actionRetirerMembre", retrait, "erreur.interdit", { page: `/plateforme/organisations/${ORG_A}`, note: "superadmin : aucun droit sur les membres" });
   await cas("adminA", "actionRetirerMembre", retrait, "succes", { effet: () => rolesDe(RETRAIT_A) === "" });
 
   // ======================================================================================== actions : invitations
@@ -726,8 +733,9 @@ let ACTIONS;
   await cas("redacA", "actionRegenererCodesSecours", { code: "000000" }, "mfa.inactif");
 
   // Acceptation par un compte existant (fait ici : le vérificateur rejoint B).
-  const invV = await cas("superadmin", "actionInviterMembre", { organisationId: ORG_B, email: "verif-a@droits.test", nom: "Vérificateur A", roles: "LECTEUR" }, "succes",
-    { page: `/plateforme/organisations/${ORG_B}` });
+  const invitationB = { organisationId: ORG_B, email: "verif-a@droits.test", nom: "Vérificateur A", roles: "LECTEUR" };
+  await cas("superadmin", "actionInviterMembre", invitationB, "erreur.interdit", { page: `/plateforme/organisations/${ORG_B}`, note: "superadmin : aucun droit sur les membres" });
+  const invV = await cas("adminB", "actionInviterMembre", invitationB, "succes");
   await cas("verifA", "actionAccepterInvitation", { jeton: invV.lien.split("/").pop() }, "redirection:/app",
     { effet: () => sql(`SELECT count(*) FROM platform.adhesions a JOIN platform.utilisateurs u ON u.id = a.utilisateur_id WHERE u.email = 'verif-a@droits.test' AND a.organisation_id = '${ORG_B}'`) === "1" });
 
@@ -743,6 +751,8 @@ let ACTIONS;
     () => sql("SELECT count(*) FROM platform.organisations WHERE slug = 'droits-c'") === "1");
   const statutB = () => sql(`SELECT statut FROM platform.organisations WHERE id = '${ORG_B}'`);
   await plateforme("actionChangerStatutOrganisation", { organisationId: ORG_B, statut: "suspendue" }, () => statutB() === "suspendue");
+  await cas("superadmin", "actionReemettreInvitationAdmin", { organisationId: ORG_B, email: "admin-b2@droits.test", nom: "Admin B2" }, "erreur.organisation_suspendue",
+    { page: `/plateforme/organisations/${ORG_B}`, note: "organisation suspendue" });
   await cas("superadmin", "actionChangerStatutOrganisation", { organisationId: ORG_B, statut: "active" }, "succes", { effet: () => statutB() === "active", note: "remise en service" });
   const statutJ = () => sql(`SELECT statut FROM platform.utilisateurs WHERE id = '${JETABLE}'`);
   await plateforme("actionDesactiverUtilisateur", { utilisateurId: JETABLE }, () => statutJ() === "desactive");
@@ -774,6 +784,7 @@ let ACTIONS;
   await cas("superadmin", "actionOuvrirAccesUrgence", { ...ouverture, motif: "court" }, "acces.motif_requis", { page: PAGE_ORG_B, note: "motif trop court" });
   await cas("superadmin", "actionOuvrirAccesUrgence", { ...ouverture, dureeHeures: "48" }, "acces.duree_invalide", { page: PAGE_ORG_B, note: "48 h" });
   await cas("superadmin", "actionOuvrirAccesUrgence", { ...ouverture, role: "APPROBATEUR" }, "erreur.role_invalide", { page: PAGE_ORG_B, note: "rôle hors liste" });
+  await cas("superadmin", "actionOuvrirAccesUrgence", { ...ouverture, role: "ADMIN_ORGANISATION" }, "erreur.role_invalide", { page: PAGE_ORG_B, note: "administrateur retiré (chantier 1)" });
   const notifiesAvant = notificationsAccesB();
   await cas("superadmin", "actionOuvrirAccesUrgence", ouverture, "succes", {
     page: PAGE_ORG_B, effet: () => accesOuvertsB() === "1" && notificationsAccesB() === notifiesAvant + adminsB,
@@ -789,6 +800,21 @@ let ACTIONS;
   await cas("superadmin", "actionFermerAccesUrgence", { accesId: ACCES_B }, "acces.deja_ferme", { page: PAGE_ORG_B, note: "déjà fermé" });
   assert.equal((await api("superadmin", "GET", "/api/editeur/contexte")).statut, 403, "accès fermé : le superadmin n'entre plus dans B");
 
+  // Accès « Administrateur » ouvert AVANT le chantier 1 (inséré en base : la contrainte l'accepte encore) : écarté du
+  // contexte, montré « rôle retiré » sans « Entrer », toute tentative d'entrée refusée et tracée ; il reste fermable.
+  const SUPERADMIN_ID = idDe(SUPERADMIN.email);
+  const ACCES_ANCIEN = sql(`INSERT INTO platform.acces_urgence (organisation_id, superadmin_id, role, motif, duree_heures, expire_le)
+    VALUES ('${ORG_B}', '${SUPERADMIN_ID}', 'ADMIN_ORGANISATION', 'Accès ouvert avant le chantier 1 (e2e)', 4, now() + interval '4 hours') RETURNING id`).split("\n")[0];
+  assert.equal((await api("superadmin", "GET", "/api/editeur/contexte")).statut, 403, "rôle retiré : le superadmin n'entre pas dans B");
+  const pageB = await (await ctx.superadmin.request.get(BASE + PAGE_ORG_B)).text();
+  assert.ok(pageB.includes("data-role-retire") && !pageB.includes(">Entrer dans l'organisation<"), "accès au rôle retiré : signalé, sans bouton « Entrer »");
+  const refusB = () => sql(`SELECT count(*) FROM platform.journal WHERE organisation_id = '${ORG_B}' AND action = 'ACCES_URGENCE_REFUSE'`);
+  const refusAvant = refusB();
+  await cas("superadmin", "actionChoisirOrganisation", { organisationId: ORG_B }, `redirection:${PAGE_ORG_B}?refus=role_invalide`,
+    { page: PAGE_ORG_B, note: "accès au rôle retiré : refusé et tracé", effet: () => Number(refusB()) === Number(refusAvant) + 1 });
+  assert.equal((await api("superadmin", "GET", "/api/editeur/contexte")).statut, 403, "toujours hors de B après la tentative");
+  await cas("superadmin", "actionFermerAccesUrgence", { accesId: ACCES_ANCIEN }, "succes", { page: PAGE_ORG_B, note: "accès au rôle retiré : fermable", effet: () => accesOuvertsB() === "0" });
+
   // Mode de validation (décision n° 2 du 19/10/2026) : réservé au superadmin ; A revient en mode standard ensuite.
   const PAGE_ORG_A = `/plateforme/organisations/${ORG_A}`;
   const modeA = () => sql(`SELECT mode_validation FROM platform.organisations WHERE id = '${ORG_A}'`);
@@ -798,6 +824,34 @@ let ACTIONS;
   await cas("superadmin", "actionChangerModeValidation", { organisationId: ORG_A, mode: "libre" }, "erreur.saisie_invalide", { page: PAGE_ORG_A, note: "mode inconnu" });
   await cas("superadmin", "actionChangerModeValidation", versPetite, "succes", { page: PAGE_ORG_A, effet: () => modeA() === "petite_organisation" });
   await cas("superadmin", "actionChangerModeValidation", { organisationId: ORG_A, mode: "standard" }, "succes", { page: PAGE_ORG_A, effet: () => modeA() === "standard", note: "retour au mode standard" });
+
+  // Chantier 1 : page d'une organisation côté superadmin = membres et invitations en LECTURE SEULE ; accès d'urgence
+  // Rédacteur ou Lecteur seulement, Lecteur présélectionné ; réémission de l'administrateur seulement sans
+  // administrateur actif (A en a un : pas de formulaire).
+  const pageA = await (await ctx.superadmin.request.get(BASE + PAGE_ORG_A)).text();
+  assert.ok(pageA.includes('id="membres-lecture-seule"'), "page de A : membres en lecture seule");
+  for (const champ of ['name="roles"', 'name="utilisateurId"', 'name="invitationId"']) assert.ok(!pageA.includes(champ), `page de A : aucun formulaire de gestion des membres (${champ})`);
+  const roles_urgence = [...pageA.matchAll(/<option value="(ADMIN_ORGANISATION|REDACTEUR|LECTEUR|VERIFICATEUR|APPROBATEUR)"( selected="")?/g)].map((m) => m[1] + (m[2] ? "*" : ""));
+  assert.deepEqual(roles_urgence, ["REDACTEUR", "LECTEUR*"], "accès d'urgence : Rédacteur ou Lecteur, Lecteur présélectionné");
+  assert.ok(pageA.includes('data-admins="') && !pageA.includes('data-admins="0"') && !pageA.includes('name="email"'), "A a un administrateur : pas de réémission");
+  // Réémission de l'invitation d'administrateur : C (créée plus haut) n'a encore aucun administrateur actif.
+  const ORG_C = sql("SELECT id FROM platform.organisations WHERE slug = 'droits-c'");
+  const PAGE_ORG_C = `/plateforme/organisations/${ORG_C}`;
+  // Invitations en attente vues par le superadmin (page de C, qui en a une) : plus le conseil « invitez à nouveau »,
+  // réservé à l'administrateur, mais le texte propre au superadmin (HTML : apostrophes échappées).
+  const pageC = (await (await ctx.superadmin.request.get(BASE + PAGE_ORG_C)).text()).replaceAll("&#x27;", "'");
+  assert.ok(pageC.includes(texte("invitation.en_attente")), "page de C : invitations en attente affichées");
+  assert.ok(!pageC.includes("invitez à nouveau la même adresse"), "page superadmin : plus de conseil « invitez à nouveau »");
+  assert.ok(pageC.includes(texte("invitation.en_attente_aide_superadmin")), "page superadmin : aide propre au superadmin");
+  const reemission = { organisationId: ORG_C, email: "admin-c2@droits.test", nom: "Admin C2" };
+  const invitationsAdminC = () => sql(`SELECT count(*) FROM platform.invitations WHERE organisation_id = '${ORG_C}' AND roles = '{ADMIN_ORGANISATION}' AND acceptee_le IS NULL AND annulee_le IS NULL`);
+  for (const qui of ["faux", "attente"]) await cas(qui, "actionReemettreInvitationAdmin", reemission, "session", { page: PAGE_ORG_C });
+  for (const qui of NON_SUPERADMINS) await cas(qui, "actionReemettreInvitationAdmin", reemission, "404", { page: PAGE_ORG_C });
+  await cas("superadmin", "actionReemettreInvitationAdmin", { ...reemission, organisationId: ORG_A }, "orgs.admin_present", { page: PAGE_ORG_A, note: "A a un administrateur actif" });
+  const avantC = Number(invitationsAdminC());
+  await cas("superadmin", "actionReemettreInvitationAdmin", reemission, "succes", {
+    page: PAGE_ORG_C, effet: (r) => Boolean(r.lien) && Number(invitationsAdminC()) === avantC + 1,
+  });
 
   // Lien de réinitialisation (page publique) : la personne choisit SON mot de passe ; à usage unique ; refusé à une
   // personne déjà connectée. Le lien est créé ici directement en base (le serveur de test n'envoie pas de courriel).

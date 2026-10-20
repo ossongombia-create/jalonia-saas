@@ -13,9 +13,9 @@ des autres par PostgreSQL lui-même.
 | 2 — Documents Qualigramme | L'éditeur d'origine (cartographie N1 et fiches, procédures N2, instructions N3, logigramme, export et import Word, PDF, questionnement avec « sans objet », synthèse, modèles) en ligne : documents et cartographie enregistrés automatiquement dans l'espace de l'organisation, versions et conflits gérés, lecture seule selon le rôle, suppression tracée | ✔ |
 | 3 — Cycle de vie | Versions, vérification, approbation, publication, archivage, revues périodiques, notifications dans l'application et traçabilité | ✔ |
 | 4 — Pilotage | Risques / opportunités issus des documents, plan d'actions, objectifs et mesures d'indicateurs, tableaux de bord | ✔ |
-| 5 — Exploitation | Tâches quotidiennes, mode maintenance, invitations et notifications SMTP, sauvegardes chiffrées R2, vérification de restauration, santé HTTP et journaux systemd | code prêt; configuration du VPS à terminer |
+| 5 — Exploitation | Tâches quotidiennes, mode maintenance, invitations et notifications SMTP, sauvegardes chiffrées R2, vérification de restauration, santé HTTP et journaux systemd | ✔ en service (v1.8) ; SMTP Brevo configuré ; points ouverts ci-dessous |
 
-Pour terminer la mise en service de l'incrément 5 : vérifier la clé d'hôte SSH du VPS, configurer le bucket R2 et ses identifiants limités, configurer la clé SMTP Brevo et l'expéditeur vérifié, lancer `jalonia-verifier-restauration`, puis brancher un moniteur externe sur `/api/sante`. Voir les étapes 13 à 17 de `deploy/INSTALL-VPS.md`. Ne jamais ajouter de secrets aux fichiers suivis par Git.
+La v1.8 est en service sur `https://jalonia.mosa-apps.com` ; le SMTP Brevo est configuré et le domaine authentifié (DKIM, DMARC) depuis le 20/10/2026. Pour terminer l'incrément 5 : faire un envoi de recette réel, vérifier la clé d'hôte SSH du VPS, configurer le bucket R2 et ses identifiants limités, lancer `jalonia-verifier-restauration`, puis brancher un moniteur externe sur `/api/sante`. Voir les étapes 13 à 17 de `deploy/INSTALL-VPS.md`. Ne jamais ajouter de secrets aux fichiers suivis par Git.
 
 ## Technique
 
