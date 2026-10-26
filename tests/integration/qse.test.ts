@@ -46,7 +46,7 @@ const appro = fictif("Appro", "APPROBATEUR");
 
 async function decider(org: OrgDeTest, id: string, t: Transition, p: Personne, motif = "") {
   const v = (await lireDocument(app, org.cible, id))!.version;
-  return appliquerTransition(app, org.cible, id, t, { motif, versionVue: v, roles: p.roles }, p);
+  return appliquerTransition(app, org.cible, id, t, { motif, versionVue: v, roles: p.roles, fonction: "Responsable QSE" }, p);
 }
 async function publier(org: OrgDeTest, id: string) {
   for (const [t, p] of [["soumettre", redac], ["verifier", verif], ["approuver", appro]] as const) await decider(org, id, t, p);

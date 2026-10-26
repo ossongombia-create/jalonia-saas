@@ -10,6 +10,7 @@
 
 import { t, langueCourante } from "./i18n.js";
 import { formaterDate } from "./document.js";
+import { organisationEffective, signatairesEffectifs } from "./signataires.js";
 import {
   couper as couperBrut, echapper, txt, r1, mesurerPanier, dessinerPanier, symboleRecyclage, cercleContrainte, mesurerRaccord, dessinerRaccord, flecheRaccord, ecartOblique, PENTE_RACCORD, placerCentre,
   SARCELLE, ROUGE, ENCRE, GRIS_TEXTE, GRIS_LIGNE, POLICE, PX, PX_GRAS, PX_G12, HAUT_LIGNE_12, LIGNE_ANNOTATION, pointsDe,
@@ -181,11 +182,12 @@ function construire(p) {
   // ----- En-tête -----
   const titre = (m.titre || "").trim().toLocaleUpperCase(langueCourante()) || t("doc.sans_titre").toLocaleUpperCase(langueCourante());
   const lignesTitre = couper(titre, 40);
-  const auteur = ((m.signataires && m.signataires.redige && m.signataires.redige.nom) || "").trim(); // vide : la ligne reste à compléter à la main
+  const sig = signatairesEffectifs(p);
+  const auteur = ((sig && sig.redige && sig.redige.nom) || "").trim(); // vide : la ligne reste à compléter à la main
   const lignesAuteur = couper(`${t("dessin3.auteur")} : ${auteur || "________"}`, 46);
   const lignesIssue = (m.issueDe || "").trim() ? couper(`${t("dessin3.issue_de")} : ${m.issueDe.trim()}`, 74) : [];
   const hTitre = lignesTitre.length * 17 + 10;
-  const nomOrg = (m.organisation || "").trim();
+  const nomOrg = organisationEffective(p);
   const logoOk = /^data:image\/(png|jpeg);base64,[A-Za-z0-9+/]+={0,2}$/.test(m.logo || "");
   const lignesOrg = nomOrg ? couper(nomOrg, logoOk ? 17 : 15) : [];
   const hGauche = logoOk ? CADRE + 4 + (nomOrg ? 44 : 60) + 4 + lignesOrg.length * 10.8 + 6 : CADRE * 2 + lignesOrg.length * 13;

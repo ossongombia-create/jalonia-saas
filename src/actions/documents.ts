@@ -81,7 +81,8 @@ export async function actionRetablirDocument(_etat: EtatAction, formulaire: Form
 
 /**
  * Décision du circuit de validation (circuit.ts) : soumettre, vérifier, refuser, approuver, archiver, réviser.
- * Le droit demandé dépend de la décision ; la séparation des tâches, l'état et le motif sont vérifiés par le service.
+ * Le droit demandé dépend de la décision ; la séparation des tâches, l'état, le motif et la fonction (soumettre,
+ * vérifier, approuver) sont vérifiés par le service. Le nom est celui du compte : il n'est pas lu dans le formulaire.
  * `versionVue` : la version que la personne avait sous les yeux (refus si le document a changé depuis).
  * Après la décision, la page de validation est rechargée avec l'état obtenu (?etat=…), qu'elle confirme.
  */
@@ -95,7 +96,7 @@ export async function actionTransitionDocument(_etat: EtatAction, formulaire: Fo
     const versionVue = entier(champ(formulaire, "versionVue"));
     if (!Number.isSafeInteger(versionVue)) throw new ErreurMetier("erreur.saisie_invalide");
     const r = await appliquerTransition(
-      poolApplication(), org, documentId, transition, { motif: champ(formulaire, "motif"), versionVue, roles: ctx.organisation?.roles ?? [] }, ctx.acteur,
+      poolApplication(), org, documentId, transition, { motif: champ(formulaire, "motif"), fonction: champ(formulaire, "fonction"), versionVue, roles: ctx.organisation?.roles ?? [] }, ctx.acteur,
     );
     redirect(`/app/documents/${documentId}/validation?etat=${r.etat}`);
   });

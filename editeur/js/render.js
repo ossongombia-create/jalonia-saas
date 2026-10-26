@@ -13,6 +13,7 @@
 import { colonnes } from "./rules.js";
 import { t, langueCourante } from "./i18n.js";
 import { formaterDate } from "./document.js";
+import { signatairesEffectifs } from "./signataires.js";
 
 const HAUT_LIGNE_12 = 14.4; // hauteur d'une ligne de texte en corps 12
 const MARGE = 24;
@@ -273,7 +274,8 @@ function mesurerBanniere(procedure, largeur) {
   const ligne3 = [m.processus, m.domaine ? t("domaine." + m.domaine) : ""].map((s) => (s || "").trim()).filter(Boolean).join(" — ");
   const l1 = `${t("logigramme.b.code")} : ${(m.reference || "").trim() || vide} · ${t("logigramme.b.version")} : ${(m.version || "").trim() || "__"}`;
   const l2 = `${t("logigramme.b.date")} : ${m.dateApplication ? formaterDate(m.dateApplication) : "____/____/______"}`;
-  const signataires = ["redige", "verifie", "approuve"].map((k) => `${t("logigramme.b." + k)} : ${((m.signataires && m.signataires[k] && m.signataires[k].nom) || "").trim() || vide}`);
+  const sig = signatairesEffectifs(procedure) || {};
+  const signataires = ["redige", "verifie", "approuve"].map((k) => `${t("logigramme.b." + k)} : ${((sig[k] && sig[k].nom) || "").trim() || vide}`);
   // Les signataires sont regroupés par lignes (chacun reste entier sur sa ligne).
   const maxSig = 56;
   const lignesSig = [];
@@ -884,7 +886,7 @@ function miseEnPage(procedure) {
     procedure.meta.amont && [procedure.meta.amont.texte, procedure.meta.amont.role, procedure.meta.amont.information], procedure.meta.aval && [procedure.meta.aval.texte, procedure.meta.aval.role, procedure.meta.aval.information],
     // bandeau : tout ce qui s'y écrit
     procedure.meta.titre, procedure.meta.reference, procedure.meta.version, procedure.meta.processus, procedure.meta.domaine, procedure.meta.dateApplication,
-    ["redige", "verifie", "approuve"].map((k) => procedure.meta.signataires && procedure.meta.signataires[k] && procedure.meta.signataires[k].nom),
+    ["redige", "verifie", "approuve"].map((k) => { const sig = signatairesEffectifs(procedure); return sig && sig[k] && sig[k].nom; }),
     procedure.roles.map((r) => [r.id, r.nom, r.type]),
     procedure.etapes.map((e) => [e.id, e.roleId, e.libelle, e.sortie, e.condition, e.participants, e.niveau3.actif, e.niveau3.code,
       e.outils.map((o) => [o.nom, o.type]), e.controle && [e.controle.actif, e.controle.nature],

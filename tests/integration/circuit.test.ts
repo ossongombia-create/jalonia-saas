@@ -5,7 +5,7 @@ import path from "node:path";
 import { createHash, randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { Pool } from "pg";
-import { appliquerTransition, lireCircuit, type Transition } from "../../src/server/documents/circuit";
+import { appliquerTransition, derniereFonction, lireCircuit, TRANSITIONS, type Transition } from "../../src/server/documents/circuit";
 import { creerDocument, enregistrerDocument, lireCoherence, lireDocument, listerDocuments, supprimerDocument, type Contenu } from "../../src/server/documents/service";
 import { listerVersions, restaurerVersion } from "../../src/server/documents/versions";
 import { lireJournalOrganisation, lireJournalPlateforme } from "../../src/server/consultation/service";
@@ -34,13 +34,14 @@ afterAll(async () => {
 // Une personne et ses rôles dans l'organisation (le service reçoit les rôles de l'organisation ouverte).
 type Personne = Acteur & { roles: RoleOrganisation[] };
 const personne = (nom: string, ...roles: RoleOrganisation[]): Personne => ({ id: randomUUID(), email: `${nom.toLowerCase()}-${suffixe()}@test.local`, nom, ip: "127.0.0.1", agent: "vitest", roles });
+const instruction = (titre: string, reference = "IT-C-01"): Contenu => ({ meta: { typeDocument: "instruction", titre, reference }, roles: [], etapes: [{ id: "e1", libelle: titre }] });
 const procedure = (titre: string, reference = "PR-C-01"): Contenu => ({ meta: { typeDocument: "procedure", titre, reference }, roles: [], etapes: [{ id: "e1", libelle: titre }] });
 const sha256 = (s: string) => createHash("sha256").update(s, "utf8").digest("hex");
 
 /** Décision au nom de `p` sur la version actuelle (ou `versionVue`). */
 async function decider(org: OrgDeTest, id: string, t: Transition, p: Personne, motif = "", versionVue?: number) {
   const v = versionVue ?? (await lireDocument(app, org.cible, id))!.version;
-  return appliquerTransition(app, org.cible, id, t, { motif, versionVue: v, roles: p.roles }, p);
+  return appliquerTransition(app, org.cible, id, t, { motif, versionVue: v, roles: p.roles, fonction: "Responsable QSE" }, p);
 }
 const etat = async (org: OrgDeTest, id: string) => (await lireCircuit(app, org.cible, id))!.etat;
 
@@ -383,5 +384,74 @@ describe("mode « petite organisation » (décision n° 2 du 19/10/2026)", () =>
     await decider(org, d.id, "verifier", multi);
     expect(await cleErreur(decider(org, d.id, "approuver", aliceTout))).toBe("circuit.separation_auteur");
     expect(await cleErreur(decider(org, d.id, "approuver", bobTout))).toBe("circuit.separation_auteur");
+  });
+});
+
+describe("validation par nom et fonction, sans signature (TC-03)", () => {
+  const sans = (org: OrgDeTest, id: string, t: Transition, p: Personne, fonction: string | undefined, v: number, motif = "") =>
+    appliquerTransition(app, org.cible, id, t, { motif, versionVue: v, roles: p.roles, fonction }, p);
+
+  it("soumettre, vérifier, approuver : fonction obligatoire (rien n'est écrit sans elle) ; nom du compte et fonction rangés", async () => {
+    const org = await creerOrgDeTest(app, proprietaire, superadmin);
+    const d = await creerDocument(app, org.cible, procedure("Fonctions"), alice);
+    for (const f of [undefined, "", "   "]) expect(await cleErreur(sans(org, d.id, "soumettre", alice, f, 1))).toBe("circuit.fonction_requise");
+    expect(await cleErreur(sans(org, d.id, "soumettre", alice, "x".repeat(201), 1))).toBe("circuit.fonction_trop_longue");
+    expect(await etat(org, d.id)).toBe("brouillon");
+    expect((await lireCircuit(app, org.cible, d.id))!.decisions).toEqual([]);
+
+    await sans(org, d.id, "soumettre", alice, "  Technicienne méthodes ", 1);
+    expect(await cleErreur(sans(org, d.id, "verifier", vera, "", 1))).toBe("circuit.fonction_requise");
+    await sans(org, d.id, "verifier", vera, "Responsable qualité", 1);
+    expect(await cleErreur(sans(org, d.id, "approuver", paul, undefined, 1))).toBe("circuit.fonction_requise");
+    await sans(org, d.id, "approuver", paul, "Directeur de site", 1);
+
+    const c = (await lireCircuit(app, org.cible, d.id))!;
+    expect(c.decisions.map((x) => [x.transition, x.acteurNom, x.acteurFonction])).toEqual([
+      ["approuver", "Paul", "Directeur de site"],
+      ["verifier", "Vera", "Responsable qualité"],
+      ["soumettre", "Alice", "Technicienne méthodes"],
+    ]);
+    // Pré-remplissage : la dernière fonction saisie par la personne.
+    expect(await derniereFonction(app, org.cible, vera.id)).toBe("Responsable qualité");
+    expect(await derniereFonction(app, org.cible, lea.id)).toBe("");
+  });
+
+  it("refuser : le motif suffit (la fonction n'est ni demandée ni rangée)", async () => {
+    const org = await creerOrgDeTest(app, proprietaire, superadmin);
+    const d = await creerDocument(app, org.cible, procedure("Refus"), alice);
+    await sans(org, d.id, "soumettre", alice, "Rédactrice", 1);
+    expect(await cleErreur(sans(org, d.id, "refuser_verification", vera, "Vérificatrice", 1))).toBe("circuit.motif_requis");
+    await sans(org, d.id, "refuser_verification", vera, "Vérificatrice", 1, "Incomplet");
+    expect(await etat(org, d.id)).toBe("brouillon");
+    expect((await lireCircuit(app, org.cible, d.id))!.decisions[0]).toMatchObject({ transition: "refuser_verification", acteurFonction: "", motif: "Incomplet" });
+  });
+});
+
+describe("instructions de travail : même circuit que les procédures (TC-04)", () => {
+  it("une règle par décision, sans distinction de type", () => {
+    for (const regle of Object.values(TRANSITIONS)) expect(Object.keys(regle)).not.toContain("type");
+  });
+
+  it("IT et procédure parcourent les mêmes étapes, avec les mêmes refus de séparation des tâches", async () => {
+    const org = await creerOrgDeTest(app, proprietaire, superadmin);
+    const parcours = async (contenu: Contenu) => {
+      const d = await creerDocument(app, org.cible, contenu, alice);
+      const etapes: string[] = [await etat(org, d.id)];
+      await decider(org, d.id, "soumettre", alice);
+      etapes.push(await etat(org, d.id));
+      const refusAuteur = await cleErreur(decider(org, d.id, "verifier", alice));
+      await decider(org, d.id, "verifier", multi);
+      etapes.push(await etat(org, d.id));
+      const refusVerificateur = await cleErreur(decider(org, d.id, "approuver", multi));
+      await decider(org, d.id, "approuver", paul);
+      etapes.push(await etat(org, d.id));
+      return { etapes, refusAuteur, refusVerificateur, type: (await lireCircuit(app, org.cible, d.id))!.type };
+    };
+    const it_ = await parcours(instruction("Instruction"));
+    const pr = await parcours(procedure("Procédure", "PR-C-02"));
+    expect(it_.type).toBe("instruction");
+    expect(pr.type).toBe("procedure");
+    expect(it_.etapes).toEqual(["brouillon", "en_verification", "en_approbation", "publie"]);
+    expect({ ...it_, type: "" }).toEqual({ ...pr, type: "" });
   });
 });

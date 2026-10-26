@@ -43,6 +43,15 @@ function telecharger(contenu, nom, type) {
 }
 
 // ---------- Actions de la barre du haut ----------
+// Une seule cartographie par organisation (TC-09) : importer un PDF, ouvrir un fichier, charger l'exemple ou un modèle
+// ne remplacent pas une cartographie existante. Pour en mettre une autre, on efface d'abord celle-ci (« Tout effacer »).
+function cartographieExiste() {
+  if (cs.estVideMaintenant()) return false;
+  rapport = [{ gravite: "erreur", cle: "carto.existe_deja" }];
+  rendre();
+  return true;
+}
+
 async function lirePdf(fichier) {
   if (!fichier) return;
   if (fichier.size > TAILLE_MAX_PDF || !/\.pdf$/i.test(fichier.name)) {
@@ -50,7 +59,7 @@ async function lirePdf(fichier) {
     rendre();
     return;
   }
-  if (!cs.estVideMaintenant() && !confirm(t("carto.confirmer_remplacer"))) return;
+  if (cartographieExiste()) return;
   try {
     const resultat = await importerPdf(await fichier.arrayBuffer());
     rapport = resultat.rapport;
@@ -64,7 +73,7 @@ async function lirePdf(fichier) {
 function lireJson(fichier) {
   if (!fichier) return;
   if (fichier.size > 2_000_000) { rapport = [{ gravite: "erreur", cle: "carto.import.fichier_refuse" }]; rendre(); return; }
-  if (!cs.estVideMaintenant() && !confirm(t("carto.confirmer_remplacer"))) return;
+  if (cartographieExiste()) return;
   const lecteur = new FileReader();
   lecteur.onload = () => {
     try {
@@ -91,15 +100,15 @@ function barreActions() {
   json.addEventListener("change", () => { const f = json.files[0]; json.value = ""; lireJson(f); });
   const vide = cs.estVideMaintenant();
   const modif = ecriture();
-  // En ligne, la cartographie s'enregistre toute seule sur le serveur : ce bouton télécharge une copie (.json).
+  // En ligne, la cartographie s'enregistre toute seule sur le serveur : ce bouton en télécharge une copie (fichier .json).
   return h("div", { class: "carto-actions" },
-    modif ? h("button", { type: "button", class: vide ? "primaire" : "", onclick: () => pdf.click() }, icone("upload", 17), t("carto.importer_pdf")) : null,
-    modif ? h("button", { type: "button", onclick: () => json.click() }, icone("folder", 17), t("carto.ouvrir")) : null,
-    h("button", { type: "button", disabled: vide, onclick: enregistrer }, icone("save", 17), EN_LIGNE ? t("enligne.copie_json") : t("carto.enregistrer")),
+    modif ? h("button", { type: "button", class: vide ? "primaire" : "", onclick: () => { if (!cartographieExiste()) pdf.click(); } }, icone("upload", 17), t("carto.importer_pdf")) : null,
+    modif ? h("button", { type: "button", onclick: () => { if (!cartographieExiste()) json.click(); } }, icone("folder", 17), t("carto.ouvrir")) : null,
+    h("button", { type: "button", disabled: vide, onclick: enregistrer }, icone("save", 17), EN_LIGNE ? t("enligne.copie_carto") : t("carto.enregistrer")),
     h("button", { type: "button", disabled: vide, class: apercu ? "primaire" : "", onclick: () => { apercu = !apercu; rendre(); } }, icone("carto", 17), t("carto.voir")),
     h("button", { type: "button", disabled: vide, onclick: genererWordNiveau1 }, icone("word", 17), t("carto.generer_word")),
     modif ? h("button", { type: "button", class: modeles ? "primaire" : "", onclick: () => { modeles = !modeles; rendre(); } }, icone("layers", 17), t("carto.modeles")) : null,
-    modif ? h("button", { type: "button", onclick: () => { if (cs.estVideMaintenant() || confirm(t("carto.confirmer_remplacer"))) { rapport = []; cs.chargerExemple(); rendre(); } } }, icone("doc", 17), t("carto.exemple")) : null,
+    modif ? h("button", { type: "button", onclick: () => { if (!cartographieExiste()) { rapport = []; cs.chargerExemple(); rendre(); } } }, icone("doc", 17), t("carto.exemple")) : null,
     modif ? h("button", { type: "button", class: "suppr", disabled: vide, onclick: () => { if (confirm(t("carto.confirmer_vider"))) { rapport = []; cs.vider(); rendre(); } } }, icone("trash", 17), t("carto.vider")) : null,
     pdf, json);
 }
@@ -175,7 +184,7 @@ function blocModeles() {
       h("li", {},
         h("span", { class: "carto-modeles-nom" }, m.organisation),
         h("button", { type: "button", onclick: () => {
-          if (cs.estVideMaintenant() || confirm(t("carto.confirmer_remplacer"))) { cs.remplacer(m); rapport = []; modeles = false; apercu = true; rendre(); }
+          if (!cartographieExiste()) { cs.remplacer(m); rapport = []; modeles = false; apercu = true; rendre(); }
         } }, t("carto.modeles.charger"))))));
 }
 

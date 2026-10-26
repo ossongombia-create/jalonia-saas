@@ -8,6 +8,7 @@ import { t, langueCourante } from "./i18n.js";
 import * as store from "./store.js";
 import { h } from "./dom.js";
 import { preparerLogo } from "./logo.js";
+import { signatairesDuCircuit, signatairesEffectifs, estProjet } from "./signataires.js";
 import { icone } from "./icones.js";
 import { carte, carteAvec } from "./cartes.js";
 import { TYPES_DOCUMENT, SECTIONS, MODELES_TABLEAU, DOMAINES, DOMAINES_ANCIENS, SIGNATAIRES, MAX_REVISIONS } from "./model.js";
@@ -59,7 +60,9 @@ function champDate(libelle, valeur, quandChange) {
 }
 
 // Tableau « Validation du document » : rédigé / vérifié / approuvé par (nom, fonction, date ; le visa se signe sur le papier).
+// En ligne, il vient du circuit de validation de l'application (signataires.js) : affiché, plus saisi.
 function blocValidation(m) {
+  if (signatairesDuCircuit()) return blocValidationCircuit();
   return carte("check", t("form.validation"),
     h("p", { class: "aide" }, t("form.validation.aide")),
     h("div", { class: "grille g3" },
@@ -68,6 +71,26 @@ function blocValidation(m) {
         champ(t("valid.ligne.nom"), m.signataires[qui].nom, (v) => store.modifierSignataire(qui, "nom", v)),
         champ(t("valid.ligne.fonction"), m.signataires[qui].fonction, (v) => store.modifierSignataire(qui, "fonction", v)),
         champDate(t("valid.ligne.date"), m.signataires[qui].date, (v) => store.modifierSignataire(qui, "date", v))))));
+}
+
+function blocValidationCircuit() {
+  const s = signatairesEffectifs(store.lire());
+  const valeur = (x) => h("dd", {}, x && x.trim() ? x : "—");
+  return carte("check", t("form.validation"),
+    h("p", { class: "aide", id: "validation-circuit", "data-etat": estProjet() ? "projet" : "approuve" }, t(estProjet() ? "form.validation.circuit_projet" : "form.validation.circuit")),
+    h("div", { class: "grille g3" },
+      ...SIGNATAIRES.map((qui) => h("div", { class: "sous-carte", "data-signataire": qui },
+        h("h4", {}, t("valid." + qui)),
+        h("dl", { class: "signataire-circuit" },
+          h("dt", {}, t("valid.ligne.nom")), valeur(s[qui].nom),
+          h("dt", {}, t("valid.ligne.fonction")), valeur(s[qui].fonction),
+          h("dt", {}, t("valid.ligne.date")), valeur(s[qui].date ? formaterJourIso(s[qui].date) : ""))))));
+}
+
+// AAAA-MM-JJ → JJ/MM/AAAA (même affichage que le document).
+function formaterJourIso(d) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(d);
+  return m ? `${m[3]}/${m[2]}/${m[1]}` : d;
 }
 
 // Historique des révisions : une ligne par version (sans ligne, le document affiche la création initiale).
@@ -197,7 +220,7 @@ export function rendreIdentification(conteneur) {
       carte("list", t(it ? "carte.instruction" : "carte.procedure"),
         champProcessus(m),
         champ(t("form.pilote"), m.pilote, modifier("pilote"), { requis: true, placeholder: t("form.pilote.ph") }),
-        it ? champ(t("form.auteur"), m.signataires.redige.nom, (v) => store.modifierSignataire("redige", "nom", v), { placeholder: t("form.auteur.ph") }) : null,
+        it && !signatairesDuCircuit() ? champ(t("form.auteur"), m.signataires.redige.nom, (v) => store.modifierSignataire("redige", "nom", v), { placeholder: t("form.auteur.ph") }) : null,
         champ(k("form.titre"), m.titre, modifier("titre"), { requis: true, placeholder: k("form.titre.ph") }),
         h("div", { class: "grille g-code" },
           champ(t("form.reference"), m.reference, modifier("reference"), { requis: true, placeholder: k("form.reference.ph") }),

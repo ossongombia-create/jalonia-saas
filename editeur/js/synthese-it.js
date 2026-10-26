@@ -6,6 +6,7 @@
 import { h } from "./dom.js";
 import { t, nombre } from "./i18n.js";
 import * as store from "./store.js";
+import { signatairesEffectifs } from "./signataires.js";
 import { verifierIT, MIN_OPERATIONS, MAX_OPERATIONS } from "./rules-it.js";
 import { constatsDessinIT } from "./diagnostic.js";
 import { constatsQuestionnement, questionnement, sansDoublons } from "./questionnement.js";
@@ -38,7 +39,8 @@ export function rendreSyntheseIT(zone, allerA) {
   const bloquants = constats.filter((c) => c.gravite === "erreur");
   const attention = constats.filter((c) => c.gravite === "alerte");
   const pt = taillePointsNiveau3(p);
-  const auteur = ((m.signataires && m.signataires.redige && m.signataires.redige.nom) || "").trim();
+  const sig = signatairesEffectifs(p);
+  const auteur = ((sig && sig.redige && sig.redige.nom) || "").trim();
 
   const identification = h("dl", { class: "synth-id" },
     ...[

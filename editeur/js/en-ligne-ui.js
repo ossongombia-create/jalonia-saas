@@ -10,6 +10,7 @@
 // Tout est construit avec h() et des textes de t() : jamais de HTML injecté.
 
 import * as store from "./store.js";
+import { definirValidationCircuit } from "./signataires.js";
 import * as cartographie from "./cartographie-store.js";
 import { t, definirLangue, langueCourante } from "./i18n.js";
 import { h } from "./dom.js";
@@ -135,7 +136,7 @@ function expliquerBlocage(genre, synchro, e) {
   const fenetre = $("fenetre-synchro");
   const fermer = () => fenetre.close();
   const bouton = (texte, action, classe = "") => h("button", { type: "button", class: classe, onclick: action }, texte);
-  const copie = bouton(t("enligne.copie_json"), () => telechargerCopie(genre));
+  const copie = bouton(t(genre === "cartographie" ? "enligne.copie_carto" : "enligne.copie_json"), () => telechargerCopie(genre));
   const reessayer = bouton(t("enligne.reessayer"), () => { fermer(); synchro.reessayer(); }, "primaire");
   const retour = bouton(t("enligne.retour_documents"), () => { departAutorise = true; location.href = PAGE_DOCUMENTS; });
   const textes = [];
@@ -286,6 +287,8 @@ export async function demarrerEnLigne({ apresChargement, toutAfficher }) {
 
   // Le document d'abord : s'il est illisible, on n'ouvre rien.
   if (doc) {
+    // Rédigé / vérifié / approuvé par : le circuit de validation (document imprimé, TC-07).
+    definirValidationCircuit(ctx.document.validation, ctx.organisation.nom);
     try {
       store.demarrerAvec(ctx.document.contenu);
     } catch (e) {
@@ -333,6 +336,16 @@ export async function demarrerEnLigne({ apresChargement, toutAfficher }) {
       bandeau.textContent = t(bandeau.dataset.i18n);
     }
     bandeau.hidden = false;
+    // Boutons de rédaction (enregistrer, ouvrir, importer, exemples) : visibles mais désactivés, avec la raison au survol
+    // (dans la langue de la personne, mise à jour si elle en change).
+    const raison = () => {
+      for (const b of document.querySelectorAll("button.redaction-seulement")) {
+        b.disabled = true;
+        b.title = t(bandeau.dataset.i18n || "enligne.lecture_seule");
+      }
+    };
+    raison();
+    document.addEventListener("langue-changee", raison);
     figerEnPermanence($("etape-contenu"));
   }
   if (cartoLectureSeule) {

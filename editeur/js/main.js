@@ -159,7 +159,7 @@ document.querySelectorAll("[data-langue]").forEach((b) => {
   });
 });
 
-// ----- Version d'essai : numéro de version, fenêtre « Envoyer un retour » -----
+// ----- Licence et numéro de version, fenêtre « Envoyer un retour » -----
 $("rail-version").textContent = "v" + VERSION;
 preparerFenetreRetour();
 $("btn-retour").addEventListener("click", ouvrirRetour);

@@ -36,7 +36,7 @@ test("le nom de l'outil vient de config.js et rien d'autre ne l'écrit en dur (c
     assert.equal(t("app.titre"), NOM_OUTIL);
     assert.equal(t("app.marque"), NOM_OUTIL);
     assert.ok(t("retour.email_sujet", { version: VERSION }).includes(NOM_OUTIL));
-    assert.ok(t("mentions.essai.texte").includes(NOM_OUTIL));
+    assert.ok(t("mentions.licence.texte").includes(NOM_OUTIL));
     assert.ok(t("accueil.titre_sans_organisation").includes(NOM_OUTIL));
   });
   definirLangue("fr");
@@ -338,9 +338,9 @@ test("mentions : « aide à la rédaction, sans garantie », licence propriétai
   assert.match(fr["mentions.aide.texte"], /sans garantie/);
   assert.match(fr["mentions.aide.texte"], /responsabilité de l'organisation/);
   assert.match(en["mentions.aide.texte"], /without warranty/);
-  assert.match(fr["mentions.essai.texte"], /logiciel propriétaire/);
-  assert.match(fr["mentions.essai.texte"], /accord écrit préalable/);
-  assert.match(en["mentions.essai.texte"], /prior written consent/);
+  assert.match(fr["mentions.licence.texte"], /logiciel propriétaire/);
+  assert.match(fr["mentions.licence.texte"], /accord écrit préalable/);
+  assert.match(en["mentions.licence.texte"], /prior written consent/);
   assert.match(fr["mentions.methode.texte"], /ni édité, ni approuvé, ni recommandé/);
   assert.match(en["mentions.methode.texte"], /neither published, approved nor recommended/);
   assert.match(fr["mentions.donnees.texte"], /navigateur/);

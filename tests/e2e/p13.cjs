@@ -32,8 +32,11 @@ const { BASE, lancer, connecter, api, capture, etape, assert } = require("./outi
   async function decider(p, libelle, etat) {
     await p.goto(`${BASE}/app/documents/${id}/validation`);
     await p.waitForLoadState("networkidle");
+    const bloc = p.locator(".decision-possible", { has: p.locator(`button:has-text("${libelle}")`) });
+    // Soumettre, vérifier, approuver : fonction obligatoire (TC-03).
+    if (await bloc.locator('input[name="fonction"]').count()) await bloc.locator('input[name="fonction"]').fill("Responsable QSE");
     p.once("dialog", (d) => d.accept());
-    await p.locator(`.decision-possible button:has-text("${libelle}")`).click();
+    await bloc.locator(`button:has-text("${libelle}")`).click();
     await p.waitForURL((u) => u.searchParams.get("etat") === etat);
   }
   const victor = await connecter("verif@demo.test");

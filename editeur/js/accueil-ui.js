@@ -1,5 +1,5 @@
 // accueil-ui.js — l'écran d'ACCUEIL « Mon espace », côté page : le document en cours (avancement et compteurs), les autres façons de commencer,
-// la cartographie par blocs, l'aide et la version d'essai. Ce que l'écran montre est calculé par accueil.js (sans page) ; ici on dessine.
+// la cartographie par blocs, l'aide et la licence. Ce que l'écran montre est calculé par accueil.js (sans page) ; ici on dessine.
 // Tous les textes viennent de t() et sont posés en texte (jamais de HTML injecté) ; les actions sont fournies par main.js.
 
 import { h } from "./dom.js";
@@ -98,7 +98,7 @@ function carteCartographie(actions) {
       bouton("pilule", null, t(c.vide ? "accueil.carto.creer" : "accueil.carto.ouvrir"), actions.cartographie, { id: "accueil-cartographie" })));
 }
 
-// ----- Carte « aide et version d'essai » -----
+// ----- Carte « aide et licence » -----
 function carteAide(actions) {
   return h("section", { class: "carte accueil-carte accueil-lignes" },
     titreCarte(t("accueil.aide.titre")),
@@ -107,13 +107,13 @@ function carteAide(actions) {
     ligneAction("shield", t("mentions.bouton"), actions.mentions, { id: "accueil-mentions" }));
 }
 
-// ----- Pied : confiance, version d'essai, « ne plus afficher » -----
+// ----- Pied : confiance, licence, « ne plus afficher » -----
 function pied(actions) {
   const case_ = h("input", { type: "checkbox", id: "accueil-masquer", checked: accueilMasque() });
   case_.addEventListener("change", () => definirAccueilMasque(case_.checked));
   return h("footer", { class: "accueil-pied" },
     h("p", { class: "accueil-confiance" }, icone("shield", 17, 1.9), t("accueil.confiance"),
-      h("span", { class: "accueil-sep", "aria-hidden": "true" }), t("accueil.essai_court"),
+      h("span", { class: "accueil-sep", "aria-hidden": "true" }), t("accueil.licence_court"),
       h("span", { class: "accueil-sep", "aria-hidden": "true" }),
       h("button", { type: "button", class: "accueil-lien", onclick: actions.mentions }, t("mentions.bouton"))),
     h("label", { class: "accueil-masquer", for: "accueil-masquer" }, case_, h("span", {}, t("accueil.masquer")),

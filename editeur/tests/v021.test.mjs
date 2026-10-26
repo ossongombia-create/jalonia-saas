@@ -159,7 +159,7 @@ test("guides de démarrage : assez courts pour une page A4, et les noms de menus
       const cite = visible.toLowerCase().includes(attendu.toLowerCase());
       assert.ok(cite, `${fichier} : le guide doit citer « ${attendu} » (${cle}) exactement comme l'application`);
     });
-    assert.ok(visible.includes(texte["apropos.essai"]), fichier + " : mention « logiciel propriétaire » (v1.7)");
+    assert.ok(visible.includes(texte["apropos.licence"]), fichier + " : mention « logiciel propriétaire » (v1.7)");
     assert.ok(visible.includes(langue === "fr" ? "S. Guillard et C. Berger" : "S. Guillard and C. Berger"), fichier + " : mention de la méthode");
   });
 });

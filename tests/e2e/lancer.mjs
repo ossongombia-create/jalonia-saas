@@ -31,7 +31,7 @@ const RACINE = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..
 const ICI = path.join(RACINE, "tests/e2e");
 const ETAT = path.join(ICI, ".etat");
 const TSX = path.join(RACINE, "node_modules/.bin/tsx");
-const PARTIES = ["p1", "p2", "p3", "p4", "p5", "p6", "p7", "p8", "p9", "p10", "p11", "p12", "p13", "sonde-csp", "sonde-csp-blocage", "autorisations"];
+const PARTIES = ["p1", "p2", "p3", "p4", "p5", "p6", "p7", "p8", "p9", "p10", "p11", "p12", "p13", "p14", "sonde-csp", "sonde-csp-blocage", "autorisations"];
 const SUPERADMIN = { email: "superadmin@e2e.test", nom: "Superadmin E2E", mdp: "superadmin-e2e-motdepasse" }; // (outils.cjs)
 const MINUTES_PAR_PARTIE = 10;
 
