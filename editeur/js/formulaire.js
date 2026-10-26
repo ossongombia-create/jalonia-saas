@@ -84,7 +84,7 @@ function blocValidationCircuit() {
         h("dl", { class: "signataire-circuit" },
           h("dt", {}, t("valid.ligne.nom")), valeur(s[qui].nom),
           h("dt", {}, t("valid.ligne.fonction")), valeur(s[qui].fonction),
-          h("dt", {}, t("valid.ligne.date")), valeur(s[qui].date ? formaterJourIso(s[qui].date) : "")))));
+          h("dt", {}, t("valid.ligne.date")), valeur(s[qui].date ? formaterJourIso(s[qui].date) : ""))))));
 }
 
 // AAAA-MM-JJ → JJ/MM/AAAA (même affichage que le document).
