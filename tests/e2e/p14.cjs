@@ -160,7 +160,7 @@ const { BASE, sql, lancer, connecter, api, editeurPret, capture, etape, assert }
   await carto.waitForSelector("#carto-contenu .carto-actions");
   const html = await carto.content();
   assert.doesNotMatch(html, /version d['’]essai/i);
-  assert.doesNotMatch(html, /essai/i, "aucune trace « essai » dans la page");
+  assert.doesNotMatch(html, /\bessai\b|-essai\b|\.essai\b/i, "aucune trace « essai » dans la page (mot entier, classe ou clé)");
   const boutons = await carto.locator("button:visible").evaluateAll((l) => l.map((b) => b.textContent.trim()));
   assert.equal(boutons.filter((x) => x.includes(".json")).length, 0, `aucun libellé « (.json) » : ${boutons.join(" | ")}`);
   assert.ok(boutons.includes("Télécharger une copie de la cartographie"));

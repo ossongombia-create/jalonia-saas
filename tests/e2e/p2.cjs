@@ -67,7 +67,6 @@ const fs = require("node:fs");
   p.off("filechooser", surChoix);
   assert.equal(choixFichier, false, "aucun fichier demandé");
   assert.equal((await api(p, "GET", `/api/editeur/contexte`)).corps.cartographie.version, 1, "cartographie inchangée");
-  p.once("dialog", (d) => d.accept());
   await p.click('#carto-contenu button:has-text("Tout effacer")');
   await attendreEtat(p, "Enregistré", "#carto-etat");
   assert.equal((await api(p, "GET", `/api/editeur/contexte`)).corps.cartographie.version, 2);

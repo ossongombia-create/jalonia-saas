@@ -336,11 +336,16 @@ export async function demarrerEnLigne({ apresChargement, toutAfficher }) {
       bandeau.textContent = t(bandeau.dataset.i18n);
     }
     bandeau.hidden = false;
-    // Boutons de rédaction (enregistrer, ouvrir, importer, exemples) : visibles mais désactivés, avec la raison au survol.
-    for (const b of document.querySelectorAll("button.redaction-seulement")) {
-      b.disabled = true;
-      b.title = bandeau.textContent;
-    }
+    // Boutons de rédaction (enregistrer, ouvrir, importer, exemples) : visibles mais désactivés, avec la raison au survol
+    // (dans la langue de la personne, mise à jour si elle en change).
+    const raison = () => {
+      for (const b of document.querySelectorAll("button.redaction-seulement")) {
+        b.disabled = true;
+        b.title = t(bandeau.dataset.i18n || "enligne.lecture_seule");
+      }
+    };
+    raison();
+    document.addEventListener("langue-changee", raison);
     figerEnPermanence($("etape-contenu"));
   }
   if (cartoLectureSeule) {
