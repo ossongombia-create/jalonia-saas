@@ -67,8 +67,11 @@ function plusMois(iso, n) {
   async function decider(p, libelle, etat) {
     await p.goto(PAGE);
     await p.waitForLoadState("networkidle"); // formulaire interactif (la confirmation passe par le script de la page)
+    const bloc = p.locator(".decision-possible", { has: p.locator(`button:has-text("${libelle}")`) });
+    // Soumettre, vérifier, approuver : fonction obligatoire (TC-03).
+    if (await bloc.locator('input[name="fonction"]').count()) await bloc.locator('input[name="fonction"]').fill("Responsable QSE");
     p.once("dialog", (d) => d.accept());
-    await p.locator(`.decision-possible button:has-text("${libelle}")`).click();
+    await bloc.locator(`button:has-text("${libelle}")`).click();
     await p.waitForURL((u) => u.searchParams.get("etat") === etat);
   }
   const notifDuDoc = (p) => p.locator("#notifications li", { hasText: "PR-NOT-01" });

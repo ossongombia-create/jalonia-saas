@@ -9,6 +9,7 @@
 
 import { SECTIONS, MODELES_TABLEAU, criticite, scoreOpportunite, LETTRES_RACI, lettreRaci, raciDuRole, raciUtilise, partiesDeLaFleche } from "./model.js";
 import { t } from "./i18n.js";
+import { organisationEffective, signatairesEffectifs } from "./signataires.js";
 
 export { SECTIONS };
 
@@ -263,7 +264,7 @@ function enTete(procedure) {
     typeTitre: t("doc.type_titre." + type),
     reference: m.reference,
     version: m.version,
-    organisation: m.organisation,
+    organisation: organisationEffective(procedure),
     logo: m.logo || "", // image PNG / JPEG (data URL), vide s'il n'y en a pas
     direction: m.direction,
     pilote: m.pilote,
@@ -275,7 +276,7 @@ function enTete(procedure) {
 }
 
 function tableauValidation(procedure) {
-  const s = procedure.meta.signataires;
+  const s = signatairesEffectifs(procedure); // en ligne : le circuit de validation (signataires.js)
   const ligne = (cle, valeur) => [t("valid.ligne." + cle), ...["redige", "verifie", "approuve"].map((q) => valeur(s[q]))];
   return {
     type: "tableau", gabarit: GABARITS.validation, gras1: [], centrees: [1, 2, 3], premiereColonneEtiquette: true,
@@ -294,7 +295,7 @@ function tableauHistorique(procedure) {
   const saisies = m.revisions.filter((r) => [r.version, r.date, r.nature, r.auteur].some((x) => x && x.trim()));
   const lignes = saisies.length
     ? saisies.map((r) => [r.version, formaterDate(r.date), r.nature, r.auteur])
-    : [[m.version, formaterDate(m.dateApplication), t("doc.creation_initiale"), m.signataires.redige.nom]];
+    : [[m.version, formaterDate(m.dateApplication), t("doc.creation_initiale"), signatairesEffectifs(procedure).redige.nom]];
   return {
     type: "tableau", gabarit: GABARITS.historique, gras1: [], centrees: [0, 1],
     colonnes: ["version", "date", "nature", "auteur"].map((k) => t("histo.col." + k)),

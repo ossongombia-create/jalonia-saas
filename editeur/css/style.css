@@ -546,10 +546,10 @@ main#zone-travail.pleine-hauteur { padding: 0; overflow: hidden; display: flex; 
 .logigramme-apercu { text-align: center; }
 .logigramme-apercu svg { width: 100%; height: auto; max-height: 900px; }
 
-/* ---------- v0.21 : version d'essai (colonne sarcelle) et fenêtre « Envoyer un retour » ---------- */
-.rail-essai { display: grid; gap: 4px; margin-bottom: 14px; }
-.rail-essai-ligne { margin: 0 0 4px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: .78rem; color: var(--rail-doux); }
-.rail-essai-badge { padding: 2px 9px; border-radius: 999px; background: rgba(255, 255, 255, .14); color: #fff; font-weight: 700; font-size: .7rem; letter-spacing: .04em; text-transform: uppercase; }
+/* ---------- Licence et version (colonne sarcelle), fenêtre « Envoyer un retour » ---------- */
+.rail-licence { display: grid; gap: 4px; margin-bottom: 14px; }
+.rail-licence-ligne { margin: 0 0 4px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: .78rem; color: var(--rail-doux); }
+.rail-licence-badge { padding: 2px 9px; border-radius: 999px; background: rgba(255, 255, 255, .14); color: #fff; font-weight: 700; font-size: .7rem; letter-spacing: .04em; text-transform: uppercase; }
 .rail-lien { display: inline-flex; align-items: center; gap: 8px; padding: 6px 4px; border: 0; background: transparent; color: var(--rail-texte); font: inherit; font-size: .84rem; font-weight: 600; text-decoration: none; cursor: pointer; border-radius: 8px; text-align: left; }
 .rail-lien:hover { color: #fff; background: rgba(255, 255, 255, .08); }
 dialog#fenetre-retour { padding: 0; border: 0; border-radius: 18px; overflow: hidden; width: min(94vw, 620px); max-height: 92vh; background: var(--fond); color: var(--encre); box-shadow: 0 24px 60px rgba(0, 58, 73, .35); }
@@ -558,7 +558,7 @@ dialog#fenetre-retour::backdrop { background: rgba(0, 58, 73, .6); }
 #retour-contenu { overflow: auto; padding: 16px 20px 20px; display: grid; gap: 10px; }
 #retour-contenu p, #retour-contenu h3 { margin: 0; }
 #retour-contenu h3 { font-size: .95rem; }
-.retour-essai { padding: 10px 12px; border-radius: 10px; background: var(--feuille); border: 1px solid var(--trait-doux); font-size: .84rem; color: var(--encre-douce); }
+.retour-licence { padding: 10px 12px; border-radius: 10px; background: var(--feuille); border: 1px solid var(--trait-doux); font-size: .84rem; color: var(--encre-douce); }
 #retour-infos { width: 100%; box-sizing: border-box; resize: none; padding: 10px 12px; border: 1px solid var(--trait); border-radius: 10px; font: .82rem/1.5 ui-monospace, Consolas, monospace; background: #fff; color: var(--encre); }
 .retour-ligne { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
 .retour-ligne:empty { display: none; }
@@ -686,7 +686,8 @@ dialog#fenetre-mentions::backdrop { background: rgba(0, 58, 73, .6); }
    data-pret : le document est ouvert (avant, seul l'écran d'ouverture est visible). */
 html:not([data-mode="en-ligne"]) .en-ligne-seulement { display: none !important; }
 html[data-mode="en-ligne"] .local-seulement { display: none !important; }
-html[data-lecture-seule] .redaction-seulement { display: none !important; }
+/* Lecture seule : les boutons de rédaction restent visibles mais désactivés (grisés), avec la raison au survol (TC-02). */
+html[data-lecture-seule] .redaction-seulement:disabled { opacity: .45; cursor: not-allowed; }
 html[data-lecture-seule] #etape-contenu .suppr { display: none !important; }
 html[data-mode="en-ligne"]:not([data-pret]) #rail, html[data-mode="en-ligne"]:not([data-pret]) #corps { visibility: hidden; }
 body[data-carto-seule] #rail, body[data-carto-seule] #corps { display: none; }
@@ -729,13 +730,18 @@ dialog#fenetre-synchro::backdrop { background: rgba(0, 58, 73, .6); }
   .pas-gauche { flex-direction: row; }
   .trait-pas, .sous-pas { display: none; }
   .rail-bas { margin-top: 0; margin-left: auto; display: flex; align-items: center; gap: 14px; }
-  .rail-essai { margin-bottom: 0; grid-auto-flow: column; align-items: center; gap: 10px; }
-  .rail-essai-ligne { margin: 0; }
+  .rail-licence { margin-bottom: 0; grid-auto-flow: column; align-items: center; gap: 10px; }
+  .rail-licence-ligne { margin: 0; }
   #entete, .navigation-etapes, #diagnostic-bascule { padding-left: 16px; padding-right: 16px; }
   main#zone-travail { padding: 4px 16px 16px; }
   .synth-id { grid-template-columns: 150px minmax(0, 1fr); }
   .sous-carte.revision { grid-template-columns: 1fr 1fr; }
 }
+
+/* Tableau de validation venu du circuit (en ligne) : lecture seule. */
+.signataire-circuit { display: grid; grid-template-columns: auto 1fr; gap: 4px 10px; margin: 0; }
+.signataire-circuit dt { color: var(--texte-doux, #5b6670); }
+.signataire-circuit dd { margin: 0; font-weight: 600; }
 
 /* ---------- 12. Impression (PDF) : seul le document est imprimé ---------- */
 /* Marges du modèle : portrait 16 / 16 / 16 / 20 mm ; page du logigramme en paysage si le texte y est plus lisible. */
@@ -749,6 +755,9 @@ dialog#fenetre-synchro::backdrop { background: rgba(0, 58, 73, .6); }
   body { background: #fff; }
   body > *:not(#zone-impression) { display: none !important; }
   #zone-impression { display: block; }
+  /* Document pas encore approuvé (en ligne) : mention « PROJET — non approuvé » répétée sur chaque page. */
+  #zone-impression .filigrane-projet { position: fixed; top: 45%; left: 0; right: 0; text-align: center; transform: rotate(-30deg);
+    font: 700 40pt Calibri, Carlito, Arial, sans-serif; color: rgba(180, 30, 30, .18); letter-spacing: .06em; pointer-events: none; z-index: 10; }
   #zone-impression .feuille { border: 0; padding: 0; max-width: none; font-size: 10.5pt; }
   #zone-impression .feuille p { font-size: 10.5pt; line-height: 1.4; margin: 0 0 2.1mm; }
   #zone-impression .feuille p.avant-tableau { break-after: avoid; page-break-after: avoid; }

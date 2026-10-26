@@ -10,7 +10,7 @@ body { margin: 0; background: var(--fond); color: var(--encre); font-family: "Ou
 header.guide-entete { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; padding-bottom: 8px; border-bottom: 3px solid var(--sarcelle); }
 .guide-logo { flex: none; width: 40px; height: 40px; margin-bottom: -2px; }
 .guide-entete h1 { flex: 1; margin: 0; font-size: 1.45em; font-weight: 800; color: var(--sarcelle-nuit); }
-.guide-entete .essai { flex: none; padding: 3px 10px; border-radius: 999px; background: var(--violet-pale); color: var(--violet-fonce); font-size: .78em; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; }
+.guide-entete .licence { flex: none; padding: 3px 10px; border-radius: 999px; background: var(--violet-pale); color: var(--violet-fonce); font-size: .78em; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; }
 .guide-lang { margin: 6px 0 0; font-size: .85em; color: var(--encre-douce); }
 .guide-lang a { color: var(--violet-fonce); font-weight: 700; }
 .intro { margin: 10px 0 12px; font-size: 1em; }
@@ -32,5 +32,5 @@ strong { font-weight: 700; }
   body { background: #fff; font-size: 10.5pt; }
   .page { width: auto; margin: 0; padding: 11mm 13mm 9mm; box-shadow: none; }
   .guide-lang a { color: inherit; }
-  .retour, .regles, .guide-entete .essai, .etapes li::before { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .retour, .regles, .guide-entete .licence, .etapes li::before { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 }

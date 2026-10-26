@@ -478,7 +478,8 @@ let ACTIONS;
   const PAGE_C = `/app/documents/${DOCC}/validation`;
   const etatC = () => sql(`SELECT etat || '/' || coalesce(version_publiee::text, '-') FROM "${SCHEMA_A}".documents WHERE id = '${DOCC}'`);
   const decisionsC = () => Number(sql(`SELECT count(*) FROM "${SCHEMA_A}".decisions_document WHERE document_id = '${DOCC}'`));
-  const decision = (transition, motif = "") => ({ organisationId: ORG_A, documentId: DOCC, transition, versionVue: String(versionDe(DOCC)), motif });
+  // Soumettre, vérifier, approuver : la fonction de la personne est demandée (TC-03) ; ignorée pour les autres décisions.
+  const decision = (transition, motif = "") => ({ organisationId: ORG_A, documentId: DOCC, transition, versionVue: String(versionDe(DOCC)), motif, fonction: "Responsable QSE" });
   const vers = (etat) => `redirection:${PAGE_C}?etat=${etat}`;
   const casC = (qui, champs, attendu, options = {}) => cas(qui, "actionTransitionDocument", champs, attendu, { page: PAGE_C, ...options });
   const reussite = async (qui, transition, etat, motif = "") => {
@@ -492,6 +493,7 @@ let ACTIONS;
   await casC("adminB", { ...decision("soumettre"), organisationId: ORG_B }, "erreur.introuvable", { note: "document de A depuis B" });
   await casC("redacA", decision("publier"), "erreur.saisie_invalide", { note: "décision inconnue" });
   await casC("redacA", { ...decision("soumettre"), versionVue: "1" }, "versions.document_modifie", { note: "page périmée" });
+  await casC("redacA", { ...decision("soumettre"), fonction: "" }, "circuit.fonction_requise", { note: "sans fonction (TC-03)" });
   await casC("verifA", decision("verifier"), "circuit.etat_incompatible", { note: "vérifier un brouillon (pas encore soumis)" });
   await casC("redacA", decision("soumettre"), "origine", { origine: ETRANGERE, note: "autre site" });
   await reussite("redacA", "soumettre", "en_verification");
@@ -508,6 +510,7 @@ let ACTIONS;
   for (const qui of ["faux", "attente"]) await casC(qui, decision("verifier"), "session");
   for (const qui of ["lecteurA", "redacA", "approA", "adminA", "adminB", "superadmin"]) await casC(qui, decision("verifier"), "erreur.interdit");
   await casC("verifA", decision("refuser_verification"), "circuit.motif_requis", { note: "refus sans motif" });
+  await casC("verifA", { ...decision("verifier"), fonction: " " }, "circuit.fonction_requise", { note: "sans fonction (TC-03)" });
   await reussite("verifA", "verifier", "en_approbation");
 
   // Approuver : approbateur, pas celui qui a vérifié.

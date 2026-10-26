@@ -3,7 +3,9 @@
 // demande le navigateur : transformer le dessin (SVG) en image PNG, télécharger un fichier, imprimer.
 
 import * as store from "./store.js";
-import { langueCourante } from "./i18n.js";
+import { langueCourante, t } from "./i18n.js";
+import { h } from "./dom.js";
+import { estProjet } from "./signataires.js";
 import { construireDocx, construireDocxIT } from "./exportDocx.js";
 import { dessinerNiveau2, mesurerNiveau2, disposerNiveau2 } from "./render.js";
 import { construireFeuille } from "./apercu.js";
@@ -131,11 +133,13 @@ export function preparerImpression() {
   const zone = document.getElementById("zone-impression");
   if (!zone) return;
   const procedure = store.lire();
+  // En ligne, document pas encore approuvé : mention « PROJET — non approuvé » sur chaque page (TC-07).
+  const projet = estProjet() ? [h("div", { class: "filigrane-projet", "aria-hidden": "true" }, t("impression.projet"))] : [];
   if (estInstruction(procedure)) {
-    zone.replaceChildren(construireFeuilleIT(procedure)); // une page A4 : pas de numéro de page en pied
+    zone.replaceChildren(...projet, construireFeuilleIT(procedure)); // une page A4 : pas de numéro de page en pied
   } else {
     const feuille = construireFeuille(procedure);
-    zone.replaceChildren(feuille, stylePied(feuille.getAttribute("data-pied") || ""));
+    zone.replaceChildren(...projet, feuille, stylePied(feuille.getAttribute("data-pied") || ""));
   }
   titreAvantImpression = document.title;
   document.title = nomDeFichier(procedure, "pdf").replace(/\.pdf$/, ""); // nom proposé pour le PDF

@@ -1,4 +1,4 @@
-// retour.js — la fenêtre « Envoyer un retour » de la version d'essai : rappelle qu'il s'agit d'une version d'essai, prépare les informations
+// retour.js — la fenêtre « Envoyer un retour » : rappelle la licence du logiciel, prépare les informations
 // techniques à joindre (version, navigateur, écran, langue, type de document, nombre de constats — jamais le texte du document),
 // et propose le formulaire de retours et / ou l'e-mail réglés dans config.js. Rien n'est envoyé automatiquement.
 // Les textes viennent de t() ; tout est posé avec .textContent / .value (jamais de HTML injecté).
@@ -118,7 +118,7 @@ export function rendreRetour() {
     mail && h("a", { class: "bouton-pilule", href: mail }, t("retour.email")),
   ];
   contenu.replaceChildren(
-    h("p", { class: "retour-essai" }, t("retour.mention")),
+    h("p", { class: "retour-licence" }, t("retour.mention")),
     h("p", {}, t("retour.intro")),
     h("h3", {}, t("retour.infos.titre")),
     h("p", { class: "aide-champ" }, t("retour.infos.aide")),

@@ -41,7 +41,7 @@ const procedure = (titre: string): Contenu => ({ meta: { typeDocument: "procedur
 
 async function decider(org: OrgDeTest, id: string, t: Transition, p: Personne, motif = "") {
   const v = (await lireDocument(app, org.cible, id))!.version;
-  return appliquerTransition(app, org.cible, id, t, { motif, versionVue: v, roles: p.roles }, p);
+  return appliquerTransition(app, org.cible, id, t, { motif, versionVue: v, roles: p.roles, fonction: "Responsable QSE" }, p);
 }
 const recues = async (org: OrgDeTest, p: Personne) => (await listerNotifications(app, org.cible, p.id)).map((n) => [n.nature, n.details.motif ?? null]);
 const enSql = (org: OrgDeTest, sql: string, valeurs: unknown[] = []) => enTransaction(proprietaire, (c) => c.query(sql.replaceAll("$S", `"${org.cible.schemaName}"`), valeurs));

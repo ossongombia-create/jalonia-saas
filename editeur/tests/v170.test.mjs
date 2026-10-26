@@ -61,8 +61,8 @@ test("la ligne des droits et les mentions disent : propriétaire, utilisation so
   assert.equal(CONFIG.anneeDroits, "2026");
   assert.equal(fr["mentions.droits"], "© {annee} {titulaire} — tous droits réservés. Utilisation soumise à contrat.");
   assert.equal(en["mentions.droits"], "© {annee} {titulaire} — all rights reserved. Use subject to contract.");
-  assert.match(fr["mentions.essai.titre"], /propriétaire/);
-  assert.match(en["mentions.essai.titre"], /[Pp]roprietary/);
+  assert.match(fr["mentions.licence.titre"], /propriétaire/);
+  assert.match(en["mentions.licence.titre"], /[Pp]roprietary/);
   for (const g of ["guide-fr.html", "guide-en.html"]) assert.match(editeur(g), /© 2026 Brice Ossongombia/, g);
   assert.match(editeur("LICENCES-TIERS.md"), /© 2026 Brice Ossongombia — tous droits réservés\. Utilisation soumise à contrat\./);
 });

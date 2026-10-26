@@ -23,7 +23,7 @@ test("l'outil s'appelle Jalonia, en français comme en anglais", () => {
     definirLangue(langue);
     assert.equal(t("app.titre"), "Jalonia");
     assert.equal(t("app.marque"), "Jalonia");
-    assert.ok(t("mentions.essai.texte").includes("Jalonia"));
+    assert.ok(t("mentions.licence.texte").includes("Jalonia"));
   });
   definirLangue("fr");
 });

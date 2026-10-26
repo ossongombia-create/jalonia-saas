@@ -1,7 +1,7 @@
 // Circuit de validation (W1) : règles pures (droits, états, motif, séparation des tâches), sans base.
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { ETATS, LISTE_TRANSITIONS, MOTIF_MAX, TRANSITIONS, TRANSITIONS_SECOND_FACTEUR, estTransition, refusTransition, transitionsPossibles, type ContexteDecision, type Intervenants } from "../../src/server/documents/circuit";
+import { ETATS, LISTE_TRANSITIONS, MOTIF_MAX, TRANSITIONS, TRANSITIONS_FONCTION, TRANSITIONS_SECOND_FACTEUR, demandeFonction, estTransition, refusTransition, transitionsPossibles, validationImprimable, type ContexteDecision, type Decision, type Intervenants, type Transition } from "../../src/server/documents/circuit";
 import { estCle } from "../../src/lib/i18n";
 import { en } from "../../src/lib/i18n/en";
 import type { RoleOrganisation } from "../../src/lib/rbac";
@@ -179,3 +179,48 @@ describe("circuit : mode « petite organisation » (décision n° 2 du 19/10/202
   });
 });
 
+describe("fonction demandée aux étapes nommées (TC-03)", () => {
+  it("soumettre, vérifier, approuver ; ni les refus, ni l'archivage, ni la révision", () => {
+    expect([...TRANSITIONS_FONCTION]).toEqual(["soumettre", "verifier", "approuver"]);
+    expect(LISTE_TRANSITIONS.filter(demandeFonction)).toEqual(["soumettre", "verifier", "approuver"]);
+    for (const t of TRANSITIONS_FONCTION) expect(estCle(`circuit.t.${t}`)).toBe(true);
+    for (const cle of ["circuit.fonction_requise", "circuit.fonction_trop_longue", "circuit.fonction", "circuit.nom"]) expect(estCle(cle)).toBe(true);
+  });
+});
+
+describe("tableau de validation du document imprimé (TC-07)", () => {
+  // Décisions, la plus récente d'abord (comme lireCircuit).
+  const d = (transition: Transition, version: number, acteurNom: string, acteurFonction: string, jour: string): Decision => ({
+    version, transition, etatAvant: "brouillon", etatApres: "brouillon", motif: "", empreinte: "0".repeat(64), acteurNom, acteurFonction, decideLe: new Date(`${jour}T10:00:00Z`),
+  });
+  const jour = (x: Date) => x.toISOString().slice(0, 10);
+
+  it("document approuvé : la soumission, la vérification et l'approbation de la version publiée", () => {
+    const decisions = [
+      d("approuver", 2, "Paul", "Directeur", "2026-10-25"),
+      d("verifier", 2, "Vera", "Qualité", "2026-10-24"),
+      d("soumettre", 2, "Alice", "Méthodes", "2026-10-23"),
+      d("refuser_verification", 1, "Vera", "", "2026-10-22"),
+      d("soumettre", 1, "Bob", "Ancien", "2026-10-21"),
+    ];
+    expect(validationImprimable({ etat: "publie", versionPubliee: 2, decisions }, jour)).toEqual({
+      etat: "approuve",
+      signataires: {
+        redige: { nom: "Alice", fonction: "Méthodes", date: "2026-10-23" },
+        verifie: { nom: "Vera", fonction: "Qualité", date: "2026-10-24" },
+        approuve: { nom: "Paul", fonction: "Directeur", date: "2026-10-25" },
+      },
+    });
+    // Archivé après publication : toujours le tableau de la version publiée.
+    expect(validationImprimable({ etat: "archive", versionPubliee: 2, decisions }, jour).etat).toBe("approuve");
+  });
+
+  it("brouillon, en vérification, en approbation, ou en révision d'une version publiée : projet (tableau vide)", () => {
+    const decisions = [d("soumettre", 1, "Alice", "Méthodes", "2026-10-23")];
+    for (const etat of ["brouillon", "en_verification", "en_approbation"] as const) {
+      expect(validationImprimable({ etat, versionPubliee: null, decisions }, jour)).toEqual({ etat: "projet", signataires: null });
+    }
+    // Révision : le document redevient un brouillon (nouveau contenu, non approuvé), même avec une version publiée.
+    expect(validationImprimable({ etat: "brouillon", versionPubliee: 1, decisions }, jour).etat).toBe("projet");
+  });
+});

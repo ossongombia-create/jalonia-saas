@@ -60,7 +60,7 @@ async function organisationRemplie(nom: string): Promise<OrgDeTest> {
   const admin = adminDe(org);
   const redac = { id: await membreDeTest(app, org.cible, { email: `redac-${suffixe()}@test.local`, nom: "Rédac", roles: ["REDACTEUR"] }, admin), email: "redac", ip: "127.0.0.1", agent: "vitest" };
   const d = await creerDocument(app, org.cible, procedure(`${nom} — procédure`), redac);
-  await appliquerTransition(app, org.cible, d.id, "soumettre", { motif: "", versionVue: d.version, roles: ["REDACTEUR"] }, redac);
+  await appliquerTransition(app, org.cible, d.id, "soumettre", { motif: "", versionVue: d.version, roles: ["REDACTEUR"], fonction: "Rédacteur" }, redac);
   const corbeille = await creerDocument(app, org.cible, procedure(`${nom} — à la corbeille`), redac);
   await supprimerDocument(app, org.cible, corbeille.id, redac);
   await creerAction(app, org.cible, { titre: `${nom} — action`, description: "", origine: "audit", responsableId: redac.id, echeance: "2026-12-31" }, admin);

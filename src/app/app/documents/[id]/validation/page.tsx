@@ -1,6 +1,7 @@
 // Validation d'un document (audit W1, W3) : état dans le circuit, décisions possibles pour la personne connectée,
 // décisions passées (trace d'approbation : version, motif, empreinte SHA-256 du contenu — pas une signature électronique).
 // Lecture : tous les rôles de l'organisation. Chaque décision : le droit correspondant (circuit.ts), revérifié par le serveur.
+// Soumettre, vérifier, approuver : NOM (celui du compte, non modifiable) et FONCTION (obligatoire) ; aucune signature.
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { actionTransitionDocument } from "@/actions/documents";
@@ -9,9 +10,10 @@ import { jourLocal } from "@/lib/dates";
 import { formaterDate, formaterJour } from "@/lib/format";
 import { identifiant } from "@/lib/validation";
 import { poolApplication } from "@/server/db/pools";
-import { ETATS, LISTE_TRANSITIONS, MOTIF_MAX, TRANSITIONS, lireCircuit, refusTransition, transitionsPossibles, type ContexteDecision } from "@/server/documents/circuit";
+import { ETATS, FONCTION_MAX, LISTE_TRANSITIONS, MOTIF_MAX, TRANSITIONS, demandeFonction, derniereFonction, lireCircuit, refusTransition, transitionsPossibles, type ContexteDecision } from "@/server/documents/circuit";
 import { lireEtatSecondFacteur } from "@/server/auth/second-facteur";
 import { lireParametresOrganisation, revueDe } from "@/server/documents/revues";
+import { nomActeur } from "@/server/acteur";
 import { exigerOrganisation } from "@/server/web/contexte";
 import { titrePage } from "@/server/web/metadonnees";
 
@@ -34,6 +36,8 @@ export default async function PageValidation({ params, searchParams }: {
   // Mode de validation de l'organisation et second facteur de la personne (le serveur les relit à chaque décision).
   const decision: ContexteDecision = { mode: organisation.modeValidation, secondFacteurActif: (await lireEtatSecondFacteur(poolApplication(), acteur.id)).actif };
   const possibles = transitionsPossibles(circuit.etat, organisation.roles, acteur.id, circuit.intervenants, decision);
+  // Fonction pré-remplie : la dernière saisie par la personne dans cette organisation.
+  const fonctionConnue = possibles.some(demandeFonction) ? await derniereFonction(poolApplication(), organisation, acteur.id) : "";
   // Décisions que le rôle permettrait mais que la séparation des tâches réserve à une autre personne, ou qui attendent
   // le second facteur : on dit pourquoi.
   const separations = [...new Set(
@@ -107,6 +111,18 @@ export default async function PageValidation({ params, searchParams }: {
                     <input type="hidden" name="documentId" value={circuit.id} />
                     <input type="hidden" name="transition" value={tr} />
                     <input type="hidden" name="versionVue" value={circuit.version} />
+                    {demandeFonction(tr) ? (
+                      <div className="grille-champs">
+                        <label className="champ">
+                          <span>{t("circuit.nom")}</span>
+                          <input type="text" value={nomActeur(acteur)} readOnly aria-readonly="true" data-champ="nom" />
+                        </label>
+                        <label className="champ">
+                          <span>{t("circuit.fonction")}</span>
+                          <input type="text" name="fonction" required maxLength={FONCTION_MAX} defaultValue={fonctionConnue} autoComplete="organization-title" />
+                        </label>
+                      </div>
+                    ) : null}
                     <label className="champ">
                       <span>{t(regle.motifObligatoire ? "circuit.motif_obligatoire" : "circuit.commentaire")}</span>
                       <textarea name="motif" rows={3} maxLength={MOTIF_MAX} required={regle.motifObligatoire} />
@@ -121,6 +137,7 @@ export default async function PageValidation({ params, searchParams }: {
         {separations.includes("circuit.second_facteur_requis") ? <p><Link href="/compte/second-facteur">{t("circuit.second_facteur_lien")}</Link></p> : null}
         <p className="discret petit" id="mode-validation" data-mode={organisation.modeValidation}>{t(`circuit.mode_${organisation.modeValidation}`)}</p>
         <p className="discret petit">{t("circuit.motif_aide")}</p>
+        {possibles.some(demandeFonction) ? <p className="discret petit" id="aide-fonction">{t("circuit.fonction_aide")}</p> : null}
       </section>
 
       <section className="carte">
@@ -137,6 +154,7 @@ export default async function PageValidation({ params, searchParams }: {
                   <th>{t("circuit.decision")}</th>
                   <th>{t("circuit.version")}</th>
                   <th>{t("circuit.par")}</th>
+                  <th>{t("circuit.fonction_colonne")}</th>
                   <th>{t("circuit.motif")}</th>
                   <th>{t("circuit.empreinte")}</th>
                 </tr>
@@ -148,6 +166,7 @@ export default async function PageValidation({ params, searchParams }: {
                     <td>{t(`circuit.d.${d.transition}`)}</td>
                     <td className="nowrap">v{d.version}</td>
                     <td>{d.acteurNom || "—"}</td>
+                    <td>{d.acteurFonction || "—"}</td>
                     <td className="texte-long">{d.motif || "—"}</td>
                     <td><code className="empreinte">{d.empreinte}</code></td>
                   </tr>

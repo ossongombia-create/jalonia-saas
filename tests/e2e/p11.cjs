@@ -27,10 +27,12 @@ const { BASE, sql, lancer, connecter, api, editeurPret, attendreEtat, capture, e
   const empreinteEnBase = () => sql(`SELECT encode(sha256(convert_to(contenu::text, 'UTF8')), 'hex') FROM "${schema}".documents WHERE id = '${id}'`);
   const ligneListe = (p) => p.locator("tbody tr", { has: p.locator(`a[href="/editeur/index.html?doc=${id}"]`) });
   /** Clique une décision de la page de validation (confirmation acceptée) et attend le rechargement sur le nouvel état. */
-  async function decider(p, libelle, etatAttendu, motif) {
+  async function decider(p, libelle, etatAttendu, motif, fonction = "Responsable QSE") {
     await p.waitForLoadState("networkidle"); // formulaire interactif (la confirmation passe par le script de la page)
     const bloc = p.locator(".decision-possible", { has: p.locator(`button:has-text("${libelle}")`) });
     if (motif !== undefined) await bloc.locator("textarea").fill(motif);
+    // Soumettre, vérifier, approuver : fonction obligatoire (TC-03).
+    if (await bloc.locator('input[name="fonction"]').count()) await bloc.locator('input[name="fonction"]').fill(fonction);
     let question = "";
     p.once("dialog", (d) => { question = d.message(); d.accept(); });
     await bloc.locator(`button:has-text("${libelle}")`).click();
@@ -58,7 +60,13 @@ const { BASE, sql, lancer, connecter, api, editeurPret, attendreEtat, capture, e
   await editeur.goto(`${BASE}/editeur/index.html?doc=${id}`);
   await editeurPret(editeur);
   assert.equal(await editeur.isVisible("#bandeau-lecture-seule"), false, "brouillon : modifiable");
-  const question = await decider(rita, "Soumettre à vérification", "en_verification", "");
+  // TC-03 : nom (celui du compte, non modifiable) et fonction (obligatoire) ; aucune signature à dessiner.
+  const blocSoumettre = rita.locator('.decision-possible[data-transition="soumettre"]');
+  assert.equal(await blocSoumettre.locator('[data-champ="nom"]').inputValue(), "Rita Rédactrice");
+  assert.equal(await blocSoumettre.locator('[data-champ="nom"]').evaluate((el) => el.readOnly), true, "nom non modifiable");
+  assert.equal(await blocSoumettre.locator('input[name="fonction"]').evaluate((el) => el.required), true, "fonction obligatoire");
+  assert.equal(await rita.locator("canvas, [data-signature]").count(), 0, "aucun pad de signature");
+  const question = await decider(rita, "Soumettre à vérification", "en_verification", "", "Technicienne méthodes");
   assert.equal(question, "Confirmer : « Soumettre à vérification » sur la version 1 ?");
   assert.equal(await rita.textContent("#decision-enregistree"), "Décision enregistrée : le document est maintenant « En vérification ».");
   assert.equal(etatEnBase(), "en_verification/1/-");
@@ -108,7 +116,9 @@ const { BASE, sql, lancer, connecter, api, editeurPret, attendreEtat, capture, e
   etape("nouvelle version, soumise ; le vérificateur vérifie, puis ne peut pas approuver (séparation)");
   assert.equal((await api(rita, "PUT", `/api/documents/${id}`, { organisationId: org, version: 1, contenu: contenu("Maîtriser les documents", "Rédiger le projet selon le modèle MOD-01") })).statut, 200);
   await rita.goto(PAGE);
-  await decider(rita, "Soumettre à vérification", "en_verification");
+  // Fonction pré-remplie : la dernière saisie par la personne.
+  assert.equal(await rita.locator('.decision-possible[data-transition="soumettre"] input[name="fonction"]').inputValue(), "Technicienne méthodes");
+  await decider(rita, "Soumettre à vérification", "en_verification", undefined, "Technicienne méthodes");
   await victor.goto(PAGE);
   await decider(victor, "Vérifié : transmettre à l'approbation", "en_approbation", "Relu : conforme au modèle.");
   assert.ok(await victor.isVisible("text=Aucune décision ne vous revient à cette étape."));
@@ -118,21 +128,22 @@ const { BASE, sql, lancer, connecter, api, editeurPret, attendreEtat, capture, e
   const agathe = await connecter("appro@demo.test");
   await agathe.goto(PAGE);
   assert.deepEqual(await agathe.locator(".decision-possible").evaluateAll((l) => l.map((x) => x.dataset.transition)), ["approuver", "refuser_approbation"]);
-  await decider(agathe, "Approuver et publier", "publie");
+  await decider(agathe, "Approuver et publier", "publie", undefined, "Directrice qualité");
   assert.equal(etatEnBase(), "publie/2/2");
   assert.match(await agathe.textContent("#etat-circuit"), /Dernière version publiée : v2, le /);
   const empreinte = empreinteEnBase();
   const lignes = await decisions(agathe);
   console.log("  décisions :", JSON.stringify(lignes.map((l) => l.slice(0, 4))));
+  // Colonnes : décision, version, par (nom du compte), fonction (TC-03), motif, empreinte.
   assert.deepEqual(lignes, [
-    ["Approuvé et publié", "v2", "Agathe Approbatrice", "—", empreinte],
-    ["Vérifié", "v2", "Victor Vérificateur", "Relu : conforme au modèle.", empreinte],
-    ["Soumis à vérification", "v2", "Rita Rédactrice", "—", empreinte],
-    ["Refusé à la vérification", "v1", "Victor Vérificateur", "L'étape 1 doit citer le modèle de document.", lignes[3][4]],
-    ["Soumis à vérification", "v1", "Rita Rédactrice", "—", lignes[3][4]],
+    ["Approuvé et publié", "v2", "Agathe Approbatrice", "Directrice qualité", "—", empreinte],
+    ["Vérifié", "v2", "Victor Vérificateur", "Responsable QSE", "Relu : conforme au modèle.", empreinte],
+    ["Soumis à vérification", "v2", "Rita Rédactrice", "Technicienne méthodes", "—", empreinte],
+    ["Refusé à la vérification", "v1", "Victor Vérificateur", "—", "L'étape 1 doit citer le modèle de document.", lignes[3][5]],
+    ["Soumis à vérification", "v1", "Rita Rédactrice", "Technicienne méthodes", "—", lignes[3][5]],
   ]);
-  assert.match(lignes[3][4], /^[0-9a-f]{64}$/);
-  assert.notEqual(lignes[3][4], empreinte, "la version 1 avait un autre contenu");
+  assert.match(lignes[3][5], /^[0-9a-f]{64}$/);
+  assert.notEqual(lignes[3][5], empreinte, "la version 1 avait un autre contenu");
   await capture(agathe, "circuit-publie");
 
   etape("lectrice (anglais) : consulte la page de validation, sans aucune décision");
@@ -164,7 +175,9 @@ const { BASE, sql, lancer, connecter, api, editeurPret, attendreEtat, capture, e
 
   etape("nouveau cycle, puis archivage (motif obligatoire) : lecture seule définitive");
   await rita.goto(PAGE);
-  await decider(rita, "Soumettre à vérification", "en_verification");
+  // Fonction pré-remplie : la dernière saisie par la personne.
+  assert.equal(await rita.locator('.decision-possible[data-transition="soumettre"] input[name="fonction"]').inputValue(), "Technicienne méthodes");
+  await decider(rita, "Soumettre à vérification", "en_verification", undefined, "Technicienne méthodes");
   await victor.goto(PAGE);
   await decider(victor, "Vérifié : transmettre à l'approbation", "en_approbation");
   await agathe.goto(PAGE);

@@ -33,8 +33,8 @@ export function rendreMentions() {
   const droits = droitsAffiches();
   contenu.replaceChildren(
     h("p", { class: "mentions-version" }, t("mentions.version", { version: VERSION })),
-    rubrique(t("mentions.essai.titre"),
-      h("p", {}, t("mentions.essai.texte")),
+    rubrique(t("mentions.licence.titre"),
+      h("p", {}, t("mentions.licence.texte")),
       droits ? h("p", { class: "mentions-titulaire" }, droits) : null),
     rubrique(t("mentions.aide.titre"), h("p", {}, t("mentions.aide.texte"))),
     rubrique(t("mentions.methode.titre"), h("p", {}, t("mentions.methode.texte"))),
