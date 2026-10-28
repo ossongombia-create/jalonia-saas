@@ -181,6 +181,7 @@ export function nouvelleOperation(champs = {}) {
     libelle: "",
     entree: "", // information reçue (flèche d'arrivée) : obligatoire pour la 1re opération
     sortie: "", // information produite (flèche de sortie) : obligatoire pour la dernière opération
+    commentaire: "", // « Comment ? » : mode opératoire détaillé (gestes, paramètres, sécurité), imprimé sous le logigramme (v1.9)
     vigilance: false, // opération à risque ou qui demande une vigilance : elle doit avoir au moins un contrôle
     enregistrement: false, // l'opération produit un document d'enregistrement (petit carré noir en bas à gauche)
     contrainte: { actif: false, nature: "", texte: "" }, // délai ou coût (cercle « + »)
@@ -350,7 +351,9 @@ export function signatureContenu(p) {
   // L'instruction de travail (v0.16) n'entre dans la signature que si elle est commencée.
   // v0.17 : le champ « compétences requises » a été retiré du rôle ; la signature garde son ancienne forme (competences: "") pour qu'un
   // fichier d'instruction validé en v0.16 reste validé.
-  const itSigne = instructionUtilisee(p.it) ? { it: { ...p.it, role: { ...p.it.role, competences: "" } } } : {};
+  // v1.9 : le « Comment ? » d'une opération n'entre dans la signature que s'il est renseigné (une instruction validée avant le reste).
+  const sansCommentaireVide = (o) => (o && !o.commentaire ? Object.fromEntries(Object.entries(o).filter(([k]) => k !== "commentaire")) : o);
+  const itSigne = instructionUtilisee(p.it) ? { it: { ...p.it, role: { ...p.it.role, competences: "" }, operations: (p.it.operations || []).map(sansCommentaireVide) } } : {};
   const texte = stable({ meta, roles: p.roles, etapes, corps, ...itSigne });
   let h1 = 5381;
   let h2 = 52711;

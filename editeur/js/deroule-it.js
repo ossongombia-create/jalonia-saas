@@ -165,11 +165,14 @@ function carteOperation(op, i, total) {
   const premiere = i === 0;
   const derniere = i === total - 1;
   const details = h("details", { class: "op-details" },
-    h("summary", {}, t("it.op.details"), op.outils.length ? h("small", {}, ` — ${t("it.op.outils_n", { n: op.outils.length })}`) : null),
+    h("summary", {}, t("it.op.details"), op.outils.length ? h("small", {}, ` — ${t("it.op.outils_n", { n: op.outils.length })}`) : null,
+      op.commentaire ? h("small", { class: "op-a-commentaire" }, ` — ${t("it.op.commentaire_court")}`) : null),
     ...panneauOutils(op),
     // Intermédiaire : l'information produite est facultative (elle figure sur la flèche vers l'opération suivante).
     !derniere ? champAvec(t("it.op.sortie"), "op-sortie-" + op.id, op.sortie, (v) => store.modifierOperation(op.id, "sortie", v), { placeholder: t("it.op.sortie.ph") }) : null,
-    !premiere && op.entree ? champAvec(t("it.op.entree"), "op-entree-" + op.id, op.entree, (v) => store.modifierOperation(op.id, "entree", v)) : null);
+    !premiere && op.entree ? champAvec(t("it.op.entree"), "op-entree-" + op.id, op.entree, (v) => store.modifierOperation(op.id, "entree", v)) : null,
+    // « Comment ? » : mode opératoire détaillé, imprimé sous le logigramme (tableau « Mode opératoire »).
+    champAvec(t("it.op.commentaire"), "op-commentaire-" + op.id, op.commentaire, (v) => store.modifierOperation(op.id, "commentaire", v), { placeholder: t("it.op.commentaire.ph") }));
   details.open = detailsOuverts.has(op.id);
   details.addEventListener("toggle", () => { if (details.open) detailsOuverts.add(op.id); else detailsOuverts.delete(op.id); });
 

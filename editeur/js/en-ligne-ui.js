@@ -253,6 +253,22 @@ async function creerInstruction(etapeId) {
   }
 }
 
+/**
+ * Documents créés d'un coup (instructions de travail d'une fiche de collecte) : un brouillon chacun, sur le serveur. Renvoie les
+ * références créées et celles en échec (la procédure ouverte, elle, s'enregistre comme d'habitude).
+ */
+export async function creerDocuments(liste) {
+  const creees = [];
+  const echecs = [];
+  for (const contenu of liste) {
+    const nom = contenu.meta.reference || contenu.meta.titre;
+    const r = await appeler("POST", "/api/documents", { organisationId: organisation.id, contenu });
+    if (r.statut === 201 && r.corps && MOTIF_ID.test(r.corps.id)) creees.push(nom);
+    else echecs.push(nom);
+  }
+  return { creees, echecs };
+}
+
 // ---------- Démarrage ----------
 export async function demarrerEnLigne({ apresChargement, toutAfficher }) {
   const params = new URLSearchParams(location.search);

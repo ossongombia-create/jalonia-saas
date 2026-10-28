@@ -738,6 +738,11 @@ dialog#fenetre-synchro::backdrop { background: rgba(0, 58, 73, .6); }
   .sous-carte.revision { grid-template-columns: 1fr 1fr; }
 }
 
+/* Instruction de travail : tableau « Mode opératoire » (« Comment ? » des opérations) sous le logigramme. */
+.mode-operatoire { margin-top: 14px; }
+.mode-operatoire h4 { margin: 0 0 6px; }
+.tab-mode-operatoire td:first-child, .tab-mode-operatoire th:first-child { width: 2.5em; }
+
 /* Tableau de validation venu du circuit (en ligne) : lecture seule. */
 .signataire-circuit { display: grid; grid-template-columns: auto 1fr; gap: 4px 10px; margin: 0; }
 .signataire-circuit dt { color: var(--texte-doux, #5b6670); }
