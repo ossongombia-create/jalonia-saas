@@ -3,6 +3,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { exempleValiderCommande, nouvelleEtape } from "../js/model.js";
 import { verifier } from "../js/rules.js";
+import { bloquantsSynthese } from "../js/parcours.js";
 import { dessinerNiveau2 } from "../js/render.js";
 import { t, definirLangue } from "../js/i18n.js";
 import fr from "../js/locales/fr.js";
@@ -29,13 +30,14 @@ test("instruction collaborative : colonne traversée signalée", () => {
   assert.ok(cles(p).includes("regle.collab.colonne_traversee"));
 });
 
-test("plus de 6 rôles : erreur", () => {
+test("plus de 6 rôles : alerte, sans bloquer la synthèse (décision F8)", () => {
   const p = exempleValiderCommande();
   for (let k = 0; k < 5; k += 1) {
     p.roles.push({ id: `x${k}`, nom: `Rôle ${k}`, type: "individuel" });
     p.etapes.push(nouvelleEtape({ roleId: `x${k}`, libelle: "Traiter le dossier", entree: "A", sortie: "B" }));
   }
-  assert.ok(cles(p).includes("regle.roles.trop_nombreux"));
+  assert.equal(verifier(p).find((c) => c.cle === "regle.roles.trop_nombreux").gravite, "alerte");
+  assert.ok(!bloquantsSynthese(p).some((c) => c.cle === "regle.roles.trop_nombreux"));
 });
 
 test("le dessin contient les ovales R et P de l'instruction collaborative", () => {
