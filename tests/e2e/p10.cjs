@@ -3,7 +3,7 @@ const { BASE, lancer, connecter, api, capture, etape, assert } = require("./outi
 
 (async () => {
   const b = await lancer();
-  const p = await connecter("autre@demo.test");
+  const p = await connecter("redac-autre@demo.test"); // un rédacteur : l'administrateur seul ne rédige pas
   const org = (await api(p, "GET", "/api/editeur/contexte")).corps.organisation.id;
   const v1 = {
     meta: { typeDocument: "procedure", titre: "Titre initial", reference: "PR-HIS-01" },

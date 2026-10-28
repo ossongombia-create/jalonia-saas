@@ -6,7 +6,7 @@ const { BASE, lancer, connecter, api, capture, etape, assert } = require("./outi
 
 (async () => {
   const b = await lancer();
-  const p = await connecter("autre@demo.test");
+  const p = await connecter("redac-autre@demo.test"); // un rédacteur : l'administrateur seul ne rédige pas
   await p.goto(`${BASE}/app/documents`);
   const ctx = (await api(p, "GET", "/api/editeur/contexte")).corps;
   const org = ctx.organisation.id;

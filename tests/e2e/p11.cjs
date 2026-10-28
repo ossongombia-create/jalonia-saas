@@ -157,8 +157,11 @@ const { BASE, sql, lancer, connecter, api, editeurPret, attendreEtat, capture, e
   assert.notEqual(lignes[3][5], empreinte, "la version 1 avait un autre contenu");
   await capture(agathe, "circuit-publie");
 
-  etape("lectrice (anglais) : consulte la page de validation, sans aucune décision");
-  const lea = await connecter("lecteur@demo.test");
+  etape("administrateur seul (anglais) : consulte la page de validation, sans aucune décision ; la lectrice, elle, peut réviser");
+  const lectrice = await connecter("lecteur@demo.test");
+  await lectrice.goto(PAGE);
+  assert.deepEqual(await lectrice.locator(".decision-possible").evaluateAll((l) => l.map((x) => x.dataset.transition)), ["reviser"], "tout membre rédige");
+  const lea = await connecter("info@demo.test");
   await lea.goto(PAGE);
   assert.ok(await lea.isVisible("h1:has-text('Document approval')"));
   assert.ok(await lea.isVisible("text=No decision is yours at this stage."));
@@ -195,7 +198,7 @@ const { BASE, sql, lancer, connecter, api, editeurPret, attendreEtat, capture, e
   await decider(agathe, "Approuver et publier", "publie");
   assert.equal(etatEnBase(), "publie/3/3");
   await agathe.goto(PAGE);
-  assert.deepEqual(await agathe.locator(".decision-possible").evaluateAll((l) => l.map((x) => x.dataset.transition)), ["archiver", "confirmer_revue"]);
+  assert.deepEqual(await agathe.locator(".decision-possible").evaluateAll((l) => l.map((x) => x.dataset.transition)), ["archiver", "reviser", "confirmer_revue"]);
   await decider(agathe, "Archiver", "archive", "Remplacée par la procédure PR-CIR-02.");
   assert.equal(etatEnBase(), "archive/3/3");
   assert.ok(await agathe.isVisible("text=Aucune décision ne vous revient à cette étape."));

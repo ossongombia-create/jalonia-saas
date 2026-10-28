@@ -371,10 +371,10 @@ let ACTIONS;
     if (attendu === 200) assert.equal(r.json.organisation.id, ORG_DE[qui], `contexte / ${qui} : SON organisation`);
     sansEffet(r, `GET contexte / ${qui}`);
   }
-  // Création : seuls rédacteur et administrateur de A ; B ne peut pas écrire dans A (409 : ce n'est pas son
-  // organisation ouverte) ; sans Origin ou depuis un autre site : 403.
+  // Création : tout membre de A (décision du 28/10/2026), sauf l'administrateur seul ; B ne peut pas écrire dans A (409 :
+  // ce n'est pas son organisation ouverte) ; sans Origin ou depuis un autre site : 403.
   const creation = { organisationId: ORG_A, contenu: procedure("Créée par l'API") };
-  for (const [qui, attendu] of [["faux", 401], ["attente", 401], ["lecteurA", 403], ["verifA", 403], ["approA", 403], ["adminB", 409], ["superadmin", 403]]) {
+  for (const [qui, attendu] of [["faux", 401], ["attente", 401], ["adminA", 403], ["adminB", 409], ["superadmin", 403]]) {
     const r = await api(qui, "POST", "/api/documents", creation);
     assert.equal(r.statut, attendu, `POST /api/documents / ${qui}`);
     sansEffet(r, `POST documents / ${qui}`);
@@ -384,6 +384,7 @@ let ACTIONS;
     assert.deepEqual([r.statut, r.json?.erreur], [403, "origine"], `POST /api/documents / redacA ${note}`);
     sansEffet(r, `POST documents ${note}`);
   }
+  for (const qui of ["lecteurA", "verifA", "approA"]) assert.equal((await api(qui, "POST", "/api/documents", creation)).statut, 201, `POST /api/documents / ${qui} : tout membre rédige`);
   const creeApi = await api("redacA", "POST", "/api/documents", creation);
   assert.equal(creeApi.statut, 201, "POST /api/documents / redacA");
   const DOC_API = creeApi.json.id;
@@ -392,20 +393,21 @@ let ACTIONS;
   const V = Number(sql(`SELECT version FROM "${SCHEMA_A}".documents WHERE id = '${DOC_API}'`));
   const enreg = (org, version) => ({ organisationId: org, version, contenu: procedure("Modifiée par l'API") });
   for (const [qui, corps, attendu] of [
-    ["faux", enreg(ORG_A, V), 401], ["attente", enreg(ORG_A, V), 401], ["lecteurA", enreg(ORG_A, V), 403], ["verifA", enreg(ORG_A, V), 403],
+    ["faux", enreg(ORG_A, V), 401], ["attente", enreg(ORG_A, V), 401], ["adminA", enreg(ORG_A, V), 403],
     ["adminB", enreg(ORG_B, V), 404], ["adminB", enreg(ORG_A, V), 409], ["superadmin", enreg(ORG_A, V), 403],
   ]) {
     const r = await api(qui, "PUT", `/api/documents/${DOC_API}`, corps);
     assert.equal(r.statut, attendu, `PUT /api/documents / ${qui} (${corps.organisationId === ORG_B ? "org B" : "org A"})`);
     sansEffet(r, `PUT document / ${qui}`);
   }
-  const modifie = await api("adminA", "PUT", `/api/documents/${DOC_API}`, enreg(ORG_A, V));
-  assert.equal(modifie.statut, 200, "PUT /api/documents / adminA");
+  const modifie = await api("lecteurA", "PUT", `/api/documents/${DOC_API}`, enreg(ORG_A, V));
+  assert.equal(modifie.statut, 200, "PUT /api/documents / lecteurA");
   assert.equal(sql(`SELECT version FROM "${SCHEMA_A}".documents WHERE id = '${DOC_API}'`), String(V + 1));
   assert.equal(sql(`SELECT count(*) FROM "${SCHEMA_B}".documents`), "0", "rien dans B");
   // Cartographie.
   const carto = { organisationId: ORG_A, version: 0, contenu: { processus: [], flux: [], documents: [] } };
-  for (const [qui, attendu] of [["faux", 401], ["attente", 401], ["lecteurA", 403], ["verifA", 403], ["adminB", 409], ["superadmin", 403]]) {
+  // Cartographie : le rédacteur seulement.
+  for (const [qui, attendu] of [["faux", 401], ["attente", 401], ["lecteurA", 403], ["verifA", 403], ["adminA", 403], ["adminB", 409], ["superadmin", 403]]) {
     const r = await api(qui, "PUT", "/api/cartographie", carto);
     assert.equal(r.statut, attendu, `PUT /api/cartographie / ${qui}`);
     sansEffet(r, `PUT cartographie / ${qui}`);
@@ -420,17 +422,17 @@ let ACTIONS;
   const nbDocsA = () => Number(sql(`SELECT count(*) FROM "${SCHEMA_A}".documents`));
   const nouveau = { organisationId: ORG_A, type: "procedure" };
   for (const qui of ["faux", "attente"]) await cas(qui, "actionCreerDocument", nouveau, "session");
-  for (const qui of ["lecteurA", "verifA", "adminB", "superadmin"]) await cas(qui, "actionCreerDocument", nouveau, "erreur.interdit");
+  for (const qui of ["adminA", "adminB", "superadmin"]) await cas(qui, "actionCreerDocument", nouveau, "erreur.interdit");
   await cas("redacA", "actionCreerDocument", nouveau, "origine", { origine: ETRANGERE, note: "autre site" });
   let n = nbDocsA();
   await cas("redacA", "actionCreerDocument", nouveau, "succes", { effet: () => nbDocsA() === n + 1 });
   const DOC = sql(`SELECT id FROM "${SCHEMA_A}".documents ORDER BY cree_le DESC LIMIT 1`);
   n = nbDocsA();
-  await cas("adminA", "actionCreerDocument", { organisationId: ORG_A, type: "instruction" }, "succes", { effet: () => nbDocsA() === n + 1 });
+  await cas("lecteurA", "actionCreerDocument", { organisationId: ORG_A, type: "instruction" }, "succes", { effet: () => nbDocsA() === n + 1 });
 
   const suppression = { organisationId: ORG_A, documentId: DOC };
   for (const qui of ["faux", "attente"]) await cas(qui, "actionSupprimerDocument", suppression, "session");
-  for (const qui of ["lecteurA", "verifA", "adminB", "superadmin"]) await cas(qui, "actionSupprimerDocument", suppression, "erreur.interdit");
+  for (const qui of ["adminA", "adminB", "superadmin"]) await cas(qui, "actionSupprimerDocument", suppression, "erreur.interdit");
   await cas("adminB", "actionSupprimerDocument", { organisationId: ORG_B, documentId: DOC }, "erreur.introuvable", { note: "document de A depuis B" });
   const aLaCorbeille = (id) => sql(`SELECT supprime_le IS NOT NULL FROM "${SCHEMA_A}".documents WHERE id = '${id}'`) === "t";
   await cas("redacA", "actionSupprimerDocument", suppression, "succes", { effet: () => aLaCorbeille(DOC) });
@@ -442,13 +444,13 @@ let ACTIONS;
   const existe = (id) => !aLaCorbeille(id);
   await cas("redacA", "actionSupprimerDocument", { organisationId: ORG_A, documentId: liee.json.id }, "docs.suppression_liee", { note: "liée, sans confirmation" });
   await cas("redacA", "actionSupprimerDocument", { organisationId: ORG_A, documentId: itLiee.json.id }, "docs.suppression_liee", { note: "instruction citée, sans confirmation" });
-  await cas("adminA", "actionSupprimerDocument", { organisationId: ORG_A, documentId: liee.json.id, confirmerLiens: "1" }, "succes",
+  await cas("verifA", "actionSupprimerDocument", { organisationId: ORG_A, documentId: liee.json.id, confirmerLiens: "1" }, "succes",
     { note: "liée, confirmée", effet: () => !existe(liee.json.id) && existe(itLiee.json.id) });
 
   // Corbeille (D1) : rétablir = droit de suppression, dans SON organisation.
   const retablir = { organisationId: ORG_A, documentId: DOC };
   for (const qui of ["faux", "attente"]) await cas(qui, "actionRetablirDocument", retablir, "session");
-  for (const qui of ["lecteurA", "verifA", "adminB", "superadmin"]) await cas(qui, "actionRetablirDocument", retablir, "erreur.interdit");
+  for (const qui of ["adminA", "adminB", "superadmin"]) await cas(qui, "actionRetablirDocument", retablir, "erreur.interdit");
   await cas("adminB", "actionRetablirDocument", { organisationId: ORG_B, documentId: DOC }, "erreur.introuvable", { note: "document de A depuis B" });
   await cas("redacA", "actionRetablirDocument", retablir, "succes", { effet: () => !aLaCorbeille(DOC) });
 
@@ -458,11 +460,11 @@ let ACTIONS;
   assert.equal(enregistre.statut, 200);
   const restaurer = { organisationId: ORG_A, documentId: DOC, version: "1", versionActuelle: String(versionDe(DOC)) };
   for (const qui of ["faux", "attente"]) await cas(qui, "actionRestaurerVersion", restaurer, "session");
-  for (const qui of ["lecteurA", "verifA", "adminB", "superadmin"]) await cas(qui, "actionRestaurerVersion", restaurer, "erreur.interdit");
+  for (const qui of ["adminA", "adminB", "superadmin"]) await cas(qui, "actionRestaurerVersion", restaurer, "erreur.interdit");
   await cas("adminB", "actionRestaurerVersion", { ...restaurer, organisationId: ORG_B }, "erreur.introuvable", { note: "document de A depuis B" });
   await cas("redacA", "actionRestaurerVersion", { ...restaurer, versionActuelle: "1" }, "versions.document_modifie", { note: "page périmée" });
   const avantRestauration = versionDe(DOC);
-  await cas("adminA", "actionRestaurerVersion", restaurer, "succes", {
+  await cas("approA", "actionRestaurerVersion", restaurer, "succes", {
     effet: () => versionDe(DOC) === avantRestauration + 1
       && sql(`SELECT d.contenu = v.contenu FROM "${SCHEMA_A}".documents d JOIN "${SCHEMA_A}".versions_document v ON v.document_id = d.id AND v.version = 1 WHERE d.id = '${DOC}'`) === "t",
   });
@@ -492,7 +494,7 @@ let ACTIONS;
 
   // Soumettre : rédaction.
   for (const qui of ["faux", "attente"]) await casC(qui, decision("soumettre"), "session");
-  for (const qui of ["lecteurA", "verifA", "approA", "adminB", "superadmin"]) await casC(qui, decision("soumettre"), "erreur.interdit");
+  for (const qui of ["adminA", "adminB", "superadmin"]) await casC(qui, decision("soumettre"), "erreur.interdit");
   await casC("adminB", { ...decision("soumettre"), organisationId: ORG_B }, "erreur.introuvable", { note: "document de A depuis B" });
   await casC("redacA", decision("publier"), "erreur.saisie_invalide", { note: "décision inconnue" });
   await casC("redacA", { ...decision("soumettre"), versionVue: "1" }, "versions.document_modifie", { note: "page périmée" });
@@ -527,7 +529,7 @@ let ACTIONS;
   assert.equal(etatC(), `publie/${versionDe(DOCC)}`, "version publiée notée");
 
   // Réviser (rédaction) puis un nouveau cycle ; archiver (approbateur, motif obligatoire).
-  for (const qui of ["lecteurA", "verifA", "approA"]) await casC(qui, decision("reviser"), "erreur.interdit");
+  await casC("adminA", decision("reviser"), "erreur.interdit");
   await reussite("redacA", "reviser", "brouillon");
   assert.equal(etatC(), `brouillon/${versionDe(DOCC)}`, "la version publiée reste connue pendant la révision");
   await reussite("redacA", "soumettre", "en_verification");

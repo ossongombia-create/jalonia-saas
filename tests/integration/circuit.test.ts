@@ -123,7 +123,9 @@ describe("circuit de validation", () => {
   it("droits : chaque décision demande son rôle (revérifié par le service)", async () => {
     const org = await creerOrgDeTest(app, proprietaire, superadmin);
     const d = await creerDocument(app, org.cible, procedure("D"), alice);
-    for (const p of [vera, paul, lea]) expect(await cleErreur(decider(org, d.id, "soumettre", p)), p.nom).toBe("erreur.interdit");
+    // Tout membre rédige et soumet (28/10/2026) ; l'administrateur seul (gestion des comptes), non.
+    const admin: Personne = { id: org.adminId, email: org.adminEmail, nom: "Admin", ip: "127.0.0.1", agent: "vitest", roles: ["ADMIN_ORGANISATION"] };
+    expect(await cleErreur(decider(org, d.id, "soumettre", admin))).toBe("erreur.interdit");
     await decider(org, d.id, "soumettre", bob); // un autre rédacteur peut soumettre
     for (const p of [alice, bob, paul, lea]) expect(await cleErreur(decider(org, d.id, "verifier", p)), p.nom).toBe("erreur.interdit");
     await decider(org, d.id, "verifier", vera);
@@ -208,7 +210,8 @@ describe("circuit de validation", () => {
     await decider(org, d.id, "soumettre", alice);
     await decider(org, d.id, "verifier", vera);
     await decider(org, d.id, "approuver", paul);
-    expect(await cleErreur(decider(org, d.id, "reviser", vera))).toBe("erreur.interdit");
+    const admin: Personne = { id: org.adminId, email: org.adminEmail, nom: "Admin", ip: "127.0.0.1", agent: "vitest", roles: ["ADMIN_ORGANISATION"] };
+    expect(await cleErreur(decider(org, d.id, "reviser", admin))).toBe("erreur.interdit");
     expect(await decider(org, d.id, "reviser", bob)).toEqual({ etat: "brouillon" });
     await enregistrerDocument(app, org.cible, d.id, { contenu: procedure("Pub2 en préparation"), version: 1 }, bob);
     const c = (await lireCircuit(app, org.cible, d.id))!;

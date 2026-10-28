@@ -1,4 +1,5 @@
-// Partie 4 : lecture seule (lectrice en anglais, vérificateur), refus de l'API, étanchéité, suppression, journal.
+// Partie 4 : lecture seule (administrateur seul, en anglais : il gère les comptes et ne rédige pas), tout membre rédige
+// (lectrice, vérificateur), refus de l'API, étanchéité, suppression, journal.
 const { BASE, SORTIE, fichierEtat, lancer, connecter, api, editeurPret, attendreEtat, capture, etape, assert } = require("./outils.cjs");
 const fs = require("node:fs");
 (async () => {
@@ -16,8 +17,14 @@ const fs = require("node:fs");
     await attendreEtat(rita, "Enregistré");
   }
 
-  etape("lectrice (anglais) : liste sans création ni suppression, bandeau de lecture seule");
-  const lea = await connecter("lecteur@demo.test");
+  etape("tout membre rédige : la lectrice crée et supprime des documents (décision du 28/10/2026)");
+  const lectrice = await connecter("lecteur@demo.test");
+  await lectrice.goto(`${BASE}/app/documents`);
+  assert.equal(await lectrice.isVisible('button:has-text("New procedure")'), true);
+  assert.equal((await api(lectrice, "GET", `/api/editeur/contexte?doc=${docId}`)).corps.droits.rediger, true);
+
+  etape("administrateur seul (anglais) : liste sans création ni suppression, bandeau de lecture seule");
+  const lea = await connecter("info@demo.test");
   await lea.goto(`${BASE}/app/documents`);
   assert.equal(await lea.isVisible('button:has-text("New procedure")'), false);
   assert.equal(await lea.isVisible('button:has-text("Delete")'), false);
@@ -25,7 +32,7 @@ const fs = require("node:fs");
   assert.equal(await lea.locator("table.tableau tbody tr").count(), 3);
   await capture(lea, "liste-lectrice");
 
-  etape("lectrice : le document s'ouvre en lecture seule ; rien ne peut être modifié ni enregistré");
+  etape("administrateur seul : le document s'ouvre en lecture seule ; rien ne peut être modifié ni enregistré");
   const versionAvant = (await api(lea, "GET", `/api/editeur/contexte?doc=${docId}`)).corps.document.version;
   await lea.goto(`${BASE}/editeur/index.html?doc=${docId}`);
   await editeurPret(lea);
@@ -51,7 +58,7 @@ const fs = require("node:fs");
   await lea.keyboard.press("Escape");
   await capture(lea, "lecture-seule");
 
-  etape("lectrice : la cartographie s'ouvre en lecture seule (pas d'import, pas de modèle, pas d'effacement)");
+  etape("administrateur seul : la cartographie s'ouvre en lecture seule (pas d'import, pas de modèle, pas d'effacement)");
   await lea.click("#btn-fichier");
   await lea.click("#btn-cartographie");
   await lea.waitForSelector("#fenetre-carto[open]");
@@ -62,7 +69,7 @@ const fs = require("node:fs");
   await capture(lea, "carto-lecture-seule");
   await lea.click("#carto-fermer");
 
-  etape("lectrice : export Word du document validé, comme pour un rédacteur");
+  etape("administrateur seul : export Word du document validé, comme pour un rédacteur");
   await lea.click('.liste-etapes li:nth-child(4) button');
   const [word] = await Promise.all([lea.waitForEvent("download"), lea.click('button:has-text("Download the Word file (.docx)")')]);
   const cheminWord = SORTIE + "/lectrice-" + word.suggestedFilename();
@@ -72,7 +79,7 @@ const fs = require("node:fs");
   const ctxDoc = (await api(lea, "GET", `/api/editeur/contexte?doc=${docIT}`)).corps;
   assert.equal(ctxDoc.droits.rediger, false);
 
-  etape("lectrice : l'API refuse toute écriture (403), même en appel direct");
+  etape("administrateur seul : l'API refuse toute écriture (403), même en appel direct");
   const corpsDoc = { organisationId: ctxDoc.organisation.id, version: versionAvant, contenu: { meta: { titre: "Pirate" }, roles: [], etapes: [] } };
   assert.equal((await api(lea, "PUT", `/api/documents/${docId}`, corpsDoc)).statut, 403);
   assert.equal((await api(lea, "POST", `/api/documents`, { organisationId: ctxDoc.organisation.id, contenu: corpsDoc.contenu })).statut, 403);
@@ -81,18 +88,21 @@ const fs = require("node:fs");
   assert.equal((await api(lea, "GET", `/api/editeur/contexte?doc=${docId}`)).corps.document.version, versionAvant, "aucun enregistrement n'est parti");
   assert.deepEqual(lea.erreurs, []);
 
-  etape("vérificateur + approbateur : lecture seule aussi (ses décisions se prennent sur la page « Validation » : partie 11)");
+  etape("vérificateur + approbateur : rédige aussi (ses décisions se prennent sur la page « Validation » : partie 11) ; la cartographie reste au rédacteur");
   const victor = await connecter("verif@demo.test");
   const ctxV = (await api(victor, "GET", `/api/editeur/contexte?doc=${docId}`)).corps;
-  assert.deepEqual(ctxV.droits, { rediger: false, supprimer: false, cartographie: false });
+  assert.deepEqual(ctxV.droits, { rediger: true, supprimer: true, cartographie: false });
 
   etape("autre organisation : aucun accès aux documents de l'Atelier (404), même en connaissant l'identifiant");
   const autre = await connecter("autre@demo.test");
   assert.equal((await api(autre, "GET", `/api/editeur/contexte?doc=${docId}`)).statut, 404);
   const ctxAutre = (await api(autre, "GET", `/api/editeur/contexte`)).corps;
   assert.equal(ctxAutre.cartographie.version, 0, "sa propre cartographie, vide");
-  assert.equal((await api(autre, "PUT", `/api/documents/${docId}`, { ...corpsDoc, organisationId: ctxAutre.organisation.id })).statut, 404);
-  assert.equal((await api(autre, "PUT", `/api/documents/${docId}`, corpsDoc)).statut, 409, "organisation annoncée ≠ organisation ouverte : refus");
+  // Écritures : par un rédacteur de l'autre organisation (son administrateur seul ne rédige pas : 403 d'emblée).
+  assert.equal((await api(autre, "PUT", `/api/documents/${docId}`, { ...corpsDoc, organisationId: ctxAutre.organisation.id })).statut, 403);
+  const redacAutre = await connecter("redac-autre@demo.test");
+  assert.equal((await api(redacAutre, "PUT", `/api/documents/${docId}`, { ...corpsDoc, organisationId: ctxAutre.organisation.id })).statut, 404);
+  assert.equal((await api(redacAutre, "PUT", `/api/documents/${docId}`, corpsDoc)).statut, 409, "organisation annoncée ≠ organisation ouverte : refus");
   await autre.goto(`${BASE}/editeur/index.html?doc=${docId}`);
   await autre.waitForSelector("#ecran-en-ligne[data-erreur]");
   assert.match(await autre.textContent("#ecran-en-ligne-texte"), /n'existe pas/);
@@ -134,7 +144,7 @@ const fs = require("node:fs");
   for (const action of ["Document mis à la corbeille", "Document créé", "Document modifié", "Cartographie modifiée"]) assert.ok(journal.includes(action), action);
   await capture(admin, "journal-organisation");
 
-  for (const p of [lea, victor, autre, rita, admin]) assert.deepEqual(p.erreurs, [], "erreurs console");
+  for (const p of [lectrice, lea, victor, autre, redacAutre, rita, admin]) assert.deepEqual(p.erreurs, [], "erreurs console");
   console.log("  erreurs console : aucune");
   await b.close();
   console.log("✔ partie 4");

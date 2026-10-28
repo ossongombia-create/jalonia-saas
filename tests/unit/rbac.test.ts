@@ -26,23 +26,23 @@ describe("rôles et droits", () => {
     expect(aLeDroit(["VERIFICATEUR"], "documents.publier")).toBe(false);
     expect(aLeDroit(["APPROBATEUR"], "documents.approuver")).toBe(true);
     expect(aLeDroit(["LECTEUR"], "documents.lire")).toBe(true);
-    expect(aLeDroit(["LECTEUR"], "documents.rediger")).toBe(false);
+    expect(aLeDroit(["LECTEUR"], "documents.rediger")).toBe(true); // tout membre rédige (28/10/2026)
+    expect(aLeDroit(["LECTEUR"], "documents.verifier")).toBe(false);
   });
 
-  it("documents : rédaction, suppression et cartographie pour l'administrateur et le rédacteur ; lecture seule pour les autres", () => {
-    for (const r of ["ADMIN_ORGANISATION", "REDACTEUR"] as const) {
-      for (const d of ["documents.lire", "documents.rediger", "documents.supprimer", "cartographie.modifier"] as const) expect(aLeDroit([r], d), `${r} / ${d}`).toBe(true);
+  it("documents : tout membre rédige et supprime ; l'administrateur seul lit sans rédiger ; cartographie au rédacteur", () => {
+    for (const r of ["REDACTEUR", "VERIFICATEUR", "APPROBATEUR", "LECTEUR"] as const) {
+      for (const d of ["documents.lire", "documents.rediger", "documents.supprimer"] as const) expect(aLeDroit([r], d), `${r} / ${d}`).toBe(true);
     }
-    for (const r of ["VERIFICATEUR", "APPROBATEUR", "LECTEUR"] as const) {
-      expect(aLeDroit([r], "documents.lire"), r).toBe(true);
-      for (const d of ["documents.rediger", "documents.supprimer", "cartographie.modifier"] as const) expect(aLeDroit([r], d), `${r} / ${d}`).toBe(false);
-    }
+    expect(aLeDroit(["ADMIN_ORGANISATION"], "documents.lire")).toBe(true);
+    for (const d of ["documents.rediger", "documents.supprimer", "documents.soumettre", "cartographie.modifier"] as const) expect(aLeDroit(["ADMIN_ORGANISATION"], d), d).toBe(false);
+    for (const r of ROLES_ORGANISATION) expect(aLeDroit([r], "cartographie.modifier"), r).toBe(r === "REDACTEUR");
     for (const d of ["documents.lire", "documents.rediger", "documents.supprimer", "cartographie.modifier"] as const) expect(DROITS[d].etat, d).toBe("actif");
   });
 
   it("circuit de validation : droits actifs ; soumettre pour qui rédige, vérifier, approuver, publier et archiver pour leurs rôles", () => {
     const attendus = {
-      "documents.soumettre": ["ADMIN_ORGANISATION", "REDACTEUR"],
+      "documents.soumettre": ["REDACTEUR", "VERIFICATEUR", "APPROBATEUR", "LECTEUR"],
       "documents.verifier": ["VERIFICATEUR"],
       "documents.approuver": ["APPROBATEUR"],
       "documents.publier": ["APPROBATEUR"],

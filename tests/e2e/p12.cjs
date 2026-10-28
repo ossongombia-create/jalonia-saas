@@ -123,7 +123,7 @@ function plusMois(iso, n) {
   await agathe.goto(PAGE);
   assert.equal(await agathe.getAttribute("#revue", "data-situation"), "escalade");
   assert.equal(await agathe.textContent("#revue"), `Revue en retard : elle était due le ${echeance.fr} (administrateurs prévenus).`);
-  assert.deepEqual(await agathe.locator(".decision-possible").evaluateAll((l) => l.map((x) => x.dataset.transition)), ["archiver", "confirmer_revue"]);
+  assert.deepEqual(await agathe.locator(".decision-possible").evaluateAll((l) => l.map((x) => x.dataset.transition)), ["archiver", "reviser", "confirmer_revue"]);
 
   etape("tâches quotidiennes construites : retard → approbatrice, escalade → administrateur ; relancées : aucun doublon");
   const premier = tachesQuotidiennes();

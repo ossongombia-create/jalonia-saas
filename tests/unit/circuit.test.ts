@@ -58,8 +58,9 @@ describe("circuit : transitions et états", () => {
 describe("circuit : refus d'une transition", () => {
   it("droit du rôle : soumettre/réviser (rédaction), vérifier (vérificateur), approuver et archiver (approbateur)", () => {
     expect(refusTransition("soumettre", "brouillon", R("REDACTEUR"), "u", aucun, "")).toBeNull();
-    expect(refusTransition("soumettre", "brouillon", R("ADMIN_ORGANISATION"), "u", aucun, "")).toBeNull();
-    for (const r of ["VERIFICATEUR", "APPROBATEUR", "LECTEUR"] as const) expect(refusTransition("soumettre", "brouillon", [r], "u", aucun, ""), r).toBe("erreur.interdit");
+    // Tout membre rédige et soumet (28/10/2026) ; l'administrateur seul, non.
+    for (const r of ["VERIFICATEUR", "APPROBATEUR", "LECTEUR"] as const) expect(refusTransition("soumettre", "brouillon", [r], "u", aucun, ""), r).toBeNull();
+    expect(refusTransition("soumettre", "brouillon", R("ADMIN_ORGANISATION"), "u", aucun, "")).toBe("erreur.interdit");
     expect(refusTransition("verifier", "en_verification", R("VERIFICATEUR"), "u", aucun, "")).toBeNull();
     for (const r of ["ADMIN_ORGANISATION", "REDACTEUR", "APPROBATEUR", "LECTEUR"] as const) {
       expect(refusTransition("verifier", "en_verification", [r], "u", aucun, ""), r).toBe("erreur.interdit");
@@ -72,7 +73,8 @@ describe("circuit : refus d'une transition", () => {
       expect(refusTransition("archiver", "publie", [r], "u", aucun, "m"), r).toBe("erreur.interdit");
     }
     expect(refusTransition("reviser", "publie", R("REDACTEUR"), "u", aucun, "")).toBeNull();
-    expect(refusTransition("reviser", "publie", R("APPROBATEUR"), "u", aucun, "")).toBe("erreur.interdit");
+    expect(refusTransition("reviser", "publie", R("APPROBATEUR"), "u", aucun, "")).toBeNull(); // tout membre rédige
+    expect(refusTransition("reviser", "publie", R("ADMIN_ORGANISATION"), "u", aucun, "")).toBe("erreur.interdit");
     expect(refusTransition("confirmer_revue", "publie", R("APPROBATEUR"), "u", aucun, "")).toBeNull();
     for (const r of ["ADMIN_ORGANISATION", "REDACTEUR", "VERIFICATEUR", "LECTEUR"] as const) expect(refusTransition("confirmer_revue", "publie", [r], "u", aucun, ""), r).toBe("erreur.interdit");
     // Le droit est vérifié avant l'état : un rôle sans droit n'apprend rien de l'état.
@@ -127,12 +129,13 @@ describe("circuit : décisions proposées", () => {
   const i: Intervenants = { auteur: "alice", soumisPar: "alice", verifiePar: "carla" };
   it("chacun ne voit que ce qu'il peut décider", () => {
     expect(transitionsPossibles("brouillon", R("REDACTEUR"), "alice", aucun)).toEqual(["soumettre"]);
-    expect(transitionsPossibles("brouillon", R("LECTEUR"), "lea", aucun)).toEqual([]);
+    expect(transitionsPossibles("brouillon", R("LECTEUR"), "lea", aucun)).toEqual(["soumettre"]);
+    expect(transitionsPossibles("brouillon", R("ADMIN_ORGANISATION"), "adam", aucun)).toEqual([]);
     expect(transitionsPossibles("en_verification", R("VERIFICATEUR"), "carla", i)).toEqual(["verifier", "refuser_verification"]);
     expect(transitionsPossibles("en_verification", R("VERIFICATEUR", "REDACTEUR"), "alice", i)).toEqual([]);
     expect(transitionsPossibles("en_approbation", R("APPROBATEUR"), "paul", i)).toEqual(["approuver", "refuser_approbation"]);
     expect(transitionsPossibles("en_approbation", R("APPROBATEUR", "VERIFICATEUR"), "carla", i)).toEqual([]);
-    expect(transitionsPossibles("publie", R("APPROBATEUR"), "paul", aucun)).toEqual(["archiver", "confirmer_revue"]);
+    expect(transitionsPossibles("publie", R("APPROBATEUR"), "paul", aucun)).toEqual(["archiver", "reviser", "confirmer_revue"]);
     expect(transitionsPossibles("publie", R("REDACTEUR"), "alice", aucun)).toEqual(["reviser"]);
     expect(transitionsPossibles("publie", R("ADMIN_ORGANISATION", "APPROBATEUR"), "zoe", aucun)).toEqual(["archiver", "reviser", "confirmer_revue"]);
     for (const r of ["ADMIN_ORGANISATION", "REDACTEUR", "VERIFICATEUR", "APPROBATEUR", "LECTEUR"] as const) expect(transitionsPossibles("archive", [r], "u", aucun), r).toEqual([]);
