@@ -35,8 +35,8 @@ export function verifier(procedure, { nomenclature = NOMENCLATURE_SUPPOSEE } = {
   const cols = colonnes(procedure);
 
   if (procedure.roles.length === 0) ajouter("alerte", "regle.roles.aucun");
-  // Au-delà de 6 colonnes : alerte, pas blocage (décision F8) ; le dessin reste lisible et une procédure d'urgence en compte souvent plus.
-  if (cols.length > 6) ajouter("alerte", "regle.roles.trop_nombreux", { n: cols.length });
+  // Règles fondamentales de la méthode (décision F8) : au-delà de 6 rôles ou de 10 instructions, la procédure ne peut pas être validée.
+  if (cols.length > 6) ajouter("erreur", "regle.roles.trop_nombreux", { n: cols.length });
   if (!procedure.meta.declencheur.trim()) ajouter("alerte", "regle.debut.manquant");
   if (procedure.etapes.length > 0 && !procedure.meta.fin.trim()) ajouter("alerte", "regle.fin.manquante");
   // v0.17 : une action amont / aval est reliée par une flèche d'information (livre §6.5.12-13) : le panier dit ce qui est transmis.
@@ -48,7 +48,8 @@ export function verifier(procedure, { nomenclature = NOMENCLATURE_SUPPOSEE } = {
   // Les instructions de contrôle (triangle) ne comptent pas dans l'effectif de 5 à 10 instructions (livre, règles de rédaction).
   const n = procedure.etapes.length;
   const nHorsControle = procedure.etapes.filter((e) => !(e.controle && e.controle.actif) && !e.correctrice).length;
-  if (n > 0 && (nHorsControle < 5 || nHorsControle > 10)) ajouter("alerte", "regle.instructions.effectif", { n: nHorsControle });
+  if (nHorsControle > 10) ajouter("erreur", "regle.instructions.trop", { n: nHorsControle });
+  else if (n > 0 && nHorsControle < 5) ajouter("alerte", "regle.instructions.effectif", { n: nHorsControle });
 
   procedure.etapes.forEach((etape, index) => {
     const i = index + 1;

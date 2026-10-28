@@ -51,9 +51,9 @@ test("plusieurs tableaux d'instructions (un par sous-section) : repris à la sui
   assert.deepEqual(rapport.find((x) => x.cle === "import.plusieurs_tableaux").params, { n: 3 });
   assert.equal(nomDe(p, p.etapes[1].roleId), "Directeur Général"); // « DG »
   assert.equal(nomDe(p, p.etapes[2].roleId), "Responsable Ressources Humaines (RRH)"); // « RRH + Manager »
-  // 17 instructions : Jalonia importe tout et alerte (cible 5 à 10), sans bloquer.
-  const c = verifier(p).find((x) => x.cle === "regle.instructions.effectif");
-  assert.equal(c.gravite, "alerte");
+  // 17 instructions : Jalonia importe tout, mais la procédure ne pourra être validée qu'une fois scindée (10 au maximum).
+  const c = verifier(p).find((x) => x.cle === "regle.instructions.trop");
+  assert.equal(c.gravite, "erreur");
 });
 
 test("« DAF / DG » : le premier réalise ; « Comptabilité », absent de la section 5, devient un rôle", async () => {
