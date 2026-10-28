@@ -124,6 +124,11 @@ export function extraireBlocs(xml) {
 const STYLE_SOMMAIRE = /^(toc|tm|sommaire|tabledesmati)/i; // lignes du sommaire (Word : « TOC1 » ou « TM1 »)
 const ADJECTIF_UNITE = /^(direction|service|d[ée]partement|[ée]quipe|comit[ée]|cellule|division|pole|pôle)\b/i;
 const MOT_VIDE = /^[-–—\s]*$/;
+// Initiales d'un nom de rôle, sans les mots outils ni ce qui est entre parenthèses : « Coordinateur d'Urgence (Chef de quart) » → « cu ».
+const MOTS_OUTILS = new Set(["de", "du", "des", "d", "la", "le", "les", "l", "et", "a", "au", "aux", "en", "pour", "of", "the", "and"]);
+const initiales = (nom) => minuscule(nom.replace(/\([^)]*\)/g, " ")).split(/[^a-z0-9]+/).filter((m) => m && !MOTS_OUTILS.has(m)).map((m) => m[0]).join("");
+// Mots trop courants pour rapprocher un acteur d'un rôle à eux seuls.
+const MOTS_GENERIQUES = new Set(["responsable", "directeur", "directrice", "chef", "agent", "service", "charge", "manager", "equipe", "membres", "tout", "toute", "personne"]);
 const minuscule = (s) => s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 
 const majuscule = (s) => s.charAt(0).toUpperCase() + s.slice(1);
@@ -210,6 +215,36 @@ function lireDomaine(texte) {
   return trouve && domaineValide(trouve[1]) ? trouve[1] : "";
 }
 
+// Tableau « Validation » : colonnes Rédigé / Vérifié / Approuvé par.
+function estTableauValidation(t) {
+  const texte0 = minuscule((t.lignes[0] || []).join(" "));
+  return /r[ée]dig|prepared/.test(texte0) && /v[ée]rifi|checked/.test(texte0);
+}
+
+// Deux présentations : lignes « Nom / Fonction / Date / Visa » (modèle), ou cellules « Fonction — Nom » puis « Date : … » (procédures
+// d'entreprise, colonnes sans étiquette).
+function lireValidation(t, p) {
+  const qui = ["redige", "verifie", "approuve"];
+  const avecEtiquettes = minuscule(t.lignes[0][0] || "") === "" || t.lignes[0].length === 4;
+  t.lignes.slice(1).forEach((l) => {
+    if (avecEtiquettes) {
+      const etiquette = minuscule(l[0] || "");
+      const champ = /^(nom|name)/.test(etiquette) ? "nom" : /^(fonction|position)/.test(etiquette) ? "fonction" : /^date/.test(etiquette) ? "date" : "";
+      if (!champ) return;
+      qui.forEach((q, j) => { p.meta.signataires[q][champ] = champ === "date" ? dateVersIso(l[j + 1]) : plat(l[j + 1]); });
+      return;
+    }
+    qui.forEach((q, j) => {
+      const c = plat(l[j]);
+      if (!c || /^visa\b/i.test(c)) return;
+      const date = /^date\s*:\s*(.+)$/i.exec(c);
+      if (date) { p.meta.signataires[q].date = dateVersIso(date[1]); return; }
+      const [fonction, nom] = c.split(/\s+[—–-]\s+/);
+      if (nom) { p.meta.signataires[q].fonction = fonction.trim(); p.meta.signataires[q].nom = nom.trim(); } else p.meta.signataires[q].nom = c;
+    });
+  });
+}
+
 // Les blocs avant le premier titre : tableau d'identification (organisation | « PROCÉDURE titre » | référence, version), validation, historique.
 function lireEnTete(blocs, p) {
   let lu = false;
@@ -227,14 +262,27 @@ function lireEnTete(blocs, p) {
       p.meta.domaine = lireDomaine(t.lignes[2][0] || "");
       p.meta.processus = plat(t.lignes[2][1]);
       p.meta.dateApplication = dateVersIso(t.lignes[2][2]);
-    } else if (/r[ée]dig|prepared/.test(texte0) && /v[ée]rifi|checked/.test(texte0)) {
-      // Validation : colonnes rédigé / vérifié / approuvé ; lignes Nom, Fonction, Date, Visa.
-      const qui = ["redige", "verifie", "approuve"];
-      t.lignes.slice(1).forEach((l) => {
-        const etiquette = minuscule(l[0] || "");
-        const champ = /^(nom|name)/.test(etiquette) ? "nom" : /^(fonction|position)/.test(etiquette) ? "fonction" : /^date/.test(etiquette) ? "date" : "";
-        if (!champ) return;
-        qui.forEach((q, j) => { p.meta.signataires[q][champ] = champ === "date" ? dateVersIso(l[j + 1]) : plat(l[j + 1]); });
+    } else if (estTableauValidation(t)) {
+      lireValidation(t, p);
+    } else if (t.lignes.length === 1 && l0.length >= 2 && l0.some((c) => /\b(code|r[ée]f[ée]rence)\s*:/i.test(c)) && !lu) {
+      // Cartouche d'entreprise en une ligne : organisation | « PROCÉDURE » + titre | « Code : … », « Version : … », « Date : … ».
+      lu = true;
+      l0.forEach((c) => {
+        const lignes = lignesDe(c);
+        if (/\b(code|r[ée]f[ée]rence)\s*:/i.test(c)) {
+          lignes.forEach((x) => {
+            const m = /^(code|r[ée]f[ée]rence|reference|version|date[^:]*)\s*:\s*(.+)$/i.exec(x);
+            if (!m) return;
+            const k = minuscule(m[1]);
+            if (k === "code" || k.startsWith("ref")) p.meta.reference = m[2].trim();
+            else if (k === "version") p.meta.version = m[2].trim();
+            else p.meta.dateApplication = dateVersIso(m[2]);
+          });
+        } else if (/^(proc[ée]dure|instruction de travail|procedure|work instruction)$/i.test(lignes[0] || "")) {
+          p.meta.titre = sentenceCase(lignes.slice(1).join(" "));
+        } else if (!p.meta.organisation && lignes[0]) {
+          p.meta.organisation = lignes[0];
+        }
       });
     } else if (/^version/.test(texte0) && /nature|change|modification/.test(texte0)) {
       p.meta.revisions = t.lignes.slice(1, 1 + MAX_REVISIONS)
@@ -252,7 +300,10 @@ const TITRES_SECTIONS = [["objet", "objet"], ["purpose", "objet"], ["domaine", "
   ["definition", "definitions"], ["responsabilit", "responsabilites"], ["description", "description"], ["logigramme", "logigramme"],
   ["qualigramme", "logigramme"], ["flowchart", "logigramme"], ["representation", "logigramme"], ["controle", "controles"], ["control point", "controles"],
   ["indicateur", "indicateurs"], ["indicator", "indicateurs"], ["risque", "risques"], ["risk", "risques"], ["enregistrement", "enregistrements"],
-  ["record", "enregistrements"], ["diffusion", "diffusion"], ["distribution", "diffusion"], ["annexe", "annexes"], ["appendi", "annexes"]];
+  ["record", "enregistrements"], ["diffusion", "diffusion"], ["distribution", "diffusion"], ["annexe", "annexes"], ["appendi", "annexes"],
+  // Procédures d'entreprise (hors modèle) : « 6. Déroulement de la procédure », « Modalités », « Mode opératoire »…
+  ["deroulement", "description"], ["modalite", "description"], ["mode operatoire", "description"], ["methodologie", "description"],
+  ["activites", "description"], ["process", "description"]];
 const cleDeTitre = (texte) => {
   const titre = minuscule(texte.replace(/^\d{1,2}\.\s+/, ""));
   const trouve = TITRES_SECTIONS.find(([mot]) => titre.includes(mot));
@@ -385,70 +436,113 @@ export function interpreter(blocs) {
     const fin = /^fin\s*:\s*(.+)$/i.exec(b.texte);
     if (fin) p.meta.fin = majuscule(fin[1].replace(/\.\s*$/, ""));
   });
-  const tab6 = blocs6.find((b) => b.type === "tableau" && b.lignes.length > 1 && indexColonne(b.lignes[0], "acteur") >= 0);
+  // Tableaux des instructions : celui du modèle (« Acteur »), ou ceux d'une procédure d'entreprise (« Activité | Responsable »), parfois
+  // un par sous-section (6.1, 6.2…) : ils se suivent. Un tableau sans colonne d'acteur (seuils, contacts, formations) reste du texte.
+  const estTableauInstructions = (b) => b.type === "tableau" && b.lignes.length > 1
+    && indexColonne(b.lignes[0], "acteur", "responsable", "qui", "intervenant", "role") >= 0
+    && indexColonne(b.lignes[0], "operation", "instruction", "activite", "action", "tache", "description", "etape") >= 0;
+  const tabs6 = blocs6.filter(estTableauInstructions);
   let nbOutils = 0;
   let renvois = 0;
   let nbRenvoisLus = 0;
   const numerosControles = [];
   let entreesSortiesAbsentes = false;
+  const rapproches = new Map(); // nom lu → rôle de la section 5 (sigle, nom abrégé)
+  const multiples = []; // n° des instructions à plusieurs acteurs
+  // Un nom d'acteur → un rôle de la section 5 : nom exact, sigle (« RRH » → « Responsable Ressources Humaines (RRH) », « CU » →
+  // « Coordinateur d'Urgence »), début du nom (« Manager » → « Manager demandeur »), mot distinctif (« ERT » → « Équipe ERT »).
+  // Une seule correspondance possible, sinon aucune : le rôle est alors créé.
+  const trouverRole = (nom) => {
+    const n = minuscule(nom).replace(/\bresp\.\s*/g, "responsable ").replace(/\s+/g, " ").trim();
+    if (!n) return null;
+    const unique = (liste) => (liste.length === 1 ? liste[0] : null);
+    const sansParenthese = (x) => minuscule(x.replace(/\s*\([^)]*\)\s*/g, " ")).trim();
+    const exact = unique(p.roles.filter((r) => minuscule(r.nom) === n || sansParenthese(r.nom) === n));
+    if (exact) return exact;
+    const sigle = unique(p.roles.filter((r) => {
+      const entreParentheses = /\(([^()]{2,12})\)/.exec(r.nom);
+      return (entreParentheses && minuscule(entreParentheses[1]) === n) || (/^[a-z]{2,6}$/.test(n) && initiales(r.nom) === n);
+    }));
+    if (sigle) { rapproches.set(nom, sigle); return sigle; }
+    const debutNom = unique(p.roles.filter((r) => { const rn = minuscule(r.nom); return rn.startsWith(n + " ") || n.startsWith(rn + " "); }));
+    if (debutNom) { rapproches.set(nom, debutNom); return debutNom; }
+    const mots = n.split(/[^a-z0-9]+/).filter((m) => m.length >= 3 && !MOTS_GENERIQUES.has(m));
+    const motCommun = unique(p.roles.filter((r) => { const rm = minuscule(r.nom).split(/[^a-z0-9]+/); return mots.some((m) => rm.includes(m)); }));
+    if (motCommun) { rapproches.set(nom, motCommun); return motCommun; }
+    return null;
+  };
   const acteurDe = (nom) => {
-    let role = nom ? roles.get(minuscule(nom)) : null;
-    if (!role && nom) {
+    if (!nom) return null;
+    let role = trouverRole(nom);
+    if (!role) {
       role = creerRole(nom, ADJECTIF_UNITE.test(nom) ? "unite" : "individuel");
       rapport.push({ gravite: "info", cle: "import.role_ajoute", params: { nom } });
     }
     return role;
   };
-  if (!tab6) {
+  // « RRH + Manager », « DAF / DG », « Témoin, ERT » : le premier réalise (R), les autres participent. Une précision entre parenthèses
+  // (« (DG pour les cadres) ») est citée parmi les informés.
+  const acteursDe = (brut) => {
+    const avec = /^(.*?)\s*\((?:avec|with)\s+(.+)\)$/i.exec(brut);
+    if (avec) return { role: acteurDe(avec[1].trim()), autres: avec[2].split(/\s*,\s*/).map(acteurDe).filter(Boolean), precision: "" };
+    if (trouverRole(brut)) return { role: acteurDe(brut), autres: [], precision: "" };
+    const precision = (/\(([^()]+)\)\s*$/.exec(brut) || [])[1] || "";
+    const noms = brut.replace(/\s*\([^()]*\)\s*$/, "").split(/\s*(?:\+|\/|,|;|\bet\b)\s*/).map((x) => x.trim()).filter((x) => x && !MOT_VIDE.test(x));
+    const [premier, ...suite] = noms;
+    return { role: acteurDe(premier || ""), autres: suite.map(acteurDe).filter(Boolean), precision };
+  };
+  if (tabs6.length === 0) {
     rapport.push({ gravite: "erreur", cle: "import.instructions_absentes" });
   } else {
-    const [entete, ...corps] = tab6.lignes;
-    const iOp = indexColonne(entete, "operation", "instruction", "activite", "description", "etape");
-    const iActeur = indexColonne(entete, "acteur", "role");
-    const iEntree = indexColonne(entete, "entree");
-    const iSortie = indexColonne(entete, "sortie");
-    const iSupport = indexColonne(entete, "support", "outil", "document");
-    const colonne = (l, i) => (i >= 0 && l[i] ? plat(l[i]) : "");
-    const versModele = iEntree < 0 && iSortie < 0; // tableau du modèle : pas de colonnes entrée / sortie
-    corps.forEach((l) => {
-      let libelle = colonne(l, iOp >= 0 ? iOp : 1);
-      let lu = null;
-      if (versModele) {
-        lu = lireDescriptionModele(l[iOp >= 0 ? iOp : 1]);
-        libelle = lu.libelle.trim();
-      }
-      if (!libelle) return;
-      const acteurBrut = colonne(l, iActeur);
-      const avec = /^(.*?)\s*\((?:avec|with)\s+(.+)\)$/i.exec(acteurBrut);
-      const role = acteurDe(avec ? avec[1].trim() : acteurBrut);
-      const participants = avec ? avec[2].split(/\s*,\s*/).map((n) => roles.get(minuscule(n))).filter(Boolean).map((r) => r.id) : [];
-      const [entree, entreeDe] = separerParenthese(colonne(l, iEntree));
-      const decision = versModele ? null : lireDecision(colonne(l, iSortie));
-      const [sortie, versQui] = separerParenthese(decision ? decision.sortie : colonne(l, iSortie));
-      if (!versModele && !decision && /[ée]tapes?\s+\d/i.test(colonne(l, iEntree) + " " + colonne(l, iSortie))) renvois += 1;
-      const supports = versModele ? lignesDe(l[iSupport]) : colonne(l, iSupport).split(/\s*[,;]\s*/);
-      let niveau3 = null;
-      const outils = supports.filter((x) => {
-        const n3 = /^(?:IT N3|IT L3|level-3 WI)\s*:\s*(.+)$/i.exec(x);
-        if (n3 && versModele) { niveau3 = { actif: true, code: n3[1].trim(), intitule: "" }; return false; }
-        return x && !MOT_VIDE.test(x) && !/^section\s+\d/i.test(x);
-      }).slice(0, 6).map((nom) => ({ id: nouvelId("o"), type: "document", nom }));
-      nbOutils += outils.length;
-      const etape = nouvelleEtape({ roleId: role ? role.id : "", libelle, entree, entreeDe, sortie, versQui, outils, participants });
-      if (niveau3) etape.niveau3 = niveau3;
-      if (lu) {
-        if (lu.controle) { etape.controle = lu.controle; numerosControles.push(p.etapes.length + 1); }
-        etape.informes = lu.informes;
-        etape.condition = lu.condition;
-        lu.alternatives.slice(0, MAX_ALTERNATIVES).forEach((a) => etape.alternatives.push(nouvelleAlternative({ condition: a.condition, cible: a.cible })));
-      }
-      if (decision) {
-        etape.condition = decision.condition;
-        decision.alternatives.slice(0, MAX_ALTERNATIVES).forEach((a) => etape.alternatives.push(nouvelleAlternative({ condition: a.condition, info: a.info, versQui: a.versQui, cible: a.cible })));
-      }
-      p.etapes.push(etape);
+    tabs6.forEach((tab6) => {
+      const [entete, ...corps] = tab6.lignes;
+      const iOp = indexColonne(entete, "operation", "instruction", "activite", "action", "tache", "description", "etape");
+      const iActeur = indexColonne(entete, "acteur", "responsable", "qui", "intervenant", "role");
+      const iEntree = indexColonne(entete, "entree");
+      const iSortie = indexColonne(entete, "sortie");
+      const iSupport = indexColonne(entete, "support", "outil", "document", "enregistrement");
+      const colonne = (l, i) => (i >= 0 && l[i] ? plat(l[i]) : "");
+      const versModele = iEntree < 0 && iSortie < 0; // tableau du modèle : pas de colonnes entrée / sortie
+      corps.forEach((l) => {
+        let libelle = colonne(l, iOp >= 0 ? iOp : 1);
+        let lu = null;
+        if (versModele) {
+          lu = lireDescriptionModele(l[iOp >= 0 ? iOp : 1]);
+          libelle = lu.libelle.trim();
+        }
+        if (!libelle) return;
+        const { role, autres, precision } = acteursDe(colonne(l, iActeur));
+        const participants = [...new Set(autres.filter((r) => !role || r.id !== role.id).map((r) => r.id))];
+        if (participants.length) multiples.push(p.etapes.length + 1);
+        const [entree, entreeDe] = separerParenthese(colonne(l, iEntree));
+        const decision = versModele ? null : lireDecision(colonne(l, iSortie));
+        const [sortie, versQui] = separerParenthese(decision ? decision.sortie : colonne(l, iSortie));
+        if (!versModele && !decision && /[ée]tapes?\s+\d/i.test(colonne(l, iEntree) + " " + colonne(l, iSortie))) renvois += 1;
+        const supports = versModele ? lignesDe(l[iSupport]) : colonne(l, iSupport).split(/\s*[,;]\s*/);
+        let niveau3 = null;
+        const outils = supports.flatMap((x) => x.split(/\s+\/\s+/)).filter((x) => {
+          const n3 = /^(?:IT N3|IT L3|level-3 WI)\s*:\s*(.+)$/i.exec(x);
+          if (n3 && versModele) { niveau3 = { actif: true, code: n3[1].trim(), intitule: "" }; return false; }
+          return x && !MOT_VIDE.test(x) && !/^section\s+\d/i.test(x);
+        }).slice(0, 6).map((nom) => ({ id: nouvelId("o"), type: "document", nom }));
+        nbOutils += outils.length;
+        const etape = nouvelleEtape({ roleId: role ? role.id : "", libelle, entree, entreeDe, sortie, versQui, outils, participants });
+        if (niveau3) etape.niveau3 = niveau3;
+        if (lu) {
+          if (lu.controle) { etape.controle = lu.controle; numerosControles.push(p.etapes.length + 1); }
+          etape.informes = lu.informes;
+          etape.condition = lu.condition;
+          lu.alternatives.slice(0, MAX_ALTERNATIVES).forEach((a) => etape.alternatives.push(nouvelleAlternative({ condition: a.condition, cible: a.cible })));
+        }
+        if (precision) etape.informes = [...etape.informes, precision].slice(0, 10);
+        if (decision) {
+          etape.condition = decision.condition;
+          decision.alternatives.slice(0, MAX_ALTERNATIVES).forEach((a) => etape.alternatives.push(nouvelleAlternative({ condition: a.condition, info: a.info, versQui: a.versQui, cible: a.cible })));
+        }
+        p.etapes.push(etape);
+      });
+      if (versModele && p.etapes.length) entreesSortiesAbsentes = true;
     });
-    if (versModele && p.etapes.length) entreesSortiesAbsentes = true;
     // Les destinations sont des numéros d'instruction : on les convertit en identifiants quand toutes les instructions existent.
     p.etapes.forEach((etape, k) => {
       etape.alternatives.forEach((a) => {
@@ -458,6 +552,9 @@ export function interpreter(blocs) {
         nbRenvoisLus += 1;
       });
     });
+    if (tabs6.length > 1) rapport.push({ gravite: "info", cle: "import.plusieurs_tableaux", params: { n: tabs6.length } });
+    if (rapproches.size) rapport.push({ gravite: "info", cle: "import.roles_rapproches", params: { liste: [...rapproches].map(([n, r]) => `${n} → ${r.nom}`).join(" ; ") } });
+    if (multiples.length) rapport.push({ gravite: "alerte", cle: "import.acteurs_multiples", params: { liste: multiples.join(", ") } });
   }
 
   // Anciens Word (13 sections) — section « Points de contrôle » : tableau N°, Contrôle, Nature, Critère, Enregistrement, Suite si non conforme.
@@ -500,13 +597,19 @@ export function interpreter(blocs) {
   }
 
   // Corps du document : chaque section devient une liste de paragraphes et de tableaux.
-  const consommes = new Set([tabRoles, tab6, controlesLus ? tabControles : null].filter(Boolean));
+  const consommes = new Set([tabRoles, ...tabs6, controlesLus ? tabControles : null].filter(Boolean));
+  // Tableau « Validation » placé dans le corps (procédures d'entreprise : section « Annexes » ou « Approbation ») : lu, pas recopié.
+  const ignores = new Set();
+  Object.values(sections).flat().filter((b) => b.type === "tableau" && estTableauValidation(b)).forEach((b) => { lireValidation(b, p); ignores.add(b); });
   const listeDe = (cle) => {
     const liste = [];
-    (sections[cle] || []).forEach((b) => {
+    (sections[cle] || []).forEach((b, i, blocs) => {
       if (b.type === "p") {
         if (cle === "description" && /^(fait\s+d[ée]clencheur|fin)\s*:/i.test(b.texte)) return; // reprises dans le cadrage
+        if (ignores.has(blocs[i + 1]) && b.texte.length <= 40) return; // intertitre « Approbation » du tableau de validation
         liste.push({ id: nouvelId("b"), type: "p", texte: b.texte });
+      } else if (ignores.has(b)) {
+        // (validation : déjà lue)
       } else if (consommes.has(b)) {
         liste.push({ id: nouvelId("b"), type: "genere" }); // tableau reconstruit à partir des rôles / instructions
       } else if (b.lignes.length) {

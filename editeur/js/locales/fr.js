@@ -20,7 +20,7 @@ export default {
   "logigramme.sans_libelle": "(sans libellé)",
 
   "diag.ok": "Aucune anomalie détectée sur la structure.",
-  "regle.roles.trop_nombreux": "{n} rôles : 6 au maximum en niveau 2. Scinde la procédure ou regroupe des rôles.",
+  "regle.roles.trop_nombreux": "{n} rôles réalisent des instructions : 6 au plus est recommandé en niveau 2. Si le logigramme devient difficile à lire, scinde la procédure ou regroupe des rôles.",
   "regle.roles.aucun": "Aucun rôle défini.",
   "regle.role.sans_etape": "Rôle « {nom} » déclaré mais sans étape.",
   "regle.debut.manquant": "Début : fait déclencheur non renseigné.",
@@ -170,6 +170,9 @@ export default {
   "import.instructions_absentes": "Tableau des instructions (section 6, avec une colonne « Acteur ») introuvable : aucune instruction importée.",
   "import.declencheur_absent": "Fait déclencheur non trouvé (ligne « Fait déclencheur : » de la section 6) : à saisir.",
   "import.fin_absente": "Fin non trouvée (ligne « Fin : » de la section 6) : à saisir.",
+  "import.plusieurs_tableaux": "{n} tableaux d'instructions (un par sous-section) : repris à la suite, dans l'ordre.",
+  "import.roles_rapproches": "Acteurs rapprochés des rôles de la section 5 : {liste}. Vérifie-les.",
+  "import.acteurs_multiples": "Instructions {liste} : plusieurs acteurs ; le premier réalise, les autres participent. Vérifie le partage des rôles.",
   "import.role_ajoute": "Acteur « {nom} » absent de la section 5 : rôle créé.",
   "import.controles": "Étapes {liste} : contrôles (section 8) repris avec leur nature, critère et enregistrement. Vérifie-les.",
   "import.renvois": "{n} renvoi(s) vers une autre instruction (retour, boucle) repris comme alternative. Vérifie leur nom de cas et leur destination.",

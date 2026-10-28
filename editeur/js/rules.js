@@ -35,7 +35,8 @@ export function verifier(procedure, { nomenclature = NOMENCLATURE_SUPPOSEE } = {
   const cols = colonnes(procedure);
 
   if (procedure.roles.length === 0) ajouter("alerte", "regle.roles.aucun");
-  if (cols.length > 6) ajouter("erreur", "regle.roles.trop_nombreux", { n: cols.length });
+  // Au-delà de 6 colonnes : alerte, pas blocage (décision F8) ; le dessin reste lisible et une procédure d'urgence en compte souvent plus.
+  if (cols.length > 6) ajouter("alerte", "regle.roles.trop_nombreux", { n: cols.length });
   if (!procedure.meta.declencheur.trim()) ajouter("alerte", "regle.debut.manquant");
   if (procedure.etapes.length > 0 && !procedure.meta.fin.trim()) ajouter("alerte", "regle.fin.manquante");
   // v0.17 : une action amont / aval est reliée par une flèche d'information (livre §6.5.12-13) : le panier dit ce qui est transmis.

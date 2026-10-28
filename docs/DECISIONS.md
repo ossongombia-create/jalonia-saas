@@ -200,8 +200,7 @@ ajoute un suppléant (B8). Reporté en V2 : bandeau (B14), rappels tous les 30 j
 ## Création des documents : fiche de collecte Excel (28/10/2026)
 
 Trois façons de créer un document : le remplir dans l'éditeur ; importer une procédure Word existante ; importer une
-**fiche de collecte Excel** remplie lors des entretiens (phases 1 et 2 ci-dessous ; la phase 3, import souple des Word
-d'entreprise, est à venir).
+**fiche de collecte Excel** remplie lors des entretiens (phases 1 et 2 ci-dessous), ou importer une procédure Word **d'entreprise**, hors modèle (phase 3, F8 à F10).
 
 | Réf. | Décision | Mise en œuvre |
 |------|----------|---------------|
@@ -212,3 +211,6 @@ d'entreprise, est à venir).
 | F5 | « Comment ? » d'une opération d'IT : nouveau champ, imprimé sous le logigramme (tableau « Mode opératoire ») et dans le Word | `nouvelleOperation().commentaire` ; vide, il n'entre pas dans la signature du contenu (une IT validée le reste) |
 | F6 | Lignes « À confirmer » importées et signalées dans le rapport ; le cadrage d'une IT sans place sur la feuille (prérequis, EPI, matériels, documents, objet) est rappelé dans le rapport | Rapport d'import, pas dans le document |
 | F7 | **Fiche allégée FC-JAL** : code `FC-JAL-` + code de la procédure (formule) ; décision en une colonne « Suite » (« Oui → 5 ; Non → 3 ») ; risques et indicateurs seulement dans leur onglet ; plus de dysfonctionnements ni d'attentes (traités comme risques) ; impression A4 ajustée | Générée par `scripts/fiche-collecte/construire-fiche.py` (python3 + openpyxl) dans `public/modeles/FC-JAL_Fiche_de_collecte.xlsx`, téléchargeable depuis la page Documents (personnes connectées) ; l'import lit les deux modèles |
+| F8 | Plus de 6 colonnes (rôles qui réalisent au moins une instruction) : **alerte**, plus blocage ; comme plus de 10 instructions | `rules.js` (`regle.roles.trop_nombreux`) ; le dessin reste correct à 8 colonnes et 25 instructions |
+| F9 | Un participant qui ne réalise aucune instruction n'a **pas de colonne** (méthode inchangée) ; il reste dans le tableau, avec l'alerte existante | Import Word : « RRH + Manager », « DAF / DG » → le premier réalise, les autres participent (signalé au rapport) |
+| F10 | Import d'une procédure d'entreprise : libellés repris **tels quels** ; les règles d'écriture (5 mots, pas de « et », entrées / sorties) s'appliquent et le rédacteur réécrit — pas de raccourci automatique | `editeur/js/importWord.js` : cartouche sur une ligne, approbation « Fonction — Nom », sections « Déroulement »…, plusieurs tableaux N° / Activité / Responsable, acteurs en sigles rapprochés des rôles de la section 5 |
