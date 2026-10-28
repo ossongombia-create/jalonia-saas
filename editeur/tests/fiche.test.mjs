@@ -4,7 +4,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import { lireClasseur, lireFeuille, adresse } from "../js/xlsx.js";
-import { importerFiche, interpreterFiche, liste, numeros } from "../js/importFiche.js";
+import { importerFiche, interpreterFiche, liste, numeros, lireSuite } from "../js/importFiche.js";
+import { lireZip } from "../js/importWord.js";
 import { creerZip } from "../js/zip.js";
 import { nettoyer } from "../js/store.js";
 import { nouvelleProcedure, nouvelleOperation, signatureContenu } from "../js/model.js";
@@ -196,6 +197,69 @@ test("textes du rapport : FR et EN, mêmes variables", () => {
     assert.ok(k in en, `${k} absent en anglais`);
     assert.equal(variables(en[k]), variables(fr[k]), `${k} : variables différentes`);
   }
+});
+
+// ---------- Fiche allégée FC-JAL (modèle téléchargeable : public/modeles/FC-JAL_Fiche_de_collecte.xlsx) ----------
+const ficheJalonia = () => fs.readFileSync(new URL("./fixtures/fiche-collecte-jalonia-exemple.xlsx", import.meta.url));
+const modeleVierge = () => fs.readFileSync(new URL("../../public/modeles/FC-JAL_Fiche_de_collecte.xlsx", import.meta.url));
+
+test("FC-JAL : la suite d'une décision en une colonne", () => {
+  assert.deepEqual(lireSuite("Oui → 5 ; Non → 3"), { oui: "5", non: "3" });
+  assert.deepEqual(lireSuite("Non → Fin"), { oui: "", non: "fin" });
+  assert.deepEqual(lireSuite("oui -> op. n° 2, non : fin"), { oui: "2", non: "fin" });
+  assert.deepEqual(lireSuite("à voir"), { oui: "", non: "" });
+});
+
+test("FC-JAL : exemple rempli — Déroulé, Type, Suite, Code IT, risques et indicateurs de leur onglet, points ouverts", async () => {
+  const { procedure, instructions, rapport } = await importerFiche(ficheJalonia());
+  const p = nettoyer(procedure);
+  assert.equal(p.meta.reference, "PR-JUR-03");
+  assert.equal(p.meta.titre, "Gérer les contrats");
+  assert.deepEqual(p.roles.map((r) => r.nom), ["Service demandeur", "Direction Administrative et Juridique (DAJ)", "Direction Générale", "Client ou fournisseur"]);
+  assert.equal(p.roles.find((r) => r.nom === "Client ou fournisseur").type, "externe");
+  assert.equal(p.etapes.length, 5);
+  const e4 = p.etapes[3];
+  assert.equal(e4.libelle, "Viser le contrat");
+  assert.equal(e4.controle.actif, true, "Type « Contrôle »");
+  assert.equal(e4.condition, "Oui");
+  assert.deepEqual(e4.alternatives.map((a) => [a.condition, a.vers]), [["Non", p.etapes[2].id]], "Suite « Oui → 5 ; Non → 3 »");
+  assert.deepEqual(e4.niveau3, { actif: true, code: "IT-JUR-03", intitule: "Viser un contrat avant signature" }, "Code IT seul : niveau 3");
+  assert.deepEqual(e4.risques.map((r) => [r.risque, r.gravite, r.probabilite]), [["Contrat signé sans visa du DAJ", "3", "2"]]);
+  assert.equal(e4.indicateur.nom, "Contrats à renouveler dans les 3 mois");
+  assert.deepEqual(p.etapes[0].outils.map((o) => [o.type, o.nom]), [["document", "Cahier des charges"], ["materiel", "Mail"], ["materiel", "réunion"]]);
+  assert.equal(p.corps.enregistrements.find((b) => b.type === "tableau").lignes.length, 2);
+  // Instruction de travail : « Si anomalie : que faire ? » = action corrective, et l'opération est à vigilance.
+  const it = nettoyer(instructions[0]);
+  assert.equal(it.meta.reference, "IT-JUR-03");
+  assert.equal(it.it.operations.length, 2);
+  assert.deepEqual(it.it.operations[0].correctives.map((m) => m.libelle), ["Retour à la négociation"]);
+  assert.equal(it.it.operations[0].vigilance, true);
+  assert.equal(it.it.operations[1].enregistrement, true);
+  assert.deepEqual(rapport.filter((c) => c.cle === "fiche.point_ouvert").map((c) => c.params.texte), ["Ordre des signatures : autre partie avant ou après la DG"]);
+  assert.ok(!rapport.some((c) => c.gravite === "erreur"));
+});
+
+test("FC-JAL : une suite illisible est signalée (destinations à choisir)", () => {
+  const entete = ["N°", "Opération (verbe à l'infinitif)", "Type", "Acteur", "Question (si décision)", "Suite (si décision)"];
+  const r = interpreterFiche([
+    { nom: "Cadrage", grille: [["1", "Intitulé de la procédure", "aide", "Traiter"]] },
+    { nom: "Déroulé", grille: [entete, ["1", "Analyser", "Décision (Oui / Non)", "Accueil", "Complet ?", "selon le cas"], ["2", "Répondre", "Instruction", "Accueil"]] },
+  ]);
+  assert.ok(r.rapport.some((c) => c.cle === "fiche.suite_illisible" && c.params.suite === "selon le cas"));
+  assert.deepEqual(nettoyer(r.procedure).etapes[0].alternatives, []);
+});
+
+test("FC-JAL : le modèle vierge s'importe sans erreur ; le code de la fiche se forme d'après le code de la procédure", async () => {
+  const r = await importerFiche(modeleVierge());
+  assert.ok(r.procedure, "le modèle est reconnu");
+  assert.ok(!r.rapport.some((c) => c.gravite === "erreur"));
+  assert.ok(r.rapport.some((c) => c.cle === "fiche.titre_absent"));
+  // Formule de la ligne 3 de chaque onglet : « FC-JAL- » + code saisi dans le Cadrage (D10, « Code envisagé »).
+  const feuilles = await lireClasseur(modeleVierge());
+  assert.deepEqual(feuilles.map((f) => f.nom), ["Mode d'emploi", "Cadrage", "Acteurs", "Déroulé", "IT-modèle", "Documents", "Risques_Indicateurs", "Points ouverts", "Listes"]);
+  assert.match(feuilles.find((f) => f.nom === "Cadrage").grille[9][1], /^Code envisagé/);
+  const xml = await lireZip(modeleVierge(), "xl/worksheets/sheet2.xml");
+  assert.match(xml.replace(/&quot;/g, '"'), /"FC-JAL-"&amp;IF\(Cadrage!\$D\$10="","XX-XX-XX",Cadrage!\$D\$10\)/);
 });
 
 // ---------- « Comment ? » d'une opération (instruction de travail) ----------

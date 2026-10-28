@@ -140,6 +140,7 @@ export default {
   "fiche.role_ajoute": "Actor « {nom} » missing from the Acteurs tab: role created.",
   "fiche.instructions_absentes": "Step table not found (Procedure_N2 tab, « Opération » and « Acteur responsable » columns): no step imported.",
   "fiche.sous_procedure": "Operation {n}: link to another procedure, whose code must be entered.",
+  "fiche.suite_illisible": "Operation {n}: next step « {suite} » unreadable (expected: « Oui → 5 ; Non → 3 » or « Non → Fin »); destinations to be chosen.",
   "fiche.renvoi_inconnu": "Operation {n}: the next step « {vers} » matches no operation of the sheet; destination to be chosen.",
   "fiche.controles": "Steps {liste}: check imported with its question; nature (Q, H, S, R or E) to be chosen.",
   "fiche.a_confirmer": "Operations {liste} marked « À confirmer » or « À compléter »: imported, to be confirmed with the actors.",

@@ -1,5 +1,9 @@
-// importFiche.js — IMPORT d'une FICHE DE COLLECTE Excel (modèle FC-QUA-01 : « Fiche de collecte des données — rédaction
-// Qualigramme »). Une fiche donne UNE procédure (niveau 2) et une instruction de travail (niveau 3) par onglet d'instruction.
+// importFiche.js — IMPORT d'une FICHE DE COLLECTE Excel. Deux modèles sont lus :
+//   - FC-QUA-01 « Fiche de collecte des données — rédaction Qualigramme » (onglets Procedure_N2, Synthese_Validation…) ;
+//   - FC-JAL, la fiche allégée de Jalonia (scripts/fiche-collecte/construire-fiche.py, téléchargeable depuis la page Documents) :
+//     onglet « Déroulé » (colonne « Type », décision en une colonne « Suite » : « Oui → 5 ; Non → 3 », « Code IT » seul),
+//     onglet « Points ouverts » ; risques et indicateurs seulement dans leur onglet.
+// Une fiche donne UNE procédure (niveau 2) et une instruction de travail (niveau 3) par onglet d'instruction.
 //   Cadrage             → identification, déclencheur, fin ; sections Objet, Domaine d'application, Références, Définitions
 //   Acteurs             → rôles (nom, service, interne / externe, responsabilités)
 //   Procedure_N2        → instructions du logigramme : acteur, autres acteurs (informés), entrées / sorties, supports et outils,
@@ -60,13 +64,23 @@ export function numeros(s) {
 // ---------- Repérage des onglets et des colonnes ----------
 const feuille = (feuilles, ...noms) => feuilles.find((f) => noms.some((n) => norme(f.nom) === norme(n)));
 
-/** La ligne d'en-tête d'un tableau : la première qui contient tous les titres demandés (début de titre, sans accents). */
+/**
+ * La ligne d'en-tête d'un tableau : la première qui contient tous les titres demandés (début de titre, sans accents). Un titre
+ * peut être une liste de variantes (selon le modèle de fiche) : l'une d'elles suffit.
+ */
 function entete(grille, ...titres) {
   for (let i = 0; i < grille.length; i += 1) {
     const l = (grille[i] || []).map(norme);
-    if (titres.every((tt) => l.some((c) => c.startsWith(norme(tt))))) return i;
+    if (titres.every((tt) => [].concat(tt).some((v) => l.some((c) => c.startsWith(norme(v)))))) return i;
   }
   return -1;
+}
+
+/** Décision en une colonne (fiche FC-JAL) : « Oui → 5 ; Non → 3 », « Non → Fin », « Oui -> 2 » → { oui: "5", non: "3" }. */
+export function lireSuite(s) {
+  const r = { oui: "", non: "" };
+  for (const m of norme(s).matchAll(/\b(oui|non)\b\s*(?:→|->|=>|:|=)?\s*(?:op(?:eration)?\.?\s*(?:n°)?\s*)?(fin|\d+)/g)) r[m[1]] = m[2];
+  return r;
 }
 
 /** Index de colonne d'après le début de son titre (premier titre trouvé). */
@@ -130,7 +144,7 @@ export function interpreterFiche(feuilles) {
   const rapport = [];
   const cadrage = feuille(feuilles, "Cadrage");
   const acteurs = feuille(feuilles, "Acteurs");
-  const n2 = feuille(feuilles, "Procedure_N2", "Procédure_N2", "Procedure N2");
+  const n2 = feuille(feuilles, "Procedure_N2", "Procédure_N2", "Procedure N2", "Déroulé", "Deroule");
   if (!cadrage || !n2) return { procedure: null, instructions: [], rapport: [{ gravite: "erreur", cle: "fiche.pas_modele" }] };
 
   const p = nouvelleProcedure();
@@ -174,7 +188,7 @@ export function interpreterFiche(feuilles) {
     const iE = entete(acteurs.grille, "intitule du role");
     if (iE >= 0) {
       const e = acteurs.grille[iE];
-      const [iCode, iNom, iService, iType, iResp] = [colonne(e, "code role"), colonne(e, "intitule du role"), colonne(e, "service"), colonne(e, "interne"), colonne(e, "responsabilit")];
+      const [iCode, iNom, iService, iType, iResp] = [colonne(e, "code role", "code"), colonne(e, "intitule du role"), colonne(e, "service"), colonne(e, "interne"), colonne(e, "responsabilit")];
       lignesDuTableau(acteurs.grille, iE, iNom).forEach((l) => {
         const nom = cellule(l, iNom);
         if (roles.has(norme(nom))) return;
@@ -196,7 +210,7 @@ export function interpreterFiche(feuilles) {
   };
 
   // --- Procedure_N2 → instructions. ---
-  const iE2 = entete(n2.grille, "operation", "acteur responsable");
+  const iE2 = entete(n2.grille, "operation", ["acteur responsable", "acteur"]);
   const numerosEtapes = new Map(); // n° de la fiche → étape
   const aConfirmer = [];
   const pointsN2 = [];
@@ -206,11 +220,12 @@ export function interpreterFiche(feuilles) {
   } else {
     const e = n2.grille[iE2];
     const col = {
-      n: colonne(e, "n°", "n "), op: colonne(e, "operation"), symbole: colonne(e, "symbole"), acteur: colonne(e, "acteur responsable"),
-      autres: colonne(e, "autres acteurs"), delai: colonne(e, "delai"), entree: colonne(e, "elements d'entree", "element d'entree"),
-      fournisseur: colonne(e, "fournisseur"), sortie: colonne(e, "elements de sortie", "element de sortie"), client: colonne(e, "client"),
-      support: colonne(e, "support"), outils: colonne(e, "outils"), question: colonne(e, "question de decision"), oui: colonne(e, "si oui"),
-      non: colonne(e, "si non"), n3: colonne(e, "a detailler"), codeIt: colonne(e, "code it"), risque: colonne(e, "risque"),
+      // Titres des deux modèles : FC-QUA-01 d'abord, puis FC-JAL (« Type », « Reçoit », « De qui », « Produit », « Pour qui »…).
+      n: colonne(e, "n°", "n "), op: colonne(e, "operation"), symbole: colonne(e, "symbole", "type"), acteur: colonne(e, "acteur responsable", "acteur"),
+      autres: colonne(e, "autres acteurs"), delai: colonne(e, "delai"), entree: colonne(e, "elements d'entree", "element d'entree", "recoit"),
+      fournisseur: colonne(e, "fournisseur", "de qui"), sortie: colonne(e, "elements de sortie", "element de sortie", "produit"), client: colonne(e, "client", "pour qui"),
+      support: colonne(e, "support", "documents"), outils: colonne(e, "outils"), question: colonne(e, "question"), oui: colonne(e, "si oui"),
+      non: colonne(e, "si non"), suite: colonne(e, "suite"), n3: colonne(e, "a detailler"), codeIt: colonne(e, "code it"), risque: colonne(e, "risque"),
       maitrise: colonne(e, "moyen de maitrise"), indicateur: colonne(e, "indicateur"), commentaires: colonne(e, "commentaires"), statut: colonne(e, "statut"),
     };
     const lignes = lignesDuTableau(n2.grille, iE2, col.op);
@@ -251,8 +266,13 @@ export function interpreterFiche(feuilles) {
       } else if (symbole.startsWith("taches simultanees")) {
         etape.operateurSortie = "et";
       }
-      if (question || cellule(l, col.oui) || cellule(l, col.non)) renvois.push([etape, cellule(l, col.oui), cellule(l, col.non), numero, question]);
-      if (/^oui/i.test(cellule(l, col.n3))) etape.niveau3 = { actif: true, code: cellule(l, col.codeIt), intitule: "" };
+      // Suites de la décision : deux colonnes « Si OUI / Si NON » (FC-QUA-01) ou une colonne « Suite » (FC-JAL).
+      const suite = col.suite >= 0 ? lireSuite(cellule(l, col.suite)) : { oui: cellule(l, col.oui), non: cellule(l, col.non) };
+      if (col.suite >= 0 && cellule(l, col.suite) && !suite.oui && !suite.non) rapport.push({ gravite: "alerte", cle: "fiche.suite_illisible", params: { n: numero, suite: cellule(l, col.suite) } });
+      if (question || suite.oui || suite.non) renvois.push([etape, suite.oui, suite.non, numero]);
+      // Niveau 3 : « À détailler ? Oui » + code (FC-QUA-01), ou le code seul (FC-JAL).
+      const codeIt = cellule(l, col.codeIt);
+      if (col.n3 >= 0 ? /^oui/i.test(cellule(l, col.n3)) : Boolean(codeIt)) etape.niveau3 = { actif: true, code: codeIt, intitule: "" };
       candidats.set(etape, {
         risques: cellule(l, col.risque) ? [{ risque: cellule(l, col.risque), mesure: cellule(l, col.maitrise) }] : [],
         indicateur: cellule(l, col.indicateur),
@@ -284,7 +304,7 @@ export function interpreterFiche(feuilles) {
 
   // --- Indicateurs_Risques : prioritaires sur les colonnes de Procedure_N2. ---
   const etapeDe = (s) => numeros(s).map((n) => numerosEtapes.get(n)).find(Boolean) || null;
-  const ir = feuille(feuilles, "Indicateurs_Risques", "Indicateurs Risques");
+  const ir = feuille(feuilles, "Indicateurs_Risques", "Indicateurs Risques", "Risques_Indicateurs", "Risques Indicateurs");
   if (ir) {
     const iI = entete(ir.grille, "indicateur", "formule");
     const iR = entete(ir.grille, "risque", "cause");
@@ -324,7 +344,7 @@ export function interpreterFiche(feuilles) {
   // --- Documents → enregistrements (section 10) et références (section 3). ---
   const docs = feuille(feuilles, "Documents");
   if (docs) {
-    const iD = entete(docs.grille, "intitule du document");
+    const iD = entete(docs.grille, ["intitule du document", "intitule"], "nature");
     if (iD >= 0) {
       const e = docs.grille[iD];
       const [cCode, cNom, cNat, cSup, cLieu, cDuree, cModele] = [colonne(e, "code"), colonne(e, "intitule"), colonne(e, "nature"), colonne(e, "support"), colonne(e, "lieu"), colonne(e, "duree"), colonne(e, "modele")];
@@ -372,7 +392,7 @@ export function interpreterFiche(feuilles) {
       const e = f.grille[iO];
       const cc = {
         op: colonne(e, "operation"), comment: colonne(e, "comment"), avec: colonne(e, "avec quoi"), cle: colonne(e, "point cle"),
-        auto: colonne(e, "autocontrole"), anomalie: colonne(e, "anomalie"), conduite: colonne(e, "conduite"), securite: colonne(e, "securite"),
+        auto: colonne(e, "autocontrole"), anomalie: colonne(e, "anomalie"), conduite: colonne(e, "conduite", "si anomalie"), securite: colonne(e, "securite"),
         enreg: colonne(e, "enregistrement"),
       };
       lignesDuTableau(f.grille, iO, cc.op).slice(0, MAX_OPERATIONS_IT).forEach((l) => {
@@ -382,7 +402,9 @@ export function interpreterFiche(feuilles) {
           cellule(l, cc.securite) ? `${t("fiche.securite")} : ${cellule(l, cc.securite)}` : "",
         ].filter(Boolean).join(" — ");
         const op = nouvelleOperation({
-          libelle: cellule(l, cc.op), commentaire, vigilance: Boolean(cellule(l, cc.anomalie)), enregistrement: Boolean(cellule(l, cc.enreg)),
+          libelle: cellule(l, cc.op), commentaire, enregistrement: Boolean(cellule(l, cc.enreg)),
+          // À vigilance : une anomalie possible est décrite (FC-QUA-01) ; FC-JAL : « Si anomalie : que faire ? » est renseigné.
+          vigilance: Boolean(cc.anomalie >= 0 ? cellule(l, cc.anomalie) : cellule(l, cc.conduite)),
           outils: liste(cellule(l, cc.avec)).slice(0, MAX_OUTILS).map((nom) => ({ id: nouvelId("o"), type: "document", nom })),
         });
         if (cellule(l, cc.conduite)) op.correctives.push(nouvelleCorrective({ libelle: cellule(l, cc.conduite) }));
@@ -413,12 +435,12 @@ export function interpreterFiche(feuilles) {
   if (sansFiche.length) rapport.push({ gravite: "alerte", cle: "fiche.it_manquantes", params: { liste: sansFiche.map((e) => e.niveau3.code || e.libelle).join(", ") } });
 
   // --- Points ouverts (Synthese_Validation) et commentaires du déroulé : dans le rapport seulement. ---
-  const synthese = feuille(feuilles, "Synthese_Validation", "Synthèse_Validation");
+  const synthese = feuille(feuilles, "Synthese_Validation", "Synthèse_Validation", "Points ouverts");
   if (synthese) {
     const iP = entete(synthese.grille, "point a clarifier");
     if (iP >= 0) {
       const e = synthese.grille[iP];
-      const [cP, cOp, cSt] = [colonne(e, "point a clarifier"), colonne(e, "op"), colonne(e, "personne")];
+      const [cP, cOp, cSt] = [colonne(e, "point a clarifier"), colonne(e, "op"), colonne(e, "statut", "personne")];
       lignesDuTableau(synthese.grille, iP, cP).forEach((l) => {
         if (/\bclos\b/.test(norme(cellule(l, cSt)))) return;
         rapport.push({ gravite: "info", cle: "fiche.point_ouvert", params: { texte: cellule(l, cP), op: cellule(l, cOp) || "—" } });

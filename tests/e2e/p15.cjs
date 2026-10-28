@@ -67,6 +67,35 @@ const { BASE, sql, lancer, connecter, api, editeurPret, attendreEtat, capture, e
     assert.deepEqual(await rita.locator(".decision-possible").evaluateAll((l) => l.map((x) => x.dataset.transition)), ["soumettre"]);
   }
 
+  etape("fiche allégée FC-JAL : téléchargeable depuis la page Documents, et importée de la même façon");
+  await rita.goto(`${BASE}/app/documents`);
+  const lien = rita.locator("#fiche-collecte a[download]");
+  assert.equal(await lien.textContent(), "Télécharger la fiche de collecte (Excel)");
+  const modele = await rita.request.get(BASE + (await lien.getAttribute("href")));
+  assert.equal(modele.status(), 200);
+  assert.ok((await modele.body()).length > 10_000, "fichier Excel servi");
+  const anonyme = await b.newContext();
+  const sansSession = await anonyme.request.get(`${BASE}/modeles/FC-JAL_Fiche_de_collecte.xlsx`, { maxRedirects: 0 });
+  assert.equal(sansSession.status(), 307, "réservé aux personnes connectées");
+  await anonyme.close();
+  const cree2 = await api(rita, "POST", "/api/documents", { organisationId: org, contenu: { meta: { typeDocument: "procedure", titre: "", reference: "" }, roles: [], etapes: [] } });
+  const id2 = cree2.corps.id;
+  await p.goto(`${BASE}/editeur/index.html?doc=${id2}`);
+  await editeurPret(p);
+  await p.click("#btn-fichier");
+  const [choix2] = await Promise.all([p.waitForEvent("filechooser"), p.click("#btn-importer-fiche")]);
+  await choix2.setFiles(path.resolve(__dirname, "../../editeur/tests/fixtures/fiche-collecte-jalonia-exemple.xlsx"));
+  await p.waitForSelector("#rapport-import:not([hidden])", { timeout: 20000 });
+  const lignes2 = await p.locator("#rapport-liste li").allTextContents();
+  assert.equal(lignes2[0], "4 rôles, 5 instructions et 1 instruction(s) de travail importés. Vérifie-les avant de soumettre.");
+  assert.ok(lignes2.includes("Instructions de travail créées (brouillons) : IT-JUR-03."), lignes2.join("\n"));
+  await attendreEtat(p, "Enregistré");
+  const doc2 = (await api(p, "GET", `/api/editeur/contexte?doc=${id2}`)).corps.document.contenu;
+  assert.equal(doc2.etapes.length, 5);
+  assert.deepEqual(doc2.etapes[3].alternatives.map((a) => a.condition), ["Non"], "suite « Oui → 5 ; Non → 3 »");
+  assert.equal(doc2.etapes[3].risques[0].risque, "Contrat signé sans visa du DAJ");
+  assert.equal(sql(`SELECT count(*) FROM "${schema}".documents WHERE contenu->'meta'->>'reference' = 'IT-JUR-03' AND supprime_le IS NULL`), "2");
+
   for (const page of [p, it]) assert.deepEqual(page.erreurs, []);
   await b.close();
   console.log("✔ partie 15");

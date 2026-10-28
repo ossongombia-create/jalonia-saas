@@ -22,6 +22,9 @@ import { titrePage } from "@/server/web/metadonnees";
 
 export const generateMetadata = titrePage("docs.titre");
 
+// Modèle de fiche de collecte (FC-JAL, scripts/fiche-collecte/construire-fiche.py) : à remplir en entretien, puis à importer
+// dans l'éditeur (menu Fichier → « Importer une fiche de collecte (Excel) »).
+const FICHE_COLLECTE = "/modeles/FC-JAL_Fiche_de_collecte.xlsx";
 const EDITEUR = "/editeur/index.html";
 
 export default async function PageDocuments() {
@@ -66,6 +69,14 @@ export default async function PageDocuments() {
         </p>
         <a className="bouton bouton-second" href={`${EDITEUR}?vue=cartographie`}>
           {t("docs.cartographie_ouvrir")}
+        </a>
+      </section>
+
+      <section className="carte" id="fiche-collecte">
+        <h2>{t("docs.fiche_collecte")}</h2>
+        <p>{t("docs.fiche_collecte_texte")}</p>
+        <a className="bouton bouton-second" href={FICHE_COLLECTE} download>
+          {t("docs.fiche_collecte_telecharger")}
         </a>
       </section>
 
