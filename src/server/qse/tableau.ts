@@ -7,7 +7,7 @@ import { situationEcheance } from "@/lib/dates";
 import { STATUTS_OUVERTS } from "@/lib/qse";
 import { avecOrganisation } from "../db/transactions";
 import type { OrganisationCible } from "../membres/service";
-import { ETATS, lireIntervenants, transitionsPossibles, type EtatDocument, type ModeValidation } from "../documents/circuit";
+import { COLONNES_DESIGNES, ETATS, designesDe, lireIntervenants, transitionsPossibles, type EtatDocument, type LigneDesignes, type ModeValidation } from "../documents/circuit";
 import { lireParametres, revueDe } from "../documents/revues";
 import { lireIndicateurs, lireOpportunites, lireRisques } from "./registres";
 import { cleIndicateur, dernieresMesures, lireObjectifs, situationIndicateur, type SituationIndicateur } from "./indicateurs";
@@ -17,6 +17,15 @@ export interface DocumentADecider {
   reference: string;
   titre: string;
   etat: EtatDocument;
+  /** Date de la dernière décision (soumission ou vérification) : depuis quand le document attend. */
+  depuis: Date | null;
+}
+
+/** Un document que la personne a soumis : refusé (à reprendre) ou en cours de circuit (chez qui). */
+export interface DocumentSuivi extends DocumentADecider {
+  /** Refusé : motif du refus ; en circuit : nom de la personne désignée qui doit agir (vide si aucune désignation). */
+  motif: string;
+  chez: string;
 }
 
 export interface ActionResumee {
@@ -35,15 +44,28 @@ export interface TableauDeBord {
   opportunites: { plan: number; etudier: number; nonCote: number };
   indicateurs: Record<SituationIndicateur, number>;
   aDecider: DocumentADecider[];
+  /** Mes documents refusés, à reprendre (brouillon dont la dernière décision est un refus de ma soumission). */
+  refuses: DocumentSuivi[];
+  /** Mes documents soumis, en vérification ou en approbation : chez qui, depuis quand. */
+  enCours: DocumentSuivi[];
   mesActions: ActionResumee[];
 }
 
 export async function lireTableauDeBord(pool: Pool, org: OrganisationCible, personne: { id: string; roles: readonly RoleOrganisation[]; mode?: ModeValidation }, fuseau: string, aujourdhui: string): Promise<TableauDeBord> {
   return avecOrganisation(pool, org, async (client) => {
     const p = await lireParametres(client);
-    const docs = await client.query<{ id: string; reference: string; titre: string; etat: EtatDocument; revue_le: Date | null; modifie_par: string | null }>(
-      "SELECT id, reference, titre, etat, revue_le, modifie_par FROM documents WHERE supprime_le IS NULL ORDER BY reference, titre, id",
+    const docs = await client.query<{ id: string; reference: string; titre: string; etat: EtatDocument; revue_le: Date | null; modifie_par: string | null } & LigneDesignes>(
+      `SELECT id, reference, titre, etat, revue_le, modifie_par, ${COLONNES_DESIGNES} FROM documents WHERE supprime_le IS NULL ORDER BY reference, titre, id`,
     );
+    // Dernière décision de chaque document, et qui a fait la dernière soumission (le suivi de « mes » documents).
+    const dernieres = await client.query<{ document_id: string; transition: string; motif: string; decide_le: Date; soumis_par: string | null }>(
+      `SELECT DISTINCT ON (d.document_id) d.document_id::text, d.transition, d.motif, d.decide_le,
+              (SELECT s.acteur::text FROM decisions_document s WHERE s.document_id = d.document_id AND s.transition = 'soumettre' ORDER BY s.id DESC LIMIT 1) AS soumis_par
+         FROM decisions_document d ORDER BY d.document_id, d.id DESC`,
+    );
+    const derniere = new Map(dernieres.rows.map((x) => [x.document_id, x]));
+    const refuses: DocumentSuivi[] = [];
+    const enCours: DocumentSuivi[] = [];
     const documents = Object.fromEntries(ETATS.map((e) => [e, 0])) as Record<EtatDocument, number>;
     const revues = { proches: 0, retard: 0 };
     const aDecider: DocumentADecider[] = [];
@@ -52,10 +74,19 @@ export async function lireTableauDeBord(pool: Pool, org: OrganisationCible, pers
       const revue = revueDe({ etat: d.etat, revueLe: d.revue_le }, p, fuseau, aujourdhui);
       if (revue?.situation === "proche") revues.proches++;
       else if (revue && revue.situation !== "a_jour") revues.retard++;
+      const der = derniere.get(d.id);
+      const base = { id: d.id, reference: d.reference, titre: d.titre, etat: d.etat, depuis: der?.decide_le ?? null };
       if (d.etat === "en_verification" || d.etat === "en_approbation") {
-        const intervenants = await lireIntervenants(client, d.id, d.modifie_par, d.etat);
+        const designes = designesDe(d);
+        const intervenants = await lireIntervenants(client, d.id, d.modifie_par, d.etat, designes);
         // (Second facteur supposé actif : un approbateur qui ne l'a pas encore activé voit quand même ce qui l'attend.)
-        if (transitionsPossibles(d.etat, personne.roles, personne.id, intervenants, { mode: personne.mode ?? "standard", secondFacteurActif: true }).length > 0) aDecider.push({ id: d.id, reference: d.reference, titre: d.titre, etat: d.etat });
+        if (transitionsPossibles(d.etat, personne.roles, personne.id, intervenants, { mode: personne.mode ?? "standard", secondFacteurActif: true }).length > 0) aDecider.push(base);
+        if (intervenants.soumisPar === personne.id) {
+          const chez = (d.etat === "en_verification" ? designes.verificateur : designes.approbateur)?.nom ?? "";
+          enCours.push({ ...base, motif: "", chez });
+        }
+      } else if (d.etat === "brouillon" && der && der.transition.startsWith("refuser_") && (der.soumis_par === personne.id || d.modifie_par === personne.id)) {
+        refuses.push({ ...base, motif: der.motif, chez: "" });
       }
     }
 
@@ -89,6 +120,6 @@ export async function lireTableauDeBord(pool: Pool, org: OrganisationCible, pers
       const cle = cleIndicateur(i.documentId, i.id);
       indicateurs[situationIndicateur(objectifs.get(cle), mesures.get(cle))]++;
     }
-    return { documents, revues, actions, risques, opportunites, indicateurs, aDecider, mesActions };
+    return { documents, revues, actions, risques, opportunites, indicateurs, aDecider, refuses, enCours, mesActions };
   });
 }

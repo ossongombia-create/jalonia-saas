@@ -50,7 +50,8 @@ const REGLES = {
   actionSupprimerMesure: { regle: "indicateurs.mesurer dans l'organisation OUVERTE ; mesure de CETTE organisation" },
   actionModifierParametres: { regle: "organisation.parametres dans l'organisation OUVERTE" },
   actionToutMarquerLu: { regle: "membre de l'organisation OUVERTE ; seulement SES notifications" },
-  actionTransitionDocument: { regle: "droit de la décision dans l'organisation OUVERTE (soumettre, réviser : rédaction ; vérifier : vérificateur ; approuver, archiver : approbateur) ; document de CETTE organisation ; séparation des tâches" },
+  actionTransitionDocument: { regle: "droit de la décision dans l'organisation OUVERTE (soumettre, réviser : rédaction ; vérifier : vérificateur ; approuver, archiver : approbateur) ; document de CETTE organisation ; séparation des tâches ; soumettre : vérificateur et approbateur désignés, membres actifs qui ont le rôle ; vérifier, approuver : la personne désignée" },
+  actionDesignerDocument: { regle: "membre de l'organisation OUVERTE : la personne qui a soumis la version, ou un administrateur ; document en circuit de CETTE organisation ; personne choisie : membre actif qui a le rôle, ni soumetteur ni auteur" },
   actionInviterMembre: { regle: "organisation.membres.gerer dans l'organisation OUVERTE ; jamais le superadmin, même en accès d'urgence (chantier 1)" },
   actionAnnulerInvitation: { regle: "idem ; invitation de CETTE organisation" },
   actionModifierRoles: { regle: "idem ; membre de CETTE organisation" },
@@ -479,7 +480,9 @@ let ACTIONS;
   const etatC = () => sql(`SELECT etat || '/' || coalesce(version_publiee::text, '-') FROM "${SCHEMA_A}".documents WHERE id = '${DOCC}'`);
   const decisionsC = () => Number(sql(`SELECT count(*) FROM "${SCHEMA_A}".decisions_document WHERE document_id = '${DOCC}'`));
   // Soumettre, vérifier, approuver : la fonction de la personne est demandée (TC-03) ; ignorée pour les autres décisions.
-  const decision = (transition, motif = "") => ({ organisationId: ORG_A, documentId: DOCC, transition, versionVue: String(versionDe(DOCC)), motif, fonction: "Responsable QSE" });
+  // Soumettre : vérificateur et approbateur désignés (ignorés pour les autres décisions) : verifA et approA.
+  const [VERIF_A, APPRO_A] = [idDe(COMPTES.verifA), idDe(COMPTES.approA)];
+  const decision = (transition, motif = "") => ({ organisationId: ORG_A, documentId: DOCC, transition, versionVue: String(versionDe(DOCC)), motif, fonction: "Responsable QSE", verificateur: VERIF_A, approbateur: APPRO_A });
   const vers = (etat) => `redirection:${PAGE_C}?etat=${etat}`;
   const casC = (qui, champs, attendu, options = {}) => cas(qui, "actionTransitionDocument", champs, attendu, { page: PAGE_C, ...options });
   const reussite = async (qui, transition, etat, motif = "") => {
@@ -494,6 +497,9 @@ let ACTIONS;
   await casC("redacA", decision("publier"), "erreur.saisie_invalide", { note: "décision inconnue" });
   await casC("redacA", { ...decision("soumettre"), versionVue: "1" }, "versions.document_modifie", { note: "page périmée" });
   await casC("redacA", { ...decision("soumettre"), fonction: "" }, "circuit.fonction_requise", { note: "sans fonction (TC-03)" });
+  await casC("redacA", { ...decision("soumettre"), verificateur: "", approbateur: "" }, "circuit.designation_requise", { note: "sans désignation" });
+  await casC("redacA", { ...decision("soumettre"), verificateur: APPRO_A }, "circuit.verificateur_invalide", { note: "désigné sans le rôle" });
+  await casC("redacA", { ...decision("soumettre"), approbateur: VERIF_A }, "circuit.designation_identique", { note: "même personne aux deux étapes" });
   await casC("verifA", decision("verifier"), "circuit.etat_incompatible", { note: "vérifier un brouillon (pas encore soumis)" });
   await casC("redacA", decision("soumettre"), "origine", { origine: ETRANGERE, note: "autre site" });
   await reussite("redacA", "soumettre", "en_verification");
@@ -525,6 +531,21 @@ let ACTIONS;
   await reussite("redacA", "reviser", "brouillon");
   assert.equal(etatC(), `brouillon/${versionDe(DOCC)}`, "la version publiée reste connue pendant la révision");
   await reussite("redacA", "soumettre", "en_verification");
+  // Changer la personne désignée : la personne qui a soumis, ou un administrateur de l'organisation.
+  const nbDesignations = () => Number(sql(`SELECT count(*) FROM "${SCHEMA_A}".journal WHERE action = 'DOCUMENT_DESIGNATION_MODIFIEE'`));
+  const designer = (quoi, personne, org = ORG_A) => ({ organisationId: org, documentId: DOCC, quoi, personne });
+  const casD = (qui, champs, attendu, options = {}) => cas(qui, "actionDesignerDocument", champs, attendu, { page: PAGE_C, ...options });
+  for (const qui of ["faux", "attente"]) await casD(qui, designer("approbateur", APPRO_A), "session");
+  for (const qui of ["lecteurA", "verifA", "approA", "adminB", "superadmin"]) await casD(qui, designer("approbateur", APPRO_A), "erreur.interdit");
+  await casD("adminB", designer("approbateur", APPRO_A, ORG_B), "erreur.introuvable", { note: "document de A depuis B" });
+  await casD("redacA", designer("chef", APPRO_A), "erreur.saisie_invalide", { note: "rôle inconnu" });
+  await casD("redacA", designer("approbateur", VERIF_A), "circuit.designation_identique", { note: "le vérificateur désigné" });
+  await casD("redacA", designer("verificateur", APPRO_A), "circuit.verificateur_invalide", { note: "sans le rôle" });
+  await casD("redacA", designer("approbateur", APPRO_A), "origine", { origine: ETRANGERE, note: "autre site" });
+  for (const qui of ["redacA", "adminA"]) {
+    const n0 = nbDesignations();
+    await casD(qui, designer("approbateur", APPRO_A), "succes", { effet: () => nbDesignations() === n0 + 1 });
+  }
   await casC("approA", decision("refuser_verification", "Non"), "erreur.interdit", { note: "un approbateur ne vérifie pas" });
   await reussite("verifA", "refuser_verification", "brouillon", "Étape 1 à préciser.");
   await reussite("redacA", "soumettre", "en_verification");

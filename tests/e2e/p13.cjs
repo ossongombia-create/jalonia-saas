@@ -5,7 +5,7 @@
 //     (notifiée, l'action apparaît sur son tableau de bord), qui la réalise ; l'approbatrice la clôt (efficacité exigée) ;
 //   - objectif chiffré, mesures (correction le même jour, suppression), graphique ;
 //   - la lectrice (anglais) consulte sans pouvoir agir.
-const { BASE, lancer, connecter, api, capture, etape, assert } = require("./outils.cjs");
+const { BASE, lancer, connecter, api, capture, etape, assert, designerDemo } = require("./outils.cjs");
 
 (async () => {
   const b = await lancer();
@@ -35,6 +35,7 @@ const { BASE, lancer, connecter, api, capture, etape, assert } = require("./outi
     const bloc = p.locator(".decision-possible", { has: p.locator(`button:has-text("${libelle}")`) });
     // Soumettre, vérifier, approuver : fonction obligatoire (TC-03).
     if (await bloc.locator('input[name="fonction"]').count()) await bloc.locator('input[name="fonction"]').fill("Responsable QSE");
+    await designerDemo(bloc); // soumettre : vérificateur et approbateur désignés
     p.once("dialog", (d) => d.accept());
     await bloc.locator(`button:has-text("${libelle}")`).click();
     await p.waitForURL((u) => u.searchParams.get("etat") === etat);

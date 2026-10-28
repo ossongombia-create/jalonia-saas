@@ -17,7 +17,7 @@ import { lireJournalOrganisation, lireJournalPlateforme } from "../../src/server
 import { avecOrganisation, enTransaction } from "../../src/server/db/transactions";
 import type { RoleOrganisation } from "../../src/lib/rbac";
 import type { Acteur } from "../../src/server/acteur";
-import { cleErreur, codeErreur, creerOrgDeTest, creerSuperadmin, membreDeTest, ouvrirPools, secondFacteurDeTest, suffixe, type OrgDeTest } from "./outils";
+import { cleErreur, codeErreur, creerOrgDeTest, creerSuperadmin, membreDeTest, ouvrirPools, secondFacteurDeTest, suffixe, type OrgDeTest, adhesionsDeTest } from "./outils";
 
 let app: Pool;
 let proprietaire: Pool;
@@ -44,9 +44,11 @@ const redac = fictif("Redac", "REDACTEUR");
 const verif = fictif("Verif", "VERIFICATEUR");
 const appro = fictif("Appro", "APPROBATEUR");
 
-async function decider(org: OrgDeTest, id: string, t: Transition, p: Personne, motif = "") {
+async function decider(org: OrgDeTest, id: string, t: Transition, p: Personne, motif = "", designes: { v: Personne; a: Personne } = { v: verif, a: appro }) {
   const v = (await lireDocument(app, org.cible, id))!.version;
-  return appliquerTransition(app, org.cible, id, t, { motif, versionVue: v, roles: p.roles, fonction: "Responsable QSE" }, p);
+  // Soumettre : Verif et Appro (ou `designes`), membres de l'organisation, sont désignés (désignation nominative du circuit).
+  if (t === "soumettre") await adhesionsDeTest(proprietaire, org.cible.id, [redac, verif, appro]);
+  return appliquerTransition(app, org.cible, id, t, { motif, versionVue: v, roles: p.roles, fonction: "Responsable QSE", verificateur: designes.v.id, approbateur: designes.a.id }, p);
 }
 async function publier(org: OrgDeTest, id: string) {
   for (const [t, p] of [["soumettre", redac], ["verifier", verif], ["approuver", appro]] as const) await decider(org, id, t, p);
@@ -347,7 +349,7 @@ describe("tableau de bord et échéances des actions", () => {
     const d = await creerDocument(app, org.cible, procedure(), redac);
     await publier(org, d.id);
     const brouillon = await creerDocument(app, org.cible, { meta: { typeDocument: "procedure", titre: "À vérifier", reference: "PR-QSE-02" }, roles: [], etapes: [] }, redac);
-    await decider(org, brouillon.id, "soumettre", redac);
+    await decider(org, brouillon.id, "soumettre", redac, "", { v: moi, a: appro });
     await creerAction(app, org.cible, { titre: "En retard", description: "", origine: "autre", responsableId: moi.id, echeance: "2026-01-01" }, redac);
     await creerAction(app, org.cible, { titre: "À venir", description: "", origine: "autre", responsableId: autreVerif.id, echeance: "2027-01-01" }, redac);
     const tb = await lireTableauDeBord(app, org.cible, { id: moi.id, roles: moi.roles }, "UTC", "2026-10-13");
@@ -359,8 +361,19 @@ describe("tableau de bord et échéances des actions", () => {
     expect(tb.indicateurs).toEqual({ atteint: 0, non_atteint: 0, sans_mesure: 0, sans_objectif: 2 });
     expect(tb.aDecider.map((x) => x.reference)).toEqual(["PR-QSE-02"]);
     expect(tb.mesActions.map((x) => [x.titre, x.enRetard])).toEqual([["En retard", true]]);
-    // Le rédacteur qui a soumis n'a rien à décider.
-    expect((await lireTableauDeBord(app, org.cible, { id: redac.id, roles: redac.roles }, "UTC", "2026-10-13")).aDecider).toEqual([]);
+    expect(tb.aDecider[0]!.depuis).toBeInstanceOf(Date);
+    // L'autre vérificateur n'est pas désigné : rien à décider pour lui.
+    expect((await lireTableauDeBord(app, org.cible, { id: autreVerif.id, roles: autreVerif.roles }, "UTC", "2026-10-13")).aDecider).toEqual([]);
+    // Le rédacteur qui a soumis n'a rien à décider ; il suit son document : en vérification chez Moi.
+    const tbRedac = await lireTableauDeBord(app, org.cible, { id: redac.id, roles: redac.roles }, "UTC", "2026-10-13");
+    expect(tbRedac.aDecider).toEqual([]);
+    expect(tbRedac.enCours.map((x) => [x.reference, x.etat, x.chez])).toEqual([["PR-QSE-02", "en_verification", "Moi"]]);
+    expect(tbRedac.refuses).toEqual([]);
+    // Refusé : le document passe dans « mes documents refusés », avec le motif.
+    await decider(org, brouillon.id, "refuser_verification", moi, "Compléter l'étape 3.");
+    const apres = await lireTableauDeBord(app, org.cible, { id: redac.id, roles: redac.roles }, "UTC", "2026-10-13");
+    expect(apres.enCours).toEqual([]);
+    expect(apres.refuses.map((x) => [x.reference, x.motif])).toEqual([["PR-QSE-02", "Compléter l'étape 3."]]);
   });
 
   it("tâches quotidiennes : rappel, retard, escalade des actions ouvertes ; actions réalisées ignorées ; sans responsable → administrateurs", async () => {

@@ -34,6 +34,10 @@ const { BASE, sql, lancer, connecter, api, editeurPret, attendreEtat, capture, e
     // Soumettre, vérifier, approuver : fonction obligatoire (TC-03).
     if (await bloc.locator('input[name="fonction"]').count()) await bloc.locator('input[name="fonction"]').fill(fonction);
     let question = "";
+    // Soumettre : vérificateur et approbateur désignés (Victor, Agathe).
+    for (const [champ, nom] of [["verificateur", "Victor Vérificateur"], ["approbateur", "Agathe Approbatrice"]]) {
+      if (await bloc.locator(`select[name="${champ}"]`).count()) await bloc.locator(`select[name="${champ}"]`).selectOption({ label: nom });
+    }
     p.once("dialog", (d) => { question = d.message(); d.accept(); });
     await bloc.locator(`button:has-text("${libelle}")`).click();
     await p.waitForURL((u) => u.searchParams.get("etat") === etatAttendu);
@@ -95,9 +99,14 @@ const { BASE, sql, lancer, connecter, api, editeurPret, attendreEtat, capture, e
   assert.ok(await rita.isVisible("text=Aucune décision ne vous revient à cette étape."));
   // (Rédactrice seulement : elle n'a pas le rôle de vérifier, la séparation des tâches n'a donc rien à lui expliquer.)
   assert.equal(await rita.locator(".separation").count(), 0);
+  // Désignation nominative : les personnes désignées sont affichées ; Rita, qui a soumis, peut changer la désignation.
+  assert.deepEqual(await rita.locator("#designes li").allTextContents(), ["Vérification : Victor Vérificateur", "Approbation : Agathe Approbatrice"]);
+  assert.equal(await rita.locator("#redesignation select").count(), 2);
 
-  etape("vérificateur : refuser exige un motif (navigateur et serveur) ; refus → brouillon");
+  etape("vérificateur : le document est dans « Mes tâches » ; refuser exige un motif (navigateur et serveur) ; refus → brouillon");
   const victor = await connecter("verif@demo.test");
+  await victor.goto(`${BASE}/app`);
+  assert.ok((await victor.locator("#a-decider").innerText()).includes("À vérifier"), "tableau de bord du vérificateur désigné");
   await victor.goto(PAGE);
   assert.deepEqual(await victor.locator(".decision-possible").evaluateAll((l) => l.map((x) => x.dataset.transition)), ["verifier", "refuser_verification"]);
   const refus = victor.locator(".decision-possible", { has: victor.locator('button:has-text("Refuser")') });
@@ -112,6 +121,8 @@ const { BASE, sql, lancer, connecter, api, editeurPret, attendreEtat, capture, e
   await capture(victor, "circuit-verification");
   await decider(victor, "Refuser (retour au brouillon)", "brouillon", "L'étape 1 doit citer le modèle de document.");
   assert.equal(etatEnBase(), "brouillon/1/-");
+  await rita.goto(`${BASE}/app`);
+  assert.ok((await rita.locator("#mes-refuses").innerText()).includes("L'étape 1 doit citer le modèle de document."), "refus visible dans « Mes tâches »");
 
   etape("nouvelle version, soumise ; le vérificateur vérifie, puis ne peut pas approuver (séparation)");
   assert.equal((await api(rita, "PUT", `/api/documents/${id}`, { organisationId: org, version: 1, contenu: contenu("Maîtriser les documents", "Rédiger le projet selon le modèle MOD-01") })).statut, 200);

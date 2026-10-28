@@ -136,4 +136,11 @@ function etape(texte) {
   console.log("▶ " + texte);
 }
 
-module.exports = { BASE, URL_APPLICATION, MDP, SORTIE, SUPERADMIN, ETAT, fichierEtat, sql, lancer, connecter, anonyme, codeTotp, pasCourant, codeFrais, noterSecret, oublierSecret, lireMfa, passerSecondFacteur, api, editeurPret, attendreEtat, capture, etape, assert };
+/** Soumettre (page de validation) : désigne Victor pour vérifier et Agathe pour approuver (comptes de l'atelier de démonstration). */
+async function designerDemo(bloc) {
+  for (const [champ, nom] of [["verificateur", "Victor Vérificateur"], ["approbateur", "Agathe Approbatrice"]]) {
+    if (await bloc.locator(`select[name="${champ}"]`).count()) await bloc.locator(`select[name="${champ}"]`).selectOption({ label: nom });
+  }
+}
+
+module.exports = { designerDemo, BASE, URL_APPLICATION, MDP, SORTIE, SUPERADMIN, ETAT, fichierEtat, sql, lancer, connecter, anonyme, codeTotp, pasCourant, codeFrais, noterSecret, oublierSecret, lireMfa, passerSecondFacteur, api, editeurPret, attendreEtat, capture, etape, assert };

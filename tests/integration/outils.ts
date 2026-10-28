@@ -110,3 +110,22 @@ export async function secondFacteurDeTest(proprietaire: Pool, personnes: readonl
     }
   });
 }
+
+/**
+ * Inscrit des personnes de test comme membres actifs de l'organisation, avec leurs rôles (désignation nominative du
+ * circuit : seuls des membres actifs qui ont le rôle peuvent être désignés). Crée le compte s'il n'existe pas.
+ */
+export async function adhesionsDeTest(proprietaire: Pool, organisationId: string, personnes: readonly { id: string; email: string; nom?: string; roles: readonly RoleOrganisation[] }[]): Promise<void> {
+  await enTransaction(proprietaire, async (c) => {
+    for (const p of personnes) {
+      await c.query(
+        "INSERT INTO platform.utilisateurs (id, email, nom, mot_de_passe_hash, doit_changer_mdp) VALUES ($1, $2, $3, '$argon2id$compte-de-test', false) ON CONFLICT (id) DO NOTHING",
+        [p.id, p.email.toLowerCase(), p.nom ?? "Personne de test"],
+      );
+      await c.query(
+        "INSERT INTO platform.adhesions (utilisateur_id, organisation_id, roles) VALUES ($1, $2, $3) ON CONFLICT (utilisateur_id, organisation_id) DO UPDATE SET roles = EXCLUDED.roles",
+        [p.id, organisationId, p.roles],
+      );
+    }
+  });
+}

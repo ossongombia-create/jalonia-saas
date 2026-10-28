@@ -2,7 +2,7 @@
 // circuit, revue confirmée, réglages, rappels / retards / escalades sans doublon, ménage, droits PostgreSQL, étanchéité.
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { Pool } from "pg";
-import { appliquerTransition, lireCircuit, type Transition } from "../../src/server/documents/circuit";
+import { appliquerTransition, candidatsDesignation, lireCircuit, lireMembresActifs, type Transition } from "../../src/server/documents/circuit";
 import { creerDocument, lireDocument, type Contenu } from "../../src/server/documents/service";
 import { lireParametresOrganisation, modifierParametres } from "../../src/server/documents/revues";
 import { compterNonLues, listerNotifications, marquerLues, notifier } from "../../src/server/notifications/service";
@@ -39,26 +39,33 @@ async function membre(org: OrgDeTest, nom: string, ...roles: RoleOrganisation[])
 const adminDe = (org: OrgDeTest): Personne => ({ id: org.adminId, email: org.adminEmail, nom: "Admin", roles: ["ADMIN_ORGANISATION"] });
 const procedure = (titre: string): Contenu => ({ meta: { typeDocument: "procedure", titre, reference: "PR-REV-01" }, roles: [], etapes: [{ id: "e1", libelle: titre }] });
 
-async function decider(org: OrgDeTest, id: string, t: Transition, p: Personne, motif = "") {
-  const v = (await lireDocument(app, org.cible, id))!.version;
-  return appliquerTransition(app, org.cible, id, t, { motif, versionVue: v, roles: p.roles, fonction: "Responsable QSE" }, p);
+/** Soumettre : `designes` désignés, ou par défaut les premiers vérificateur et approbateur possibles (distincts). */
+async function decider(org: OrgDeTest, id: string, t: Transition, p: Personne, motif = "", designes?: { v: Personne; a: Personne }) {
+  const doc = (await lireDocument(app, org.cible, id))!;
+  let choix = { verificateur: designes?.v.id, approbateur: designes?.a.id };
+  if (t === "soumettre" && !designes) {
+    const c = candidatsDesignation(await lireMembresActifs(app, org.cible.id), [p.id]);
+    const v = c.verificateurs[0]?.id;
+    choix = { verificateur: v, approbateur: c.approbateurs.find((m) => m.id !== v)?.id };
+  }
+  return appliquerTransition(app, org.cible, id, t, { motif, versionVue: doc.version, roles: p.roles, fonction: "Responsable QSE", ...choix }, p);
 }
 const recues = async (org: OrgDeTest, p: Personne) => (await listerNotifications(app, org.cible, p.id)).map((n) => [n.nature, n.details.motif ?? null]);
 const enSql = (org: OrgDeTest, sql: string, valeurs: unknown[] = []) => enTransaction(proprietaire, (c) => c.query(sql.replaceAll("$S", `"${org.cible.schemaName}"`), valeurs));
 const naturesDe = async (org: OrgDeTest, p: Personne) => (await listerNotifications(app, org.cible, p.id)).map((n) => n.nature).sort();
 
 describe("notifications du circuit", () => {
-  it("soumis → vérificateurs ; vérifié → approbateurs ; refusé (motif) et publié → auteur ; jamais à soi-même ; comptes désactivés exclus", async () => {
+  it("soumis → le vérificateur désigné ; vérifié → l'approbateur désigné ; refusé (motif) et publié → auteur ; jamais à soi-même ; comptes désactivés exclus", async () => {
     const org = await creerOrgDeTest(app, proprietaire, superadmin);
     const [redac, verif1, verif2, appro, lect] = [
       await membre(org, "Redac", "REDACTEUR"), await membre(org, "Verif1", "VERIFICATEUR"), await membre(org, "Verif2", "VERIFICATEUR"),
       await membre(org, "Appro", "APPROBATEUR"), await membre(org, "Lect", "LECTEUR"),
     ];
     const d = await creerDocument(app, org.cible, procedure("Notifier"), redac);
-    await decider(org, d.id, "soumettre", redac);
+    await decider(org, d.id, "soumettre", redac, "", { v: verif1, a: appro });
     expect(await recues(org, verif1)).toEqual([["a_verifier", null]]);
-    expect(await recues(org, verif2)).toEqual([["a_verifier", null]]);
-    for (const p of [redac, appro, lect, adminDe(org)]) expect(await recues(org, p), p.nom).toEqual([]);
+    // Verif2 a le rôle, mais n'est pas désigné : il n'est pas sollicité.
+    for (const p of [redac, verif2, appro, lect, adminDe(org)]) expect(await recues(org, p), p.nom).toEqual([]);
     const n = (await listerNotifications(app, org.cible, verif1.id))[0]!;
     expect(n).toMatchObject({ documentId: d.id, lueLe: null, details: { titre: "Notifier", reference: "PR-REV-01", version: 1, par: "Redac" } });
 
@@ -68,11 +75,12 @@ describe("notifications du circuit", () => {
     await decider(org, d.id, "refuser_approbation", appro, "Citer la norme.");
     expect(await recues(org, redac)).toEqual([["refuse", "Citer la norme."]]);
 
-    // Verif2 désactivé : il n'est plus prévenu.
+    // Verif2 désactivé : il ne peut plus être désigné.
     await enTransaction(proprietaire, (c) => c.query("UPDATE platform.utilisateurs SET statut = 'desactive' WHERE id = $1", [verif2.id]));
-    await decider(org, d.id, "soumettre", redac);
+    expect(await cleErreur(decider(org, d.id, "soumettre", redac, "", { v: verif2, a: appro }))).toBe("circuit.verificateur_invalide");
+    await decider(org, d.id, "soumettre", redac, "", { v: verif1, a: appro });
     expect(await naturesDe(org, verif1)).toEqual(["a_verifier", "a_verifier"]);
-    expect(await naturesDe(org, verif2)).toEqual(["a_verifier"]);
+    expect(await naturesDe(org, verif2)).toEqual([]);
     await decider(org, d.id, "verifier", verif1);
     await decider(org, d.id, "approuver", appro);
     expect((await recues(org, redac))[0]).toEqual(["publie", null]);
@@ -86,7 +94,9 @@ describe("notifications du circuit", () => {
       await membre(org, "VerifAppro", "VERIFICATEUR", "APPROBATEUR"), await membre(org, "Appro", "APPROBATEUR"),
     ];
     const d = await creerDocument(app, org.cible, procedure("Séparation"), auteur);
-    await decider(org, d.id, "soumettre", soumet);
+    // L'auteure ne peut pas être désignée pour vérifier sa version.
+    expect(await cleErreur(decider(org, d.id, "soumettre", soumet, "", { v: auteur, a: appro }))).toBe("circuit.verificateur_invalide");
+    await decider(org, d.id, "soumettre", soumet, "", { v: verifAppro, a: appro });
     // L'auteure est vérificatrice, mais ne peut pas vérifier sa version : elle n'est pas sollicitée.
     expect(await naturesDe(org, auteur)).toEqual([]);
     expect(await naturesDe(org, verifAppro)).toEqual(["a_verifier"]);
@@ -98,7 +108,7 @@ describe("notifications du circuit", () => {
     await decider(org, d.id, "refuser_approbation", appro, "À compléter.");
     expect(await recues(org, auteur)).toEqual([["refuse", "À compléter."]]);
     expect(await recues(org, soumet)).toEqual([["refuse", "À compléter."]]);
-    await decider(org, d.id, "soumettre", soumet);
+    await decider(org, d.id, "soumettre", soumet, "", { v: verifAppro, a: appro });
     await decider(org, d.id, "verifier", verifAppro);
     await decider(org, d.id, "approuver", appro);
     expect((await recues(org, auteur))[0]).toEqual(["publie", null]);
