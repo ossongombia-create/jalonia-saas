@@ -3,9 +3,10 @@
 import * as store from "./store.js";
 import { constatsDiagnostic } from "./diagnostic.js";
 import * as parcours from "./parcours-ui.js";
-import { enregistrerJSON } from "./sorties.js"; // importé aussi pour enregistrer l'impression du document (PDF)
+import { enregistrerJSON, telechargerProcedure } from "./sorties.js"; // importé aussi pour enregistrer l'impression du document (PDF)
 import { actualiserApercu } from "./apercus.js";
 import { importerWord } from "./importWord.js";
+import { importerFiche } from "./importFiche.js";
 import { depuisBpmn, ErreurBpmn, TAILLE_MAX_IMPORT } from "./bpmn.js";
 import { t, definirLangue, langueCourante } from "./i18n.js";
 import { icone, garnirIcones } from "./icones.js";
@@ -260,6 +261,45 @@ $("fichier-word").addEventListener("change", async (evenement) => {
   } catch (e) {
     afficherRapport([{ gravite: "erreur", cle: "import.illisible" }]);
   }
+});
+
+// ----- Import d'une fiche de collecte Excel (.xlsx) : la procédure remplace le document ouvert ; chaque instruction de travail devient
+// un document à part (en ligne : créé sur le serveur, en brouillon ; en local : enregistré en fichier .json). -----
+$("btn-importer-fiche").addEventListener("click", () => $("fichier-fiche").click());
+$("fichier-fiche").addEventListener("change", async (evenement) => {
+  const fichier = evenement.target.files[0];
+  evenement.target.value = "";
+  if (!fichier) return;
+  if (fichier.size > 10_000_000 || !/\.xlsx$/i.test(fichier.name)) {
+    afficherRapport([{ gravite: "erreur", cle: "fiche.fichier_refuse" }], "fiche.titre");
+    return;
+  }
+  if (!confirmerRemplacement()) return;
+  let resultat;
+  try {
+    resultat = await importerFiche(await fichier.arrayBuffer());
+  } catch (e) {
+    afficherRapport([{ gravite: "erreur", cle: "fiche.illisible" }], "fiche.titre");
+    return;
+  }
+  const { procedure, instructions, rapport } = resultat;
+  if (!procedure) {
+    afficherRapport(rapport, "fiche.titre");
+    return;
+  }
+  store.importerProcedure(procedure);
+  parcours.apresChargement();
+  if (instructions.length) {
+    if (EN_LIGNE) {
+      const { creees, echecs } = await enLigne.creerDocuments(instructions.map((it) => store.nettoyer(it)));
+      if (creees.length) rapport.push({ gravite: "ok", cle: "fiche.it_creees", params: { liste: creees.join(", ") } });
+      echecs.forEach((code) => rapport.push({ gravite: "alerte", cle: "fiche.it_echec", params: { code } }));
+    } else {
+      instructions.forEach((it) => telechargerProcedure(store.nettoyer(it)));
+      rapport.push({ gravite: "info", cle: "fiche.it_telechargees", params: { liste: instructions.map((it) => it.meta.reference || it.meta.titre).join(", ") } });
+    }
+  }
+  afficherRapport(rapport, "fiche.titre");
 });
 
 $("btn-importer-bpmn").addEventListener("click", () => $("fichier-bpmn").click());

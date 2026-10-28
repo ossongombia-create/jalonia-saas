@@ -97,6 +97,11 @@ export function enregistrerJSON() {
   store.marquerEnregistre(); // v0.22 : le document est maintenant dans un fichier (l'alerte avant de quitter et le repère « non enregistré » s'éteignent)
 }
 
+// Un autre document (ex. instruction de travail tirée d'une fiche de collecte, en local) : enregistré en fichier .json.
+export function telechargerProcedure(procedure) {
+  telecharger(JSON.stringify({ application: "jalonia", version: 1, procedure }, null, 2), nomDeFichier(procedure, "json"), "application/json");
+}
+
 // Le logigramme au format BPMN 2.0 (procédures seulement : voir bpmn.js).
 export function telechargerBpmn() {
   const p = store.lire();

@@ -350,8 +350,13 @@ export function construireDocxIT(procedure, options = {}) {
   const corps = avecImage
     ? imageXml(Math.round(d.largeur * EMU_PAR_PX), Math.round(d.hauteur * EMU_PAR_PX), description, '<w:spacing w:before="0" w:after="0"/><w:jc w:val="center"/>')
     : paragraphe(runs(t("doc.instruction_ici"), `<w:i/><w:color w:val="${GRIS_VIDE}"/>`));
+  // « Comment ? » des opérations (v1.9) : tableau « Mode opératoire » sous le dessin, comme sur la feuille imprimée.
+  const lignesMode = ((procedure.it && procedure.it.operations) || []).map((o, i) => [String(i + 1), o.libelle || "", (o.commentaire || "").trim()]).filter((l) => l[2]);
+  const mode = lignesMode.length
+    ? titre2(t("it.mode_operatoire")) + tableau({ colonnes: [t("it.mode_operatoire.n"), t("it.mode_operatoire.operation"), t("it.mode_operatoire.comment")], lignes: lignesMode, gabarit: [500, 2800, 6000], centrees: [0] })
+    : "";
   const sect = `<w:sectPr><w:pgSz w:w="${PAGE_IT.w}" w:h="${PAGE_IT.h}"/><w:pgMar w:top="${PAGE_IT.haut}" w:right="${PAGE_IT.droite}" w:bottom="${PAGE_IT.bas}" w:left="${PAGE_IT.gauche}" w:header="300" w:footer="300" w:gutter="0"/></w:sectPr>`;
-  const xmlDocument = `${ENTETE_XML}<w:document xmlns:w="${NS_W}" xmlns:r="${NS_R}"><w:body>${corps}${sect}</w:body></w:document>`;
+  const xmlDocument = `${ENTETE_XML}<w:document xmlns:w="${NS_W}" xmlns:r="${NS_R}"><w:body>${corps}${mode}${sect}</w:body></w:document>`;
   const fichiers = [
     { nom: "[Content_Types].xml", donnees: typesXml(opt.embarquer, null, false) },
     { nom: "_rels/.rels", donnees: RELS },

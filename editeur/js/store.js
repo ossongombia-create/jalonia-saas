@@ -703,7 +703,8 @@ export function modifierRaccord(quel, champ, valeur) {
 }
 
 // ---------- Instruction de travail (niveau 3) : un rôle, des opérations, des contrôles et des actions correctives ----------
-const CHAMPS_OPERATION = ["libelle", "entree", "sortie"];
+const CHAMPS_OPERATION = ["libelle", "entree", "sortie", "commentaire"];
+const LONGUEUR_CHAMP_OPERATION = { libelle: 300, commentaire: 2000 };
 const BOOLEENS_OPERATION = ["vigilance", "enregistrement"];
 const operationDe = (id) => procedure.it.operations.find((o) => o.id === id);
 
@@ -733,7 +734,7 @@ export function modifierOperation(id, champ, valeur) {
   }
   if (!CHAMPS_OPERATION.includes(champ)) return;
   avant("op:" + id + champ);
-  op[champ] = texteCourt(valeur, champ === "libelle" ? 300 : 500);
+  op[champ] = texteCourt(valeur, LONGUEUR_CHAMP_OPERATION[champ] ?? 500);
   apres(false);
 }
 
@@ -1295,6 +1296,7 @@ function nettoyerInstruction(brut) {
     if (!o || typeof o !== "object") return;
     const op = nouvelleOperation({
       id: identifiant(o.id, "p"), libelle: texteCourt(o.libelle, 300), entree: texteCourt(o.entree, 500), sortie: texteCourt(o.sortie, 500),
+      commentaire: texteCourt(o.commentaire, 2000),
       vigilance: o.vigilance === true, enregistrement: o.enregistrement === true, contrainte: nettoyerContrainte(o.contrainte),
       sansObjet: nettoyerSansObjet(o.sansObjet, ["avec", "contraintes"]),
     });
