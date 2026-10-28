@@ -7,7 +7,7 @@
 //   - l'approbatrice confirme la revue : nouvelle échéance, plus de retard.
 const { execFileSync } = require("node:child_process");
 const path = require("node:path");
-const { BASE, URL_APPLICATION, sql, lancer, connecter, api, capture, etape, assert } = require("./outils.cjs");
+const { BASE, URL_APPLICATION, sql, lancer, connecter, api, capture, etape, assert, designerDemo } = require("./outils.cjs");
 
 const RACINE = path.resolve(__dirname, "../..");
 const FUSEAU = "Africa/Douala"; // celui du serveur de test (tests/e2e/lancer.mjs)
@@ -70,6 +70,7 @@ function plusMois(iso, n) {
     const bloc = p.locator(".decision-possible", { has: p.locator(`button:has-text("${libelle}")`) });
     // Soumettre, vérifier, approuver : fonction obligatoire (TC-03).
     if (await bloc.locator('input[name="fonction"]').count()) await bloc.locator('input[name="fonction"]').fill("Responsable QSE");
+    await designerDemo(bloc); // soumettre : vérificateur et approbateur désignés
     p.once("dialog", (d) => d.accept());
     await bloc.locator(`button:has-text("${libelle}")`).click();
     await p.waitForURL((u) => u.searchParams.get("etat") === etat);
@@ -122,7 +123,7 @@ function plusMois(iso, n) {
   await agathe.goto(PAGE);
   assert.equal(await agathe.getAttribute("#revue", "data-situation"), "escalade");
   assert.equal(await agathe.textContent("#revue"), `Revue en retard : elle était due le ${echeance.fr} (administrateurs prévenus).`);
-  assert.deepEqual(await agathe.locator(".decision-possible").evaluateAll((l) => l.map((x) => x.dataset.transition)), ["archiver", "confirmer_revue"]);
+  assert.deepEqual(await agathe.locator(".decision-possible").evaluateAll((l) => l.map((x) => x.dataset.transition)), ["archiver", "reviser", "confirmer_revue"]);
 
   etape("tâches quotidiennes construites : retard → approbatrice, escalade → administrateur ; relancées : aucun doublon");
   const premier = tachesQuotidiennes();

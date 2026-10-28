@@ -32,16 +32,20 @@ export const DROITS = {
   // Revue périodique des documents et rappels (src/server/documents/revues.ts).
   "organisation.parametres": { roles: ["ADMIN_ORGANISATION"], etat: "actif" },
   // ----- Documents (cycle de vie : brouillon → vérification → approbation → publication → archivage) -----
-  // Lire : ouvrir, voir, exporter (Word, PDF) les documents et la cartographie. Les autres rôles sont en lecture seule.
+  // Lire : ouvrir, voir, exporter (Word, PDF) les documents et la cartographie.
+  // Rédiger (décision du 28/10/2026) : TOUT MEMBRE rédige procédures et instructions de travail — rédacteur,
+  // vérificateur, approbateur et lecteur ; la séparation des tâches empêche de vérifier ou d'approuver ce qu'on a rédigé
+  // ou soumis. Le rôle Administrateur seul (souvent confié à l'informatique) gère les comptes et ne rédige pas ; la
+  // cartographie des processus reste au rédacteur.
   "documents.lire": { roles: ["ADMIN_ORGANISATION", "REDACTEUR", "VERIFICATEUR", "APPROBATEUR", "LECTEUR"], etat: "actif" },
-  "documents.rediger": { roles: ["ADMIN_ORGANISATION", "REDACTEUR"], etat: "actif" },
-  "documents.supprimer": { roles: ["ADMIN_ORGANISATION", "REDACTEUR"], etat: "actif" },
-  "cartographie.modifier": { roles: ["ADMIN_ORGANISATION", "REDACTEUR"], etat: "actif" },
+  "documents.rediger": { roles: ["REDACTEUR", "VERIFICATEUR", "APPROBATEUR", "LECTEUR"], etat: "actif" },
+  "documents.supprimer": { roles: ["REDACTEUR", "VERIFICATEUR", "APPROBATEUR", "LECTEUR"], etat: "actif" },
+  "cartographie.modifier": { roles: ["REDACTEUR"], etat: "actif" },
   // Circuit de validation (src/server/documents/circuit.ts). Soumettre (et réviser un document publié) : qui peut rédiger.
   // Approuver = publier : l'approbation met le document en application (les deux droits vont ensemble).
   // Par défaut (à confirmer par Brice), la personne qui a soumis ou rédigé la version ne peut ni la vérifier ni l'approuver,
   // et celle qui l'a vérifiée ne peut pas l'approuver (séparation des tâches, vérifiée par le serveur).
-  "documents.soumettre": { roles: ["ADMIN_ORGANISATION", "REDACTEUR"], etat: "actif" },
+  "documents.soumettre": { roles: ["REDACTEUR", "VERIFICATEUR", "APPROBATEUR", "LECTEUR"], etat: "actif" },
   "documents.verifier": { roles: ["VERIFICATEUR"], etat: "actif" },
   "documents.approuver": { roles: ["APPROBATEUR"], etat: "actif" },
   "documents.publier": { roles: ["APPROBATEUR"], etat: "actif" },

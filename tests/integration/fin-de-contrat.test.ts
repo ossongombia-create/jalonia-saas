@@ -60,7 +60,9 @@ async function organisationRemplie(nom: string): Promise<OrgDeTest> {
   const admin = adminDe(org);
   const redac = { id: await membreDeTest(app, org.cible, { email: `redac-${suffixe()}@test.local`, nom: "Rédac", roles: ["REDACTEUR"] }, admin), email: "redac", ip: "127.0.0.1", agent: "vitest" };
   const d = await creerDocument(app, org.cible, procedure(`${nom} — procédure`), redac);
-  await appliquerTransition(app, org.cible, d.id, "soumettre", { motif: "", versionVue: d.version, roles: ["REDACTEUR"], fonction: "Rédacteur" }, redac);
+  const verif = await membreDeTest(app, org.cible, { email: `verif-${suffixe()}@test.local`, nom: "Vérif", roles: ["VERIFICATEUR"] }, admin);
+  const appro = await membreDeTest(app, org.cible, { email: `appro-${suffixe()}@test.local`, nom: "Appro", roles: ["APPROBATEUR"] }, admin);
+  await appliquerTransition(app, org.cible, d.id, "soumettre", { motif: "", versionVue: d.version, roles: ["REDACTEUR"], fonction: "Rédacteur", verificateur: verif, approbateur: appro }, redac);
   const corbeille = await creerDocument(app, org.cible, procedure(`${nom} — à la corbeille`), redac);
   await supprimerDocument(app, org.cible, corbeille.id, redac);
   await creerAction(app, org.cible, { titre: `${nom} — action`, description: "", origine: "audit", responsableId: redac.id, echeance: "2026-12-31" }, admin);
@@ -118,8 +120,8 @@ describe("export d'une organisation", () => {
     expect(e.tables.documents!.some((d) => (d as { supprime_le: string | null }).supprime_le !== null)).toBe(true);
     expect((e.tables.actions![0] as { titre: string }).titre).toBe("Exportée — action");
     expect(e.organisation).toMatchObject({ id: org.organisationId, schema_name: org.cible.schemaName, statut: "active" });
-    expect(e.plateforme.membres).toHaveLength(2);
-    expect(e.plateforme.invitations).toHaveLength(4); // administrateur et rédacteur (acceptées), suppléant et invité (en attente)
+    expect(e.plateforme.membres).toHaveLength(4); // administrateur, rédacteur, vérificateur et approbateur désignés
+    expect(e.plateforme.invitations).toHaveLength(6); // administrateur, rédacteur, vérificateur, approbateur (acceptées), suppléant et invité (en attente)
     expect(e.plateforme.accesUrgence).toHaveLength(1);
     expect(e.plateforme.journal.length).toBeGreaterThan(0);
     expect(e.plateforme.migrations).toHaveLength(readdirSync("db/migrations/organisation").length);
@@ -163,8 +165,8 @@ describe("suppression d'une organisation", () => {
     await exporterOrganisation(proprietaire, cible.organisationId, fichier("avant-suppression"));
     const bilan = await supprimerOrganisation(proprietaire, cible.organisationId, `  ${nom} `);
 
-    expect(bilan).toMatchObject({ tables: TABLES_ORGANISATION.length, membres: 3 });
-    expect(bilan.comptesSansOrganisation).toHaveLength(2); // l'administrateur et le rédacteur ; pas le membre commun
+    expect(bilan).toMatchObject({ tables: TABLES_ORGANISATION.length, membres: 5 });
+    expect(bilan.comptesSansOrganisation).toHaveLength(4); // l'administrateur, le rédacteur, le vérificateur et l'approbateur ; pas le membre commun
     expect(bilan.comptesSansOrganisation).not.toContain(commun);
     expect(await existe("SELECT 1 FROM information_schema.schemata WHERE schema_name = $1", [cible.cible.schemaName])).toBe(false);
     expect(await existe("SELECT 1 FROM pg_roles WHERE rolname = $1", [cible.cible.roleName])).toBe(false);
@@ -182,7 +184,7 @@ describe("suppression d'une organisation", () => {
     // Tracée dans le journal de la plateforme, dont la chaîne reste intacte (aucune ligne effacée).
     const trace = await enTransaction(proprietaire, (c) => c.query<{ details: Record<string, unknown> }>(
       "SELECT details FROM platform.journal WHERE organisation_id = $1 AND action = 'ORGANISATION_SUPPRIMEE'", [cible.organisationId]));
-    expect(trace.rows[0]?.details).toMatchObject({ nom, schema: cible.cible.schemaName, tables: TABLES_ORGANISATION.length, membres: 3, comptesSansOrganisation: 2 });
+    expect(trace.rows[0]?.details).toMatchObject({ nom, schema: cible.cible.schemaName, tables: TABLES_ORGANISATION.length, membres: 5, comptesSansOrganisation: 4 });
     const chaine = await enTransaction(proprietaire, (c) => verifierJournal(c, "platform.journal", "platform", true));
     expect(chaineIntacte(chaine)).toBe(true);
   });

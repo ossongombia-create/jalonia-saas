@@ -1,10 +1,11 @@
-// Rappels et escalades des revues périodiques et des actions, ménage des notifications lues, alerte des titulaires
+// Rappels et escalades des revues périodiques et des actions, relances des validations en attente (5 jours ouvrés), ménage des notifications lues, alerte des titulaires
 // absents depuis 60 jours (binôme d'administration, chantier 2).
 import type { Pool } from "pg";
 import { ecartJours, jourLocal } from "@/lib/dates";
 import { dansOrganisation, enTransaction } from "../db/transactions";
 import { verifierOrganisationTechnique } from "../db/identifiants";
 import { lireParametres, revueDe } from "../documents/revues";
+import { relancesValidation } from "../documents/circuit";
 import { ayantRole, membresDestinataires, notifier, purgerNotificationsLues, type NouvelleNotification } from "../notifications/service";
 import { echeancesActions } from "../qse/actions";
 import { notifierAbsences, type AlerteAbsence } from "../organisations/absences";
@@ -56,6 +57,7 @@ export async function executerTachesQuotidiennes(pool: Pool, options: { fuseau: 
             }
           }
           liste.push(...(await echeancesActions(client, membres, p, aujourdhui)));
+          liste.push(...(await relancesValidation(client, membres, options.fuseau, aujourdhui)));
           const creees = await notifier(client, liste);
           const purgees = await purgerNotificationsLues(client, CONSERVATION_NOTIFICATIONS_LUES_JOURS);
           return { creees, purgees };

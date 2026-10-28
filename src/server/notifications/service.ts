@@ -16,6 +16,7 @@ export const NATURES = [
   "action_confiee", "action_proche", "action_retard", "action_escalade",
   "acces_urgence",
   "absence_titulaire",
+  "validation_relance",
 ] as const;
 export type NatureNotification = (typeof NATURES)[number];
 

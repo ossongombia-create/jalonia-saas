@@ -10,7 +10,7 @@ import type { EtatAction } from "@/lib/etat-action";
 import { poolApplication } from "@/server/db/pools";
 import { contenuInitial, creerDocument, supprimerDocument } from "@/server/documents/service";
 import { restaurerVersion, retablirDocument } from "@/server/documents/versions";
-import { appliquerTransition, estTransition, TRANSITIONS } from "@/server/documents/circuit";
+import { appliquerTransition, changerDesignation, estTransition, TRANSITIONS } from "@/server/documents/circuit";
 import type { OrganisationCible } from "@/server/membres/service";
 import { ErreurMetier } from "@/server/erreurs";
 import { exigerContexte, type Contexte } from "@/server/web/contexte";
@@ -96,8 +96,30 @@ export async function actionTransitionDocument(_etat: EtatAction, formulaire: Fo
     const versionVue = entier(champ(formulaire, "versionVue"));
     if (!Number.isSafeInteger(versionVue)) throw new ErreurMetier("erreur.saisie_invalide");
     const r = await appliquerTransition(
-      poolApplication(), org, documentId, transition, { motif: champ(formulaire, "motif"), fonction: champ(formulaire, "fonction"), versionVue, roles: ctx.organisation?.roles ?? [] }, ctx.acteur,
+      poolApplication(), org, documentId, transition, {
+        motif: champ(formulaire, "motif"), fonction: champ(formulaire, "fonction"), versionVue, roles: ctx.organisation?.roles ?? [],
+        // Soumettre : vérificateur et approbateur désignés (contrôlés par le service : membres actifs qui ont le rôle).
+        verificateur: champ(formulaire, "verificateur"), approbateur: champ(formulaire, "approbateur"),
+      },
+      ctx.acteur,
     );
     redirect(`/app/documents/${documentId}/validation?etat=${r.etat}`);
+  });
+}
+
+/**
+ * Change la personne désignée (vérificateur ou approbateur) d'un document en circuit : la personne qui l'a soumis ou un
+ * administrateur de l'organisation (vérifié par le service, comme l'état du document et le rôle de la personne choisie).
+ */
+export async function actionDesignerDocument(_etat: EtatAction, formulaire: FormData): Promise<EtatAction> {
+  const ctx = await exigerContexte();
+  return executer(ctx.langue, async () => {
+    const org = autoriser(ctx, formulaire, "documents.lire");
+    const documentId = valider(identifiant, champ(formulaire, "documentId"));
+    const quoi = champ(formulaire, "quoi");
+    if (quoi !== "verificateur" && quoi !== "approbateur") throw new ErreurMetier("erreur.saisie_invalide");
+    const personne = valider(identifiant, champ(formulaire, "personne"));
+    await changerDesignation(poolApplication(), org, documentId, quoi, personne, ctx.organisation?.roles ?? [], ctx.acteur);
+    return { cle: "circuit.designation_changee" };
   });
 }

@@ -5,17 +5,19 @@ import path from "node:path";
 import { createHash, randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { Pool } from "pg";
-import { appliquerTransition, derniereFonction, lireCircuit, TRANSITIONS, type Transition } from "../../src/server/documents/circuit";
+import { appliquerTransition, changerDesignation, derniereFonction, lireCircuit, TRANSITIONS, type Transition } from "../../src/server/documents/circuit";
 import { creerDocument, enregistrerDocument, lireCoherence, lireDocument, listerDocuments, supprimerDocument, type Contenu } from "../../src/server/documents/service";
 import { listerVersions, restaurerVersion } from "../../src/server/documents/versions";
 import { lireJournalOrganisation, lireJournalPlateforme } from "../../src/server/consultation/service";
+import { listerNotifications } from "../../src/server/notifications/service";
+import { executerTachesQuotidiennes } from "../../src/server/taches/quotidiennes";
 import { appliquerMigrationsOrganisation, lireMigrations } from "../../src/server/migrations/lanceur";
 import { creerOrganisation } from "../../src/server/organisations/provisionnement";
 import { changerModeValidation, lireOrganisation } from "../../src/server/organisations/service";
 import { avecOrganisation, enTransaction } from "../../src/server/db/transactions";
 import type { RoleOrganisation } from "../../src/lib/rbac";
 import type { Acteur } from "../../src/server/acteur";
-import { cleErreur, codeErreur, creerOrgDeTest, creerSuperadmin, ouvrirPools, secondFacteurDeTest, suffixe, type OrgDeTest } from "./outils";
+import { adhesionsDeTest, cleErreur, codeErreur, creerOrgDeTest, creerSuperadmin, ouvrirPools, secondFacteurDeTest, suffixe, type OrgDeTest } from "./outils";
 
 let app: Pool;
 let proprietaire: Pool;
@@ -38,10 +40,17 @@ const instruction = (titre: string, reference = "IT-C-01"): Contenu => ({ meta: 
 const procedure = (titre: string, reference = "PR-C-01"): Contenu => ({ meta: { typeDocument: "procedure", titre, reference }, roles: [], etapes: [{ id: "e1", libelle: titre }] });
 const sha256 = (s: string) => createHash("sha256").update(s, "utf8").digest("hex");
 
-/** Décision au nom de `p` sur la version actuelle (ou `versionVue`). */
-async function decider(org: OrgDeTest, id: string, t: Transition, p: Personne, motif = "", versionVue?: number) {
+/**
+ * Décision au nom de `p` sur la version actuelle (ou `versionVue`). Soumettre : les personnes de test deviennent membres
+ * de l'organisation et `designes` (par défaut Vera et Paul) sont désignés pour vérifier et approuver.
+ */
+async function decider(org: OrgDeTest, id: string, t: Transition, p: Personne, motif = "", versionVue?: number, designes: { v: Personne; a: Personne } = { v: vera, a: paul }) {
   const v = versionVue ?? (await lireDocument(app, org.cible, id))!.version;
-  return appliquerTransition(app, org.cible, id, t, { motif, versionVue: v, roles: p.roles, fonction: "Responsable QSE" }, p);
+  if (t === "soumettre") {
+    await adhesionsDeTest(proprietaire, org.cible.id, [alice, bob, vera, paul, multi, lea]);
+    await adhesionsDeTest(proprietaire, org.cible.id, [designes.v, designes.a]); // rôles propres au scénario
+  }
+  return appliquerTransition(app, org.cible, id, t, { motif, versionVue: v, roles: p.roles, fonction: "Responsable QSE", verificateur: designes.v.id, approbateur: designes.a.id }, p);
 }
 const etat = async (org: OrgDeTest, id: string) => (await lireCircuit(app, org.cible, id))!.etat;
 
@@ -114,7 +123,9 @@ describe("circuit de validation", () => {
   it("droits : chaque décision demande son rôle (revérifié par le service)", async () => {
     const org = await creerOrgDeTest(app, proprietaire, superadmin);
     const d = await creerDocument(app, org.cible, procedure("D"), alice);
-    for (const p of [vera, paul, lea]) expect(await cleErreur(decider(org, d.id, "soumettre", p)), p.nom).toBe("erreur.interdit");
+    // Tout membre rédige et soumet (28/10/2026) ; l'administrateur seul (gestion des comptes), non.
+    const admin: Personne = { id: org.adminId, email: org.adminEmail, nom: "Admin", ip: "127.0.0.1", agent: "vitest", roles: ["ADMIN_ORGANISATION"] };
+    expect(await cleErreur(decider(org, d.id, "soumettre", admin))).toBe("erreur.interdit");
     await decider(org, d.id, "soumettre", bob); // un autre rédacteur peut soumettre
     for (const p of [alice, bob, paul, lea]) expect(await cleErreur(decider(org, d.id, "verifier", p)), p.nom).toBe("erreur.interdit");
     await decider(org, d.id, "verifier", vera);
@@ -128,7 +139,7 @@ describe("circuit de validation", () => {
     const aliceVerif = { ...alice, roles: ["REDACTEUR", "VERIFICATEUR", "APPROBATEUR"] as RoleOrganisation[] };
     const bobVerif = { ...bob, roles: ["REDACTEUR", "VERIFICATEUR", "APPROBATEUR"] as RoleOrganisation[] };
     const d = await creerDocument(app, org.cible, procedure("S"), alice); // Alice est l'autrice
-    await decider(org, d.id, "soumettre", bob); // Bob soumet
+    await decider(org, d.id, "soumettre", bob, "", undefined, { v: multi, a: paul }); // Bob soumet
     expect(await cleErreur(decider(org, d.id, "verifier", aliceVerif))).toBe("circuit.separation_auteur");
     expect(await cleErreur(decider(org, d.id, "refuser_verification", aliceVerif, "non"))).toBe("circuit.separation_auteur");
     expect(await cleErreur(decider(org, d.id, "verifier", bobVerif))).toBe("circuit.separation_auteur");
@@ -162,9 +173,9 @@ describe("circuit de validation", () => {
     await decider(org, d.id, "refuser_approbation", paul, "Référence réglementaire à citer.");
     expect(await etat(org, d.id)).toBe("brouillon");
     await enregistrerDocument(app, org.cible, d.id, { contenu: procedure("R3"), version: 2 }, alice);
-    await decider(org, d.id, "soumettre", alice);
-    await decider(org, d.id, "verifier", multi);
     const veraApprobatrice = { ...vera, roles: ["VERIFICATEUR", "APPROBATEUR"] as RoleOrganisation[] };
+    await decider(org, d.id, "soumettre", alice, "", undefined, { v: multi, a: veraApprobatrice });
+    await decider(org, d.id, "verifier", multi);
     expect(await decider(org, d.id, "approuver", veraApprobatrice)).toEqual({ etat: "publie" });
     expect((await lireCircuit(app, org.cible, d.id))!.versionPubliee).toBe(3);
   });
@@ -199,7 +210,8 @@ describe("circuit de validation", () => {
     await decider(org, d.id, "soumettre", alice);
     await decider(org, d.id, "verifier", vera);
     await decider(org, d.id, "approuver", paul);
-    expect(await cleErreur(decider(org, d.id, "reviser", vera))).toBe("erreur.interdit");
+    const admin: Personne = { id: org.adminId, email: org.adminEmail, nom: "Admin", ip: "127.0.0.1", agent: "vitest", roles: ["ADMIN_ORGANISATION"] };
+    expect(await cleErreur(decider(org, d.id, "reviser", admin))).toBe("erreur.interdit");
     expect(await decider(org, d.id, "reviser", bob)).toEqual({ etat: "brouillon" });
     await enregistrerDocument(app, org.cible, d.id, { contenu: procedure("Pub2 en préparation"), version: 1 }, bob);
     const c = (await lireCircuit(app, org.cible, d.id))!;
@@ -329,7 +341,7 @@ describe("second facteur obligatoire pour les décisions de l'approbateur (déci
     const org = await creerOrgDeTest(app, proprietaire, superadmin);
     const sansMfa = personne("SansMfa", "APPROBATEUR");
     const d = await creerDocument(app, org.cible, procedure("MFA"), alice);
-    await decider(org, d.id, "soumettre", alice);
+    await decider(org, d.id, "soumettre", alice, "", undefined, { v: vera, a: sansMfa });
     await decider(org, d.id, "verifier", vera);
     expect(await cleErreur(decider(org, d.id, "approuver", sansMfa))).toBe("circuit.second_facteur_requis");
     expect(await cleErreur(decider(org, d.id, "refuser_approbation", sansMfa, "non"))).toBe("circuit.second_facteur_requis");
@@ -349,7 +361,7 @@ describe("second facteur obligatoire pour les décisions de l'approbateur (déci
     const redac = personne("RedacSansMfa", "REDACTEUR");
     const verif = personne("VerifSansMfa", "VERIFICATEUR");
     const d = await creerDocument(app, org.cible, procedure("Sans MFA"), redac);
-    await decider(org, d.id, "soumettre", redac);
+    await decider(org, d.id, "soumettre", redac, "", undefined, { v: verif, a: paul });
     expect(await decider(org, d.id, "verifier", verif)).toEqual({ etat: "en_approbation" });
   });
 });
@@ -358,18 +370,24 @@ describe("mode « petite organisation » (décision n° 2 du 19/10/2026)", () =>
   it("deux personnes suffisent : la même personne vérifie puis approuve ; refusé en mode standard", async () => {
     const org = await creerOrgDeTest(app, proprietaire, superadmin);
     const d = await creerDocument(app, org.cible, procedure("Petite"), alice);
-    await decider(org, d.id, "soumettre", alice);
+    // Mode standard : la même personne ne peut pas être désignée deux fois.
+    expect(await cleErreur(decider(org, d.id, "soumettre", alice, "", undefined, { v: multi, a: multi }))).toBe("circuit.designation_identique");
+    await decider(org, d.id, "soumettre", alice, "", undefined, { v: multi, a: paul });
     await decider(org, d.id, "verifier", multi);
     expect(await cleErreur(decider(org, d.id, "approuver", multi))).toBe("circuit.separation_verificateur"); // standard
     await changerModeValidation(app, org.organisationId, "petite_organisation", superadmin);
+    expect(await cleErreur(decider(org, d.id, "approuver", multi))).toBe("circuit.reserve_designe"); // Paul est désigné
+    // Petite organisation : la personne qui a soumis désigne Multi, qui a vérifié, pour approuver.
+    await changerDesignation(app, org.cible, d.id, "approbateur", multi.id, alice.roles, alice);
     expect(await decider(org, d.id, "approuver", multi)).toEqual({ etat: "publie" });
     // Retour au mode standard : la règle des trois personnes s'applique de nouveau.
     await changerModeValidation(app, org.organisationId, "standard", superadmin);
     await decider(org, d.id, "reviser", alice);
     await enregistrerDocument(app, org.cible, d.id, { contenu: procedure("Petite v2"), version: (await lireDocument(app, org.cible, d.id))!.version }, alice);
-    await decider(org, d.id, "soumettre", alice);
+    await decider(org, d.id, "soumettre", alice, "", undefined, { v: multi, a: paul });
     await decider(org, d.id, "verifier", multi);
     expect(await cleErreur(decider(org, d.id, "approuver", multi))).toBe("circuit.separation_verificateur");
+    expect(await cleErreur(changerDesignation(app, org.cible, d.id, "approbateur", multi.id, alice.roles, alice))).toBe("circuit.designation_identique");
   });
 
   it("l'auteur ou la personne qui soumet reste exclu dans les deux modes", async () => {
@@ -378,7 +396,7 @@ describe("mode « petite organisation » (décision n° 2 du 19/10/2026)", () =>
     const aliceTout = { ...alice, roles: ["REDACTEUR", "VERIFICATEUR", "APPROBATEUR"] as RoleOrganisation[] };
     const bobTout = { ...bob, roles: ["REDACTEUR", "VERIFICATEUR", "APPROBATEUR"] as RoleOrganisation[] };
     const d = await creerDocument(app, org.cible, procedure("Auteur"), alice);
-    await decider(org, d.id, "soumettre", bob);
+    await decider(org, d.id, "soumettre", bob, "", undefined, { v: multi, a: paul });
     expect(await cleErreur(decider(org, d.id, "verifier", aliceTout))).toBe("circuit.separation_auteur");
     expect(await cleErreur(decider(org, d.id, "verifier", bobTout))).toBe("circuit.separation_auteur");
     await decider(org, d.id, "verifier", multi);
@@ -388,8 +406,10 @@ describe("mode « petite organisation » (décision n° 2 du 19/10/2026)", () =>
 });
 
 describe("validation par nom et fonction, sans signature (TC-03)", () => {
-  const sans = (org: OrgDeTest, id: string, t: Transition, p: Personne, fonction: string | undefined, v: number, motif = "") =>
-    appliquerTransition(app, org.cible, id, t, { motif, versionVue: v, roles: p.roles, fonction }, p);
+  const sans = async (org: OrgDeTest, id: string, t: Transition, p: Personne, fonction: string | undefined, v: number, motif = "") => {
+    await adhesionsDeTest(proprietaire, org.cible.id, [alice, vera, paul]);
+    return appliquerTransition(app, org.cible, id, t, { motif, versionVue: v, roles: p.roles, fonction, verificateur: vera.id, approbateur: paul.id }, p);
+  };
 
   it("soumettre, vérifier, approuver : fonction obligatoire (rien n'est écrit sans elle) ; nom du compte et fonction rangés", async () => {
     const org = await creerOrgDeTest(app, proprietaire, superadmin);
@@ -437,7 +457,7 @@ describe("instructions de travail : même circuit que les procédures (TC-04)", 
     const parcours = async (contenu: Contenu) => {
       const d = await creerDocument(app, org.cible, contenu, alice);
       const etapes: string[] = [await etat(org, d.id)];
-      await decider(org, d.id, "soumettre", alice);
+      await decider(org, d.id, "soumettre", alice, "", undefined, { v: multi, a: paul });
       etapes.push(await etat(org, d.id));
       const refusAuteur = await cleErreur(decider(org, d.id, "verifier", alice));
       await decider(org, d.id, "verifier", multi);
@@ -453,5 +473,77 @@ describe("instructions de travail : même circuit que les procédures (TC-04)", 
     expect(pr.type).toBe("procedure");
     expect(it_.etapes).toEqual(["brouillon", "en_verification", "en_approbation", "publie"]);
     expect({ ...it_, type: "" }).toEqual({ ...pr, type: "" });
+  });
+});
+
+describe("désignation nominative, changement de personne et relance (28/10/2026)", () => {
+  it("soumettre : refusé sans personne à désigner ou sans choix ; les désignés sont rangés, puis effacés au retour au brouillon", async () => {
+    const org = await creerOrgDeTest(app, proprietaire, superadmin);
+    const d = await creerDocument(app, org.cible, procedure("Désignation"), alice);
+    // Personne n'a le rôle Vérificateur dans cette organisation : la soumission est refusée, rien n'est écrit.
+    await adhesionsDeTest(proprietaire, org.cible.id, [alice, paul]);
+    expect(await cleErreur(appliquerTransition(app, org.cible, d.id, "soumettre", { motif: "", versionVue: 1, roles: alice.roles, fonction: "Rédactrice" }, alice))).toBe("circuit.aucun_verificateur");
+    expect(await etat(org, d.id)).toBe("brouillon");
+    await adhesionsDeTest(proprietaire, org.cible.id, [vera]);
+    expect(await cleErreur(appliquerTransition(app, org.cible, d.id, "soumettre", { motif: "", versionVue: 1, roles: alice.roles, fonction: "Rédactrice" }, alice))).toBe("circuit.designation_requise");
+    expect(await cleErreur(decider(org, d.id, "soumettre", alice, "", undefined, { v: paul, a: vera }))).toBe("circuit.verificateur_invalide");
+    await decider(org, d.id, "soumettre", alice);
+    const c = (await lireCircuit(app, org.cible, d.id))!;
+    expect(c.designes).toEqual({ verificateur: { id: vera.id, nom: "Vera" }, approbateur: { id: paul.id, nom: "Paul" } });
+    expect(c.attendDepuis).toBeInstanceOf(Date);
+    // Multi a le rôle, mais n'est pas désignée : elle ne décide pas.
+    expect(await cleErreur(decider(org, d.id, "verifier", multi))).toBe("circuit.reserve_designe");
+    await decider(org, d.id, "refuser_verification", vera, "Incomplet");
+    expect((await lireCircuit(app, org.cible, d.id))!.designes).toEqual({ verificateur: null, approbateur: null });
+  });
+
+  it("changer la personne désignée : celle qui a soumis ou un administrateur ; prévenue, tracé ; règles de la soumission", async () => {
+    const org = await creerOrgDeTest(app, proprietaire, superadmin);
+    const admin: Personne = { id: org.adminId, email: org.adminEmail, nom: "Admin", ip: "127.0.0.1", agent: "vitest", roles: ["ADMIN_ORGANISATION"] };
+    const d = await creerDocument(app, org.cible, procedure("Changer"), alice);
+    await decider(org, d.id, "soumettre", alice);
+    // Ni un autre rédacteur, ni le vérificateur désigné ne changent la désignation.
+    for (const p of [bob, vera]) expect(await cleErreur(changerDesignation(app, org.cible, d.id, "verificateur", multi.id, p.roles, p)), p.nom).toBe("erreur.interdit");
+    expect(await cleErreur(changerDesignation(app, org.cible, d.id, "verificateur", paul.id, alice.roles, alice))).toBe("circuit.verificateur_invalide");
+    expect(await cleErreur(changerDesignation(app, org.cible, d.id, "verificateur", alice.id, alice.roles, alice))).toBe("circuit.verificateur_invalide");
+    await changerDesignation(app, org.cible, d.id, "verificateur", multi.id, alice.roles, alice);
+    // Multi est désignée : prévenue (« Alice a soumis… ») ; Vera ne décide plus.
+    const n = (await listerNotifications(app, org.cible, multi.id))[0]!;
+    expect(n).toMatchObject({ nature: "a_verifier", documentId: d.id, details: { par: "Alice" } });
+    expect(await cleErreur(decider(org, d.id, "verifier", vera))).toBe("circuit.reserve_designe");
+    await decider(org, d.id, "verifier", multi);
+    // En approbation : le vérificateur ne se change plus ; l'approbateur, oui (par l'administrateur), jamais pour celle qui a vérifié.
+    expect(await cleErreur(changerDesignation(app, org.cible, d.id, "verificateur", vera.id, admin.roles, admin))).toBe("circuit.etat_incompatible");
+    expect(await cleErreur(changerDesignation(app, org.cible, d.id, "approbateur", multi.id, admin.roles, admin))).toBe("circuit.designation_identique");
+    const veraApprobatrice = { ...vera, roles: ["VERIFICATEUR", "APPROBATEUR"] as RoleOrganisation[] };
+    await adhesionsDeTest(proprietaire, org.cible.id, [veraApprobatrice]);
+    await changerDesignation(app, org.cible, d.id, "approbateur", vera.id, admin.roles, admin);
+    expect((await listerNotifications(app, org.cible, vera.id)).map((x) => x.nature)).toContain("a_approuver");
+    expect(await cleErreur(decider(org, d.id, "approuver", paul))).toBe("circuit.reserve_designe");
+    expect(await decider(org, d.id, "approuver", veraApprobatrice)).toEqual({ etat: "publie" });
+    expect(await cleErreur(changerDesignation(app, org.cible, d.id, "approbateur", paul.id, admin.roles, admin))).toBe("circuit.etat_incompatible");
+    const journal = (await lireJournalOrganisation(app, org.cible, { page: 1 })).lignes.filter((l) => l.action === "DOCUMENT_DESIGNATION_MODIFIEE");
+    expect(journal.map((l) => [(l.details as { role: string }).role, (l.details as { avant: string }).avant, (l.details as { apres: string }).apres])).toEqual([
+      ["approbateur", "Paul", "Vera"],
+      ["verificateur", "Vera", "Multi"],
+    ]);
+  });
+
+  it("relance : 5 jours ouvrés sans décision → la personne désignée est relancée, une fois par palier de 5 jours ouvrés", async () => {
+    const org = await creerOrgDeTest(app, proprietaire, superadmin);
+    const d = await creerDocument(app, org.cible, procedure("Relance"), alice);
+    await decider(org, d.id, "soumettre", alice);
+    // La soumission date du mercredi 28/10/2026 à midi.
+    await enTransaction(proprietaire, (c) => c.query(`UPDATE "${org.cible.schemaName}".decisions_document SET decide_le = '2026-10-28T12:00:00Z' WHERE document_id = $1`, [d.id]));
+    const relances = async () => (await listerNotifications(app, org.cible, vera.id)).filter((n) => n.nature === "validation_relance").map((n) => n.details.jours);
+    await executerTachesQuotidiennes(app, { fuseau: "UTC", maintenant: new Date("2026-11-03T08:00:00Z") }); // 4 jours ouvrés
+    expect(await relances()).toEqual([]);
+    await executerTachesQuotidiennes(app, { fuseau: "UTC", maintenant: new Date("2026-11-04T08:00:00Z") }); // 5 jours ouvrés
+    await executerTachesQuotidiennes(app, { fuseau: "UTC", maintenant: new Date("2026-11-05T08:00:00Z") }); // même palier : pas de doublon
+    expect(await relances()).toEqual([5]);
+    await executerTachesQuotidiennes(app, { fuseau: "UTC", maintenant: new Date("2026-11-11T08:00:00Z") }); // 10 jours ouvrés
+    expect(await relances()).toEqual([10, 5]);
+    // Paul (approbateur) n'est pas relancé tant que le document est en vérification.
+    expect((await listerNotifications(app, org.cible, paul.id)).filter((n) => n.nature === "validation_relance")).toEqual([]);
   });
 });

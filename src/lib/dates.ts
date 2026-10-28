@@ -55,6 +55,20 @@ export function ecartJours(de: string, a: string): number {
   return Math.round((versDate(a).getTime() - versDate(de).getTime()) / 86_400_000);
 }
 
+/** Jours ouvrés (lundi à vendredi) écoulés après `de`, jusqu'à `a` compris (0 si `a` n'est pas après `de`). */
+export function joursOuvres(de: string, a: string): number {
+  const total = ecartJours(de, a);
+  if (total <= 0) return 0;
+  const semaines = Math.floor(total / 7);
+  let n = semaines * 5;
+  const debut = versDate(de).getUTCDay(); // 0 = dimanche
+  for (let k = 1; k <= total - semaines * 7; k++) {
+    const j = (debut + k) % 7;
+    if (j !== 0 && j !== 6) n++;
+  }
+  return n;
+}
+
 /**
  * Situation d'une échéance aujourd'hui :
  *   - « a_jour »    : plus de `rappelJours` jours avant l'échéance ;

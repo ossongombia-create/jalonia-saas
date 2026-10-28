@@ -38,6 +38,10 @@ const { BASE, sql, lancer, connecter, api, editeurPret, capture, etape, assert }
     const bloc = p.locator(`.decision-possible[data-transition="${transition}"]`);
     if (await bloc.locator('input[name="fonction"]').count()) await bloc.locator('input[name="fonction"]').fill(fonction);
     if (motif !== undefined) await bloc.locator("textarea").fill(motif);
+    // Soumettre : vérificateur et approbateur désignés (Victor, Agathe).
+    for (const [champ, nom] of [["verificateur", "Victor Vérificateur"], ["approbateur", "Agathe Approbatrice"]]) {
+      if (await bloc.locator(`select[name="${champ}"]`).count()) await bloc.locator(`select[name="${champ}"]`).selectOption({ label: nom });
+    }
     p.once("dialog", (d) => d.accept());
     await bloc.locator("button[type=submit]").click();
     await p.waitForURL((u) => u.searchParams.has("etat"));

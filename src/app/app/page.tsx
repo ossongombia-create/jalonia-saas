@@ -1,5 +1,5 @@
-// Accueil de l'organisation : tableau de bord (audit Q1). Ce qui attend la personne connectée (documents à décider,
-// actions qui lui sont confiées), puis la situation de l'organisation : documents, revues, actions, risques,
+// Accueil de l'organisation : tableau de bord (audit Q1). Ce qui attend la personne connectée (« Mes tâches » : documents
+// à vérifier ou à approuver, ses documents refusés à reprendre, ses documents en circuit et chez qui ; actions confiées), puis la situation de l'organisation : documents, revues, actions, risques,
 // opportunités et indicateurs (registres lus dans les versions publiées).
 import Link from "next/link";
 import { jourLocal } from "@/lib/dates";
@@ -52,6 +52,7 @@ export default async function AccueilOrganisation() {
   }
   const tb = await lireTableauDeBord(poolApplication(), organisation, { id: ctx.acteur.id, roles: organisation.roles, mode: organisation.modeValidation }, fuseau, jourLocal(new Date(), fuseau));
   const voir = t("tableau.voir");
+  const nomDoc = (d: { reference: string; titre: string }) => (d.reference && d.titre ? `${d.reference} — ${d.titre}` : d.reference || d.titre || t("docs.sans_titre"));
 
   return (
     <>
@@ -71,12 +72,45 @@ export default async function AccueilOrganisation() {
             <ul className="liste-simple">
               {tb.aDecider.map((d) => (
                 <li key={d.id}>
-                  <Link href={`/app/documents/${d.id}/validation`}>{d.reference && d.titre ? `${d.reference} — ${d.titre}` : d.reference || d.titre || t("docs.sans_titre")}</Link>{" "}
-                  <span className={`etiquette etiquette-etat-${d.etat}`}>{t(`etat.${d.etat}`)}</span>
+                  <Link href={`/app/documents/${d.id}/validation`}>{nomDoc(d)}</Link>{" "}
+                  <span className={`etiquette etiquette-etat-${d.etat}`}>{t(d.etat === "en_verification" ? "tableau.a_verifier" : "tableau.a_approuver")}</span>
+                  {d.depuis ? <> <span className="discret petit">{t("tableau.depuis", { date: formaterJour(langue, jourLocal(d.depuis, fuseau)) })}</span></> : null}
                 </li>
               ))}
             </ul>
           )}
+          {tb.refuses.length > 0 ? (
+            <>
+              <h3>{t("tableau.refuses")}</h3>
+              <ul className="liste-simple" id="mes-refuses">
+                {tb.refuses.map((d) => (
+                  <li key={d.id}>
+                    <Link href={`/app/documents/${d.id}/validation`}>{nomDoc(d)}</Link>{" "}
+                    <span className="etiquette etiquette-alerte">{t("tableau.refuse")}</span>
+                    {d.motif ? <> <span className="discret petit">{t("tableau.motif", { motif: d.motif })}</span></> : null}
+                  </li>
+                ))}
+              </ul>
+            </>
+          ) : null}
+          {tb.enCours.length > 0 ? (
+            <>
+              <h3>{t("tableau.en_cours")}</h3>
+              <ul className="liste-simple" id="mes-en-cours">
+                {tb.enCours.map((d) => (
+                  <li key={d.id}>
+                    <Link href={`/app/documents/${d.id}/validation`}>{nomDoc(d)}</Link>{" "}
+                    <span className={`etiquette etiquette-etat-${d.etat}`}>{t(`etat.${d.etat}`)}</span>{" "}
+                    <span className="discret petit">
+                      {d.chez ? t("tableau.chez", { nom: d.chez }) : null}
+                      {d.chez && d.depuis ? " · " : null}
+                      {d.depuis ? t("tableau.depuis", { date: formaterJour(langue, jourLocal(d.depuis, fuseau)) }) : null}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </>
+          ) : null}
         </section>
         <section className="carte" id="mes-actions">
           <h2>{t("tableau.mes_actions")}</h2>

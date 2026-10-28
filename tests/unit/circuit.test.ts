@@ -1,7 +1,9 @@
 // Circuit de validation (W1) : règles pures (droits, états, motif, séparation des tâches), sans base.
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { ETATS, LISTE_TRANSITIONS, MOTIF_MAX, TRANSITIONS, TRANSITIONS_FONCTION, TRANSITIONS_SECOND_FACTEUR, demandeFonction, estTransition, refusTransition, transitionsPossibles, validationImprimable, type ContexteDecision, type Decision, type Intervenants, type Transition } from "../../src/server/documents/circuit";
+import { ETATS, LISTE_TRANSITIONS, MOTIF_MAX, TRANSITIONS, TRANSITIONS_FONCTION, TRANSITIONS_SECOND_FACTEUR, candidatsDesignation, demandeFonction, estTransition, refusDesignation, refusTransition, transitionsPossibles, validationImprimable, type ContexteDecision, type Decision, type Intervenants, type Transition } from "../../src/server/documents/circuit";
+import { joursOuvres } from "../../src/lib/dates";
+import type { MembreDestinataire } from "../../src/server/notifications/service";
 import { estCle } from "../../src/lib/i18n";
 import { en } from "../../src/lib/i18n/en";
 import type { RoleOrganisation } from "../../src/lib/rbac";
@@ -56,8 +58,9 @@ describe("circuit : transitions et états", () => {
 describe("circuit : refus d'une transition", () => {
   it("droit du rôle : soumettre/réviser (rédaction), vérifier (vérificateur), approuver et archiver (approbateur)", () => {
     expect(refusTransition("soumettre", "brouillon", R("REDACTEUR"), "u", aucun, "")).toBeNull();
-    expect(refusTransition("soumettre", "brouillon", R("ADMIN_ORGANISATION"), "u", aucun, "")).toBeNull();
-    for (const r of ["VERIFICATEUR", "APPROBATEUR", "LECTEUR"] as const) expect(refusTransition("soumettre", "brouillon", [r], "u", aucun, ""), r).toBe("erreur.interdit");
+    // Tout membre rédige et soumet (28/10/2026) ; l'administrateur seul, non.
+    for (const r of ["VERIFICATEUR", "APPROBATEUR", "LECTEUR"] as const) expect(refusTransition("soumettre", "brouillon", [r], "u", aucun, ""), r).toBeNull();
+    expect(refusTransition("soumettre", "brouillon", R("ADMIN_ORGANISATION"), "u", aucun, "")).toBe("erreur.interdit");
     expect(refusTransition("verifier", "en_verification", R("VERIFICATEUR"), "u", aucun, "")).toBeNull();
     for (const r of ["ADMIN_ORGANISATION", "REDACTEUR", "APPROBATEUR", "LECTEUR"] as const) {
       expect(refusTransition("verifier", "en_verification", [r], "u", aucun, ""), r).toBe("erreur.interdit");
@@ -70,7 +73,8 @@ describe("circuit : refus d'une transition", () => {
       expect(refusTransition("archiver", "publie", [r], "u", aucun, "m"), r).toBe("erreur.interdit");
     }
     expect(refusTransition("reviser", "publie", R("REDACTEUR"), "u", aucun, "")).toBeNull();
-    expect(refusTransition("reviser", "publie", R("APPROBATEUR"), "u", aucun, "")).toBe("erreur.interdit");
+    expect(refusTransition("reviser", "publie", R("APPROBATEUR"), "u", aucun, "")).toBeNull(); // tout membre rédige
+    expect(refusTransition("reviser", "publie", R("ADMIN_ORGANISATION"), "u", aucun, "")).toBe("erreur.interdit");
     expect(refusTransition("confirmer_revue", "publie", R("APPROBATEUR"), "u", aucun, "")).toBeNull();
     for (const r of ["ADMIN_ORGANISATION", "REDACTEUR", "VERIFICATEUR", "LECTEUR"] as const) expect(refusTransition("confirmer_revue", "publie", [r], "u", aucun, ""), r).toBe("erreur.interdit");
     // Le droit est vérifié avant l'état : un rôle sans droit n'apprend rien de l'état.
@@ -125,12 +129,13 @@ describe("circuit : décisions proposées", () => {
   const i: Intervenants = { auteur: "alice", soumisPar: "alice", verifiePar: "carla" };
   it("chacun ne voit que ce qu'il peut décider", () => {
     expect(transitionsPossibles("brouillon", R("REDACTEUR"), "alice", aucun)).toEqual(["soumettre"]);
-    expect(transitionsPossibles("brouillon", R("LECTEUR"), "lea", aucun)).toEqual([]);
+    expect(transitionsPossibles("brouillon", R("LECTEUR"), "lea", aucun)).toEqual(["soumettre"]);
+    expect(transitionsPossibles("brouillon", R("ADMIN_ORGANISATION"), "adam", aucun)).toEqual([]);
     expect(transitionsPossibles("en_verification", R("VERIFICATEUR"), "carla", i)).toEqual(["verifier", "refuser_verification"]);
     expect(transitionsPossibles("en_verification", R("VERIFICATEUR", "REDACTEUR"), "alice", i)).toEqual([]);
     expect(transitionsPossibles("en_approbation", R("APPROBATEUR"), "paul", i)).toEqual(["approuver", "refuser_approbation"]);
     expect(transitionsPossibles("en_approbation", R("APPROBATEUR", "VERIFICATEUR"), "carla", i)).toEqual([]);
-    expect(transitionsPossibles("publie", R("APPROBATEUR"), "paul", aucun)).toEqual(["archiver", "confirmer_revue"]);
+    expect(transitionsPossibles("publie", R("APPROBATEUR"), "paul", aucun)).toEqual(["archiver", "reviser", "confirmer_revue"]);
     expect(transitionsPossibles("publie", R("REDACTEUR"), "alice", aucun)).toEqual(["reviser"]);
     expect(transitionsPossibles("publie", R("ADMIN_ORGANISATION", "APPROBATEUR"), "zoe", aucun)).toEqual(["archiver", "reviser", "confirmer_revue"]);
     for (const r of ["ADMIN_ORGANISATION", "REDACTEUR", "VERIFICATEUR", "APPROBATEUR", "LECTEUR"] as const) expect(transitionsPossibles("archive", [r], "u", aucun), r).toEqual([]);
@@ -222,5 +227,65 @@ describe("tableau de validation du document imprimé (TC-07)", () => {
     }
     // Révision : le document redevient un brouillon (nouveau contenu, non approuvé), même avec une version publiée.
     expect(validationImprimable({ etat: "brouillon", versionPubliee: 1, decisions }, jour).etat).toBe("projet");
+  });
+});
+
+// ----- Désignation nominative (migration 0013) -----
+const m = (id: string, ...roles: MembreDestinataire["roles"]): MembreDestinataire => ({ id, nom: id.toUpperCase(), roles });
+const equipe = [m("alice", "REDACTEUR"), m("vera", "VERIFICATEUR"), m("victor", "VERIFICATEUR"), m("paul", "APPROBATEUR"), m("multi", "VERIFICATEUR", "APPROBATEUR")];
+
+describe("désignation du vérificateur et de l'approbateur", () => {
+  it("candidats : membres qui ont le rôle, sauf la personne qui soumet et l'auteur", () => {
+    const c = candidatsDesignation(equipe, ["alice", "victor"]);
+    expect(c.verificateurs.map((x) => x.id)).toEqual(["vera", "multi"]);
+    expect(c.approbateurs.map((x) => x.id)).toEqual(["paul", "multi"]);
+  });
+
+  it("refus : personne à désigner, choix manquant, personne sans le rôle ou exclue, même personne en mode standard", () => {
+    expect(refusDesignation([m("alice", "REDACTEUR"), m("paul", "APPROBATEUR")], ["alice"], "standard", "", "")).toBe("circuit.aucun_verificateur");
+    expect(refusDesignation([m("alice", "REDACTEUR"), m("vera", "VERIFICATEUR")], ["alice"], "standard", "", "")).toBe("circuit.aucun_approbateur");
+    // Une seule personne vérificatrice ET approbatrice : impossible en mode standard, possible en petite organisation.
+    const seule = [m("alice", "REDACTEUR"), m("multi", "VERIFICATEUR", "APPROBATEUR")];
+    expect(refusDesignation(seule, ["alice"], "standard", "multi", "multi")).toBe("circuit.une_seule_personne");
+    expect(refusDesignation(seule, ["alice"], "petite_organisation", "multi", "multi")).toBeNull();
+    // Le vérificateur qui soumet lui-même est exclu : il ne reste personne.
+    expect(refusDesignation(equipe, ["vera", "victor", "multi"], "standard", "", "paul")).toBe("circuit.aucun_verificateur");
+    expect(refusDesignation(equipe, ["alice"], "standard", "", "paul")).toBe("circuit.designation_requise");
+    expect(refusDesignation(equipe, ["alice"], "standard", "vera", "")).toBe("circuit.designation_requise");
+    expect(refusDesignation(equipe, ["alice"], "standard", "paul", "paul")).toBe("circuit.verificateur_invalide");
+    expect(refusDesignation(equipe, ["alice"], "standard", "vera", "vera")).toBe("circuit.approbateur_invalide");
+    expect(refusDesignation(equipe, ["alice", "vera"], "standard", "vera", "paul")).toBe("circuit.verificateur_invalide");
+    expect(refusDesignation(equipe, ["alice"], "standard", "inconnu", "paul")).toBe("circuit.verificateur_invalide");
+    expect(refusDesignation(equipe, ["alice"], "standard", "multi", "multi")).toBe("circuit.designation_identique");
+    expect(refusDesignation(equipe, ["alice"], "petite_organisation", "multi", "multi")).toBeNull();
+    expect(refusDesignation(equipe, ["alice"], "standard", "vera", "paul")).toBeNull();
+  });
+
+  it("seule la personne désignée décide ; sans désignation (document d'avant), tout membre qui a le rôle", () => {
+    const i: Intervenants = { auteur: "alice", soumisPar: "alice", verifiePar: null, verificateurDesigne: "vera", approbateurDesigne: "paul" };
+    expect(refusTransition("verifier", "en_verification", ["VERIFICATEUR"], "victor", i, "")).toBe("circuit.reserve_designe");
+    expect(refusTransition("refuser_verification", "en_verification", ["VERIFICATEUR"], "victor", i, "motif")).toBe("circuit.reserve_designe");
+    expect(refusTransition("verifier", "en_verification", ["VERIFICATEUR"], "vera", i, "")).toBeNull();
+    const j: Intervenants = { ...i, verifiePar: "vera" };
+    expect(refusTransition("approuver", "en_approbation", ["APPROBATEUR"], "multi", j, "")).toBe("circuit.reserve_designe");
+    expect(refusTransition("approuver", "en_approbation", ["APPROBATEUR"], "paul", j, "")).toBeNull();
+    // Archiver ou réviser un document publié : pas de désignation.
+    expect(refusTransition("archiver", "publie", ["APPROBATEUR"], "multi", { auteur: "alice", soumisPar: null, verifiePar: null }, "motif")).toBeNull();
+    const ancien: Intervenants = { auteur: "alice", soumisPar: "alice", verifiePar: null };
+    expect(refusTransition("verifier", "en_verification", ["VERIFICATEUR"], "victor", ancien, "")).toBeNull();
+    expect(transitionsPossibles("en_verification", ["VERIFICATEUR"], "victor", i)).toEqual([]);
+  });
+});
+
+describe("jours ouvrés (relance après 5 jours ouvrés)", () => {
+  it("compte du lendemain au jour donné, sans samedi ni dimanche", () => {
+    expect(joursOuvres("2026-10-28", "2026-10-28")).toBe(0); // mercredi
+    expect(joursOuvres("2026-10-28", "2026-10-27")).toBe(0);
+    expect(joursOuvres("2026-10-28", "2026-10-30")).toBe(2); // jeudi, vendredi
+    expect(joursOuvres("2026-10-28", "2026-11-01")).toBe(2); // + samedi, dimanche
+    expect(joursOuvres("2026-10-28", "2026-11-04")).toBe(5); // mercredi suivant : relance
+    expect(joursOuvres("2026-10-31", "2026-11-02")).toBe(1); // samedi → lundi
+    expect(joursOuvres("2026-10-28", "2026-11-11")).toBe(10);
+    expect(joursOuvres("2026-10-26", "2026-12-25")).toBe(44); // 60 jours : 8 semaines + 4 jours ouvrés
   });
 });

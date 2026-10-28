@@ -4,13 +4,14 @@
 // Soumettre, vérifier, approuver : NOM (celui du compte, non modifiable) et FONCTION (obligatoire) ; aucune signature.
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { actionTransitionDocument } from "@/actions/documents";
+import { actionDesignerDocument, actionTransitionDocument } from "@/actions/documents";
 import { FormulaireAction } from "@/components/FormulaireAction";
 import { jourLocal } from "@/lib/dates";
 import { formaterDate, formaterJour } from "@/lib/format";
+import type { Cle } from "@/lib/i18n/fr";
 import { identifiant } from "@/lib/validation";
 import { poolApplication } from "@/server/db/pools";
-import { ETATS, FONCTION_MAX, LISTE_TRANSITIONS, MOTIF_MAX, TRANSITIONS, demandeFonction, derniereFonction, lireCircuit, refusTransition, transitionsPossibles, type ContexteDecision } from "@/server/documents/circuit";
+import { ETATS, FONCTION_MAX, LISTE_TRANSITIONS, MOTIF_MAX, TRANSITIONS, candidatsDesignation, demandeFonction, derniereFonction, lireCircuit, lireMembresActifs, refusDesignation, refusTransition, transitionsPossibles, type ContexteDecision } from "@/server/documents/circuit";
 import { lireEtatSecondFacteur } from "@/server/auth/second-facteur";
 import { lireParametresOrganisation, revueDe } from "@/server/documents/revues";
 import { nomActeur } from "@/server/acteur";
@@ -42,9 +43,20 @@ export default async function PageValidation({ params, searchParams }: {
   // le second facteur : on dit pourquoi.
   const separations = [...new Set(
     LISTE_TRANSITIONS.map((tr) => refusTransition(tr, circuit.etat, organisation.roles, acteur.id, circuit.intervenants, "x", decision))
-      .filter((r): r is "circuit.separation_auteur" | "circuit.separation_verificateur" | "circuit.second_facteur_requis" =>
-        r === "circuit.separation_auteur" || r === "circuit.separation_verificateur" || r === "circuit.second_facteur_requis"),
+      .filter((r): r is "circuit.separation_auteur" | "circuit.separation_verificateur" | "circuit.second_facteur_requis" | "circuit.reserve_designe" =>
+        r === "circuit.separation_auteur" || r === "circuit.separation_verificateur" || r === "circuit.second_facteur_requis" || r === "circuit.reserve_designe"),
   )];
+  // Désignation nominative : personnes proposées à la soumission (ni la personne connectée, ni l'auteur), et refus
+  // éventuel faute de candidat (affiché à la place du bouton « Soumettre »).
+  const enCircuit = circuit.etat === "en_verification" || circuit.etat === "en_approbation";
+  const membres = possibles.includes("soumettre") || enCircuit ? await lireMembresActifs(poolApplication(), organisation.id) : [];
+  const aSoumettre = candidatsDesignation(membres, [acteur.id, circuit.intervenants.auteur]);
+  const manqueCandidat = possibles.includes("soumettre") ? refusDesignation(membres, [acteur.id, circuit.intervenants.auteur], organisation.modeValidation, "", "") : null;
+  const sansCandidat = manqueCandidat !== null && manqueCandidat !== "circuit.designation_requise";
+  const affichees = sansCandidat ? possibles.filter((tr) => tr !== "soumettre") : possibles;
+  // Changer la personne désignée : celle qui a soumis, ou un administrateur ; personnes proposées hors soumetteur et auteur.
+  const peutRedesigner = enCircuit && (acteur.id === circuit.intervenants.soumisPar || organisation.roles.includes("ADMIN_ORGANISATION"));
+  const aRedesigner = candidatsDesignation(membres, [circuit.intervenants.soumisPar, circuit.intervenants.auteur]);
   // Retour d'une décision (?etat=…) : confirmé seulement si le document est toujours dans cet état.
   const q = await searchParams;
   const confirme = typeof q.etat === "string" && (ETATS as readonly string[]).includes(q.etat) && q.etat === circuit.etat;
@@ -70,6 +82,13 @@ export default async function PageValidation({ params, searchParams }: {
           {t("circuit.etat_actuel", { etat: etatLisible, v: circuit.version })}
         </p>
         <p className="discret">{t(`circuit.etape.${circuit.etat}`)}</p>
+        {enCircuit && (circuit.designes.verificateur || circuit.designes.approbateur) ? (
+          <ul className="liste-simple" id="designes">
+            {circuit.designes.verificateur ? <li data-designe="verificateur">{t("circuit.designe_verificateur", { nom: circuit.designes.verificateur.nom })}</li> : null}
+            {circuit.designes.approbateur ? <li data-designe="approbateur">{t("circuit.designe_approbateur", { nom: circuit.designes.approbateur.nom })}</li> : null}
+          </ul>
+        ) : null}
+        {enCircuit && circuit.attendDepuis ? <p className="discret petit" id="attend-depuis">{t("circuit.attend_depuis", { date: formaterDate(langue, circuit.attendDepuis, fuseau) })}</p> : null}
         {circuit.versionPubliee !== null && circuit.publieLe ? (
           <p>{t("circuit.publiee", { v: circuit.versionPubliee, date: formaterDate(langue, circuit.publieLe, fuseau) })}</p>
         ) : null}
@@ -90,11 +109,12 @@ export default async function PageValidation({ params, searchParams }: {
       </section>
 
       <section className="carte" id="decisions-possibles">
-        {possibles.length === 0 ? (
+        {sansCandidat ? <p className="bandeau bandeau-alerte" id="sans-candidat" data-refus={manqueCandidat}>{t(manqueCandidat as Cle)}</p> : null}
+        {affichees.length === 0 ? (
           <p className="vide">{t("circuit.aucune_action")}</p>
         ) : (
           <div className="decisions-possibles">
-            {possibles.map((tr) => {
+            {affichees.map((tr) => {
               const regle = TRANSITIONS[tr];
               const libelle = t(`circuit.t.${tr}`);
               return (
@@ -111,6 +131,24 @@ export default async function PageValidation({ params, searchParams }: {
                     <input type="hidden" name="documentId" value={circuit.id} />
                     <input type="hidden" name="transition" value={tr} />
                     <input type="hidden" name="versionVue" value={circuit.version} />
+                    {tr === "soumettre" ? (
+                      <div className="grille-champs" id="designation">
+                        <label className="champ">
+                          <span>{t("circuit.choisir_verificateur")}</span>
+                          <select name="verificateur" required defaultValue={aSoumettre.verificateurs.length === 1 ? aSoumettre.verificateurs[0]!.id : ""}>
+                            <option value="">{t("circuit.choisir")}</option>
+                            {aSoumettre.verificateurs.map((m) => <option key={m.id} value={m.id}>{m.nom}</option>)}
+                          </select>
+                        </label>
+                        <label className="champ">
+                          <span>{t("circuit.choisir_approbateur")}</span>
+                          <select name="approbateur" required defaultValue={aSoumettre.approbateurs.length === 1 ? aSoumettre.approbateurs[0]!.id : ""}>
+                            <option value="">{t("circuit.choisir")}</option>
+                            {aSoumettre.approbateurs.map((m) => <option key={m.id} value={m.id}>{m.nom}</option>)}
+                          </select>
+                        </label>
+                      </div>
+                    ) : null}
                     {demandeFonction(tr) ? (
                       <div className="grille-champs">
                         <label className="champ">
@@ -133,6 +171,25 @@ export default async function PageValidation({ params, searchParams }: {
             })}
           </div>
         )}
+        {peutRedesigner ? (
+          <div className="redesignation" id="redesignation">
+            <h3>{t("circuit.changer_designe")}</h3>
+            {(["verificateur", "approbateur"] as const).filter((q) => q === "approbateur" || circuit.etat === "en_verification").map((q) => (
+              <FormulaireAction key={q} action={actionDesignerDocument} libelle={t(`circuit.changer_${q}`)} libelleEnCours={t("commun.en_cours")} variante="normal" vider={false}>
+                <input type="hidden" name="organisationId" value={organisation.id} />
+                <input type="hidden" name="documentId" value={circuit.id} />
+                <input type="hidden" name="quoi" value={q} />
+                <label className="champ">
+                  <span>{t(q === "verificateur" ? "circuit.choisir_verificateur" : "circuit.choisir_approbateur")}</span>
+                  <select name="personne" required defaultValue={circuit.designes[q]?.id ?? ""} data-quoi={q}>
+                    <option value="">{t("circuit.choisir")}</option>
+                    {(q === "verificateur" ? aRedesigner.verificateurs : aRedesigner.approbateurs).map((m) => <option key={m.id} value={m.id}>{m.nom}</option>)}
+                  </select>
+                </label>
+              </FormulaireAction>
+            ))}
+          </div>
+        ) : null}
         {separations.map((cle) => <p key={cle} className="discret separation" data-refus={cle}>{t(cle)}</p>)}
         {separations.includes("circuit.second_facteur_requis") ? <p><Link href="/compte/second-facteur">{t("circuit.second_facteur_lien")}</Link></p> : null}
         <p className="discret petit" id="mode-validation" data-mode={organisation.modeValidation}>{t(`circuit.mode_${organisation.modeValidation}`)}</p>

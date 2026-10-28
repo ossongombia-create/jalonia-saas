@@ -45,12 +45,15 @@ const PARCOURS: Organisation[] = [
       { email: "redac@demo.test", nom: "Rita Rédactrice", roles: ["REDACTEUR"] },
       { email: "redac2@demo.test", nom: "Rémi Rédacteur", roles: ["REDACTEUR"] },
       { email: "lecteur@demo.test", nom: "Léa Lectrice", roles: ["LECTEUR"], langue: "en" },
+      // Administrateur seul (gestion des comptes, souvent l'informatique) : lit les documents, ne rédige pas (p4).
+      { email: "info@demo.test", nom: "Ivan Informatique", roles: ["ADMIN_ORGANISATION"], langue: "en" },
       { email: "verif@demo.test", nom: "Victor Vérificateur", roles: ["VERIFICATEUR", "APPROBATEUR"] },
       // Circuit de validation (p11) : celui qui vérifie ne peut pas approuver la même version.
       { email: "appro@demo.test", nom: "Agathe Approbatrice", roles: ["APPROBATEUR"] },
     ],
   },
-  { nom: "Autre Organisation", slug: "autre-org", admin: { email: "autre@demo.test", nom: "Admin Autre Organisation" }, membres: [] },
+  // Un rédacteur : l'étanchéité des écritures (p4) s'éprouve avec quelqu'un qui a le droit d'écrire chez lui.
+  { nom: "Autre Organisation", slug: "autre-org", admin: { email: "autre@demo.test", nom: "Admin Autre Organisation" }, membres: [{ email: "redac-autre@demo.test", nom: "Rédacteur Autre", roles: ["REDACTEUR"] }] },
 ];
 
 // Matrice des autorisations (tests/e2e/autorisations.cjs) : organisations à part, que les parcours ne touchent pas.
@@ -116,6 +119,9 @@ async function principal(): Promise<void> {
     const superadmin: Acteur = { id: await idDe(pool, SUPERADMIN), email: SUPERADMIN, ...RESEAU };
     for (const o of [...PARCOURS, ...AUTORISATIONS]) await creer(pool, superadmin, o);
 
+    // Administrateur B : aussi rédacteur dans SON organisation (l'administrateur seul ne rédige pas), pour éprouver les
+    // écritures inter-organisations (404 / 409) avec quelqu'un qui a le droit d'écrire chez lui.
+    await enTransaction(pool, (c) => c.query("UPDATE platform.adhesions SET roles = ARRAY['ADMIN_ORGANISATION', 'REDACTEUR'] WHERE utilisateur_id = (SELECT id FROM platform.utilisateurs WHERE email = 'admin-b@droits.test')"));
     // Second facteur de mfa-a@droits.test, activé par le parcours normal (secret chiffré, code TOTP valable).
     const mfa: Acteur = { id: await idDe(pool, "mfa-a@droits.test"), email: "mfa-a@droits.test", ...RESEAU };
     const { secret } = await preparerEnrolement(pool, cle, mfa);
