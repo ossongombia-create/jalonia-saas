@@ -140,6 +140,7 @@ export default {
   "fiche.role_ajoute": "Acteur « {nom} » absent de l'onglet Acteurs : rôle créé.",
   "fiche.instructions_absentes": "Tableau du déroulé introuvable (onglet Procedure_N2, colonnes « Opération » et « Acteur responsable ») : aucune instruction importée.",
   "fiche.sous_procedure": "Opération {n} : renvoi vers une autre procédure, dont le code est à saisir.",
+  "fiche.suite_illisible": "Opération {n} : suite « {suite} » illisible (attendu : « Oui → 5 ; Non → 3 » ou « Non → Fin ») ; destinations à choisir.",
   "fiche.renvoi_inconnu": "Opération {n} : la suite « {vers} » ne désigne aucune opération de la fiche ; destination à choisir.",
   "fiche.controles": "Instructions {liste} : contrôle repris avec sa question ; nature (Q, H, S, R ou E) à choisir.",
   "fiche.a_confirmer": "Opérations {liste} marquées « À confirmer » ou « À compléter » : importées, à valider avec les acteurs.",

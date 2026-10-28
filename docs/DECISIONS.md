@@ -196,3 +196,19 @@ toucherait les journaux chaînés.
 
 Organisations existantes : aucun remplissage par la migration ; elles reçoivent un titulaire quand le superadmin leur
 ajoute un suppléant (B8). Reporté en V2 : bandeau (B14), rappels tous les 30 jours (B17).
+
+## Création des documents : fiche de collecte Excel (28/10/2026)
+
+Trois façons de créer un document : le remplir dans l'éditeur ; importer une procédure Word existante ; importer une
+**fiche de collecte Excel** remplie lors des entretiens (phases 1 et 2 ci-dessous ; la phase 3, import souple des Word
+d'entreprise, est à venir).
+
+| Réf. | Décision | Mise en œuvre |
+|------|----------|---------------|
+| F1 | Une fiche donne **une procédure et une instruction de travail par onglet IT**, en brouillon | `editeur/js/importFiche.js` ; en ligne, les IT sont créées sur le serveur (`creerDocuments`) ; en local, enregistrées en fichiers .json |
+| F2 | Lecture du .xlsx **dans le navigateur, sans bibliothèque**, texte seul, tailles limitées | `editeur/js/xlsx.js` (archive lue par `lireZip`, comme le Word) |
+| F3 | Colonnes reconnues **par leur titre**, pas par leur lettre | Un ajout ou un déplacement de colonne ne casse pas l'import ; un titre renommé n'est plus reconnu |
+| F4 | Risques : l'onglet coté (gravité × probabilité) fait foi ; ceux du déroulé ne s'ajoutent que s'ils n'y sont pas déjà | FC-QUA-01 seulement : la fiche FC-JAL n'a plus de risques dans le déroulé |
+| F5 | « Comment ? » d'une opération d'IT : nouveau champ, imprimé sous le logigramme (tableau « Mode opératoire ») et dans le Word | `nouvelleOperation().commentaire` ; vide, il n'entre pas dans la signature du contenu (une IT validée le reste) |
+| F6 | Lignes « À confirmer » importées et signalées dans le rapport ; le cadrage d'une IT sans place sur la feuille (prérequis, EPI, matériels, documents, objet) est rappelé dans le rapport | Rapport d'import, pas dans le document |
+| F7 | **Fiche allégée FC-JAL** : code `FC-JAL-` + code de la procédure (formule) ; décision en une colonne « Suite » (« Oui → 5 ; Non → 3 ») ; risques et indicateurs seulement dans leur onglet ; plus de dysfonctionnements ni d'attentes (traités comme risques) ; impression A4 ajustée | Générée par `scripts/fiche-collecte/construire-fiche.py` (python3 + openpyxl) dans `public/modeles/FC-JAL_Fiche_de_collecte.xlsx`, téléchargeable depuis la page Documents (personnes connectées) ; l'import lit les deux modèles |
