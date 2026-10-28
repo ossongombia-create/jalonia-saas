@@ -20,11 +20,12 @@ export default {
   "logigramme.sans_libelle": "(no label)",
 
   "diag.ok": "No structural issue detected.",
-  "regle.roles.trop_nombreux": "{n} roles perform steps: 6 at most is recommended at level 2. If the flowchart becomes hard to read, split the procedure or group roles.",
+  "regle.roles.trop_nombreux": "{n} roles: 6 at most at level 2. Split the procedure or group roles.",
   "regle.roles.aucun": "No role defined.",
   "regle.role.sans_etape": "Role “{nom}” declared but without a step.",
   "regle.debut.manquant": "Start: triggering event not filled in.",
   "regle.fin.manquante": "End: no end or downstream procedure (a procedure always has a start and an end).",
+  "regle.instructions.trop": "{n} steps excluding checks: 10 at most. Split the procedure or detail a step in a work instruction.",
   "regle.instructions.effectif": "{n} instruction(s) excluding controls: the target is 5 to 10.",
   "regle.etape.sans_role": "Step {i}: no role assigned.",
   "regle.etape.libelle_vide": "Step {i}: empty label.",

@@ -20,11 +20,12 @@ export default {
   "logigramme.sans_libelle": "(sans libellé)",
 
   "diag.ok": "Aucune anomalie détectée sur la structure.",
-  "regle.roles.trop_nombreux": "{n} rôles réalisent des instructions : 6 au plus est recommandé en niveau 2. Si le logigramme devient difficile à lire, scinde la procédure ou regroupe des rôles.",
+  "regle.roles.trop_nombreux": "{n} rôles : 6 au maximum en niveau 2. Scinde la procédure ou regroupe des rôles.",
   "regle.roles.aucun": "Aucun rôle défini.",
   "regle.role.sans_etape": "Rôle « {nom} » déclaré mais sans étape.",
   "regle.debut.manquant": "Début : fait déclencheur non renseigné.",
   "regle.fin.manquante": "Fin : aucune fin ni procédure aval renseignée (une procédure a toujours un début et une fin).",
+  "regle.instructions.trop": "{n} instructions hors contrôles : 10 au maximum. Scinde la procédure ou détaille une instruction dans une instruction de travail.",
   "regle.instructions.effectif": "{n} instruction(s) hors contrôles : la cible est 5 à 10.",
   "regle.etape.sans_role": "Étape {i} : aucun rôle attribué.",
   "regle.etape.libelle_vide": "Étape {i} : libellé vide.",

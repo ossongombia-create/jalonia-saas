@@ -30,14 +30,26 @@ test("instruction collaborative : colonne traversée signalée", () => {
   assert.ok(cles(p).includes("regle.collab.colonne_traversee"));
 });
 
-test("plus de 6 rôles : alerte, sans bloquer la synthèse (décision F8)", () => {
+test("plus de 6 rôles : erreur qui bloque la synthèse et la validation (décision F8)", () => {
   const p = exempleValiderCommande();
   for (let k = 0; k < 5; k += 1) {
     p.roles.push({ id: `x${k}`, nom: `Rôle ${k}`, type: "individuel" });
     p.etapes.push(nouvelleEtape({ roleId: `x${k}`, libelle: "Traiter le dossier", entree: "A", sortie: "B" }));
   }
-  assert.equal(verifier(p).find((c) => c.cle === "regle.roles.trop_nombreux").gravite, "alerte");
-  assert.ok(!bloquantsSynthese(p).some((c) => c.cle === "regle.roles.trop_nombreux"));
+  assert.equal(verifier(p).find((c) => c.cle === "regle.roles.trop_nombreux").gravite, "erreur");
+  assert.ok(bloquantsSynthese(p).some((c) => c.cle === "regle.roles.trop_nombreux"));
+});
+
+test("plus de 10 instructions hors contrôles : erreur bloquante ; moins de 5 : simple alerte (décision F8)", () => {
+  const p = exempleValiderCommande();
+  const role = p.etapes[0].roleId;
+  while (p.etapes.length < 11) p.etapes.push(nouvelleEtape({ roleId: role, libelle: "Traiter le dossier", entree: "A", sortie: "B" }));
+  assert.equal(verifier(p).find((c) => c.cle === "regle.instructions.trop").gravite, "erreur");
+  assert.ok(bloquantsSynthese(p).some((c) => c.cle === "regle.instructions.trop"));
+  p.etapes.length = 10;
+  assert.ok(!verifier(p).some((c) => c.cle === "regle.instructions.trop"));
+  p.etapes.length = 3;
+  assert.equal(verifier(p).find((c) => c.cle === "regle.instructions.effectif").gravite, "alerte");
 });
 
 test("le dessin contient les ovales R et P de l'instruction collaborative", () => {
